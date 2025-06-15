@@ -1,0 +1,360 @@
+/* Form Styles - Inputs, buttons, selectors, and form elements */
+
+/* Input Styling */
+#messageInput {
+    flex: 1;
+    background: #2c2c2c;
+    border: 1px inset #555;
+    padding: 6px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    resize: vertical;
+    min-height: 40px;
+    color: #e0e0e0;
+}
+
+#messageInput:focus {
+    outline: none;
+    border: 1px inset #4a6a9a;
+    background: #333;
+}
+
+/* Button Styles */
+.send-button {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+    border: 1px outset #555;
+    padding: 6px 12px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+    min-width: 60px;
+    color: #e0e0e0;
+}
+
+.send-button:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
+}
+
+.send-button:active {
+    border: 1px inset #555;
+    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
+}
+
+.send-button:disabled {
+    background: #2a2a2a;
+    color: #666;
+    cursor: not-allowed;
+    border: 1px outset #444;
+}
+
+.send-button.stop-mode {
+    background: #2a2a2a;
+    color: #888;
+    cursor: pointer;
+    border: 1px outset #444;
+}
+
+.send-button.stop-mode:hover {
+    background: #333;
+    color: #aaa;
+}
+
+/* AIM-style Buttons */
+.aim-button {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+    border: 1px outset #555;
+    padding: 4px 8px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 10px;
+    cursor: pointer;
+    color: #e0e0e0;
+}
+
+.aim-button:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
+}
+
+.aim-button:active {
+    border: 1px inset #555;
+    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
+}
+
+/* Ensure all buttons have consistent styling */
+.aim-button, .aim-button:focus, .aim-button:visited {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a) !important;
+    border: 1px outset #555 !important;
+    color: #e0e0e0 !important;
+    outline: none;
+}
+
+.aim-button:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a) !important;
+}
+
+.aim-button:focus {
+    border: 1px outset #777 !important;
+}
+
+.aim-button:active {
+    border: 1px inset #555 !important;
+    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a) !important;
+}
+
+/* Test Connection button */
+.test-connection-btn {
+    background: linear-gradient(to bottom, #2d5a2d, #1a3d1a);
+    border: 1px outset #4d7d4d;
+    color: #e0e0e0;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    min-width: 100px;
+    transition: background 0.2s;
+    border-radius: 2px;
+}
+
+.test-connection-btn:hover {
+    background: linear-gradient(to bottom, #3d6a3d, #2a4d2a);
+}
+
+.test-connection-btn:active {
+    border: 1px inset #2d5d2d;
+    background: linear-gradient(to bottom, #1a3d1a, #2d5a2d);
+}
+
+.test-connection-btn:disabled {
+    background: #555;
+    color: #999;
+    cursor: not-allowed;
+    border: 1px outset #666;
+}
+
+.test-connection-btn.testing {
+    background: linear-gradient(to bottom, #5a5a2d, #3d3d1a);
+    color: #ffff99;
+}
+
+.test-connection-btn.success {
+    background: linear-gradient(to bottom, #2d5a2d, #1a3d1a);
+    color: #99ff99;
+}
+
+.test-connection-btn.error {
+    background: linear-gradient(to bottom, #5a2d2d, #3d1a1a);
+    color: #ff9999;
+}
+
+/* Refresh Models Button */
+.refresh-models-btn {
+    background: linear-gradient(to bottom, #4a4a4a, #2a2a2a);
+    border: 1px outset #555;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #e0e0e0;
+    cursor: pointer;
+    border-radius: 2px;
+    min-width: 32px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.refresh-models-btn:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #3a3a3a);
+}
+
+.refresh-models-btn:active {
+    border: 1px inset #555;
+    background: linear-gradient(to bottom, #2a2a2a, #4a4a4a);
+}
+
+.refresh-models-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Dropdown and Select Styling */
+.model-dropdown {
+    background: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 11px;
+    padding: 4px 8px;
+    min-width: 120px;
+    cursor: pointer;
+}
+
+.model-dropdown:hover {
+    border-color: #666;
+    background: #333;
+}
+
+.model-dropdown:focus {
+    outline: none;
+    border-color: #4a9eff;
+    background: #333;
+}
+
+/* Model Selector Container */
+.model-selector-container {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.model-dropdown {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px inset #555;
+    padding: 4px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    color: #e0e0e0;
+    cursor: pointer;
+}
+
+.model-input {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px inset #555;
+    padding: 4px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    color: #e0e0e0;
+    margin-bottom: 0;
+}
+
+.model-dropdown:focus, .model-input:focus {
+    outline: none;
+    border: 1px inset #4a6a9a;
+    background: #2a2a2a;
+}
+
+/* Settings Form Elements */
+.settings-section {
+    margin: 12px;
+}
+
+.settings-section h3 {
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #e0e0e0;
+}
+
+.settings-section label {
+    display: block;
+    margin: 6px 0 3px 0;
+    font-weight: bold;
+    font-size: 10px;
+    color: #b3d9ff;
+}
+
+.settings-section input, .settings-section textarea, .settings-section select {
+    width: 100%;
+    background: #1e1e1e;
+    border: 1px inset #555;
+    padding: 4px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    margin-bottom: 6px;
+    color: #e0e0e0;
+}
+
+.settings-section textarea {
+    white-space: pre;
+    font-family: Consolas, 'Courier New', monospace;
+    resize: vertical;
+    word-wrap: normal;
+    overflow-wrap: normal;
+}
+
+.settings-section input:focus, .settings-section textarea:focus, .settings-section select:focus {
+    outline: none;
+    border: 1px inset #4a6a9a;
+    background: #2a2a2a;
+}
+
+.settings-section select {
+    cursor: pointer;
+}
+
+.settings-section select option {
+    background: #1e1e1e;
+    color: #e0e0e0;
+}
+
+/* Settings styling */
+.setting-description {
+    font-size: 10px;
+    color: #999;
+    margin-top: 4px;
+    margin-bottom: 12px;
+    line-height: 1.3;
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.checkbox-group input[type="checkbox"] {
+    margin: 0;
+}
+
+/* Win98 Style Checkboxes */
+input[type="checkbox"] {
+    width: 13px;
+    height: 13px;
+    border: 1px inset #555;
+    background: #1e1e1e;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+}
+
+input[type="checkbox"]:checked {
+    background: #1e1e1e;
+    border: 1px inset #555;
+}
+
+input[type="checkbox"]:disabled {
+    background: #3a3a3a;
+    cursor: not-allowed;
+}
+
+/* Button Groups */
+.button-group {
+    display: flex;
+    gap: 8px;
+    margin: 8px 15px 15px 15px;
+    padding: 0 10px;
+}
+
+.button-group .aim-button {
+    flex: 1;
+    padding: 6px 12px;
+}
+
+/* Save Settings button styling */
+#saveSettings {
+    display: block;
+    margin: 20px auto 20px auto;
+    padding: 8px 16px;
+    font-size: 11px;
+}
+
+/* API Configuration actions container */
+.api-config-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #444;
+}

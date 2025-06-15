@@ -1,0 +1,247 @@
+/* Layout Styles - Main containers, sidebar, and chat areas */
+
+/* Main AIM Container */
+.aim-container {
+    display: flex;
+    height: 100vh;
+    background: #2c2c2c;
+}
+
+/* Chat Sidebar (Buddy List Style) */
+.chat-sidebar {
+    width: 250px;
+    background: #3a3a3a;
+    border-right: 2px inset #2c2c2c;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
+    color: white;
+    padding: 8px;
+    border-bottom: 1px solid #0a1a2a;
+}
+
+.user-info {
+    text-align: center;
+}
+
+.user-name {
+    font-weight: bold;
+    font-size: 16px;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.user-status {
+    font-size: 10px;
+    color: #b3d9ff;
+}
+
+.chat-controls {
+    padding: 5px;
+    background: #3a3a3a;
+    border-bottom: 1px inset #2c2c2c;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.chat-list-header {
+    background: #4a4a4a;
+    padding: 5px 8px;
+    border-bottom: 1px inset #2c2c2c;
+    font-weight: bold;
+    font-size: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #e0e0e0;
+}
+
+.conductor-toggle {
+    font-size: 9px;
+    font-weight: normal;
+}
+
+.conductor-toggle label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    color: #b3d9ff;
+}
+
+.conductor-toggle input[type="checkbox"] {
+    width: 12px;
+    height: 12px;
+}
+
+.chat-list {
+    flex: 1;
+    overflow-y: auto;
+    background: #1e1e1e;
+    border: 1px inset #2c2c2c;
+    margin: 3px;
+}
+
+.chat-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-bottom: 1px solid #333;
+    font-size: 11px;
+    color: #e0e0e0;
+}
+
+.chat-item:hover {
+    background: #2a4a7a;
+}
+
+.chat-item.active {
+    background: #1a4a7a;
+    color: white;
+}
+
+.chat-item-title {
+    font-weight: bold;
+    margin-bottom: 2px;
+}
+
+.chat-item-preview {
+    font-size: 9px;
+    color: #999;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-item.active .chat-item-preview {
+    color: #b3d9ff;
+}
+
+.chat-item-time {
+    font-size: 9px;
+    color: #666;
+    float: right;
+}
+
+.chat-item.active .chat-item-time {
+    color: #b3d9ff;
+}
+
+.chat-item-content {
+    flex: 1;
+    cursor: pointer;
+}
+
+.chat-delete-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 16px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 2px;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+.chat-delete-btn:hover {
+    background: #444;
+    color: #ff6666;
+}
+
+.chat-item.active .chat-delete-btn {
+    color: #999;
+}
+
+.chat-item.active .chat-delete-btn:hover {
+    background: #2a4a7a;
+    color: #ff9999;
+}
+
+/* Main Chat Area */
+.chat-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+}
+
+.chat-header {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+    border-bottom: 1px solid #555;
+    padding: 8px 12px;
+    min-height: 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chat-title-section {
+    flex: 1;
+}
+
+.model-selector-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.model-label {
+    font-size: 11px;
+    color: #b0b0b0;
+    font-weight: 500;
+}
+
+.chat-title {
+    font-weight: bold;
+    font-size: 12px;
+    color: #e0e0e0;
+}
+
+.chat-info {
+    font-size: 10px;
+    color: #999;
+    margin-top: 2px;
+}
+
+/* Messages Container */
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: #1e1e1e;
+    padding: 5px;
+    height: 0; /* Force flex child to respect parent height */
+}
+
+.messages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 100%;
+    padding-bottom: 10px;
+}
+
+/* Input Container */
+.input-container {
+    background: #3a3a3a;
+    border-top: 1px solid #555;
+    padding: 8px;
+    display: flex;
+    gap: 8px;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .chat-sidebar {
+        width: 200px;
+    }
+}

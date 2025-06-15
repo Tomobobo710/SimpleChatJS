@@ -1,0 +1,144 @@
+/* Modal Styles - Modal windows, popups, and dialogs */
+
+/* Modals */
+.aim-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.aim-modal.hidden {
+    display: none;
+}
+
+.aim-modal-content {
+    background: #2c2c2c;
+    border: 2px outset #555;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+}
+
+.aim-modal-header {
+    background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
+    color: white;
+    padding: 6px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+}
+
+.aim-modal-title {
+    font-size: 11px;
+}
+
+.close, .close-mcp {
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #555;
+    border: 1px outset #777;
+    color: #e0e0e0;
+}
+
+.close:hover, .close-mcp:hover {
+    background: #666;
+}
+
+.close:active, .close-mcp:active {
+    border: 1px inset #555;
+}
+
+/* MCP Config Modal specific sizing */
+#mcpConfigModal .aim-modal-content {
+    max-width: 800px;
+    max-height: 90vh;
+}
+
+/* MCP Config textarea specific styling */
+#mcpConfigText {
+    min-height: 300px;
+    max-height: 400px;
+    font-family: Consolas, 'Courier New', monospace;
+    white-space: pre;
+    overflow: auto;
+    word-wrap: normal;
+    overflow-wrap: normal;
+    line-height: 1.4;
+    background: #1a1a1a;
+    border: 1px inset #333;
+    color: #f0f0f0;
+    padding: 8px;
+    resize: vertical;
+}
+
+#mcpConfigText {
+    height: 300px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    resize: vertical;
+}
+
+/* Tab Navigation */
+.tab-navigation {
+    display: flex;
+    background: #2c2c2c;
+    border-bottom: 1px solid #555;
+    margin: 0;
+    padding: 0;
+}
+
+.tab-button {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+    border: 1px outset #555;
+    border-bottom: none;
+    padding: 6px 12px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+    color: #e0e0e0;
+    margin-right: 2px;
+    position: relative;
+}
+
+.tab-button:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
+}
+
+.tab-button.active {
+    background: #2c2c2c;
+    color: #e0e0e0;
+    border: 1px inset #555;
+    border-bottom: 1px solid #2c2c2c;
+    z-index: 1;
+}
+
+.tab-button:active {
+    border: 1px inset #555;
+}
+
+/* Tab Content */
+.tab-content {
+    display: none;
+    min-height: 350px;
+    padding: 5px 0;
+}
+
+.tab-content.active {
+    display: block;
+}

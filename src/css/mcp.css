@@ -1,0 +1,71 @@
+/* MCP Styles - Model Context Protocol server and tool styling */
+
+/* MCP Server Styling */
+.mcp-controls {
+    margin-bottom: 15px;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+#mcpServers {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px inset #555;
+    background: #1e1e1e;
+    padding: 8px;
+    margin-top: 10px;
+}
+
+.mcp-server {
+    background: #1e1e1e;
+    border: 1px inset #555;
+    margin: 8px 0;
+    padding: 8px;
+}
+
+.mcp-server-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    font-weight: bold;
+    color: #b3d9ff;
+}
+
+.mcp-server-toggle {
+    margin-right: 8px;
+}
+
+.mcp-server-name {
+    flex: 1;
+}
+
+.mcp-server-status {
+    font-size: 10px;
+    color: #90ee90;
+}
+
+.mcp-server-status.disconnected {
+    color: #ff9999;
+}
+
+.mcp-tools {
+    margin-left: 20px;
+    margin-top: 6px;
+}
+
+.mcp-tool {
+    display: flex;
+    align-items: center;
+    margin: 3px 0;
+    font-size: 10px;
+    color: #e0e0e0;
+}
+
+.mcp-tool-toggle {
+    margin-right: 6px;
+}
+
+.mcp-tool-name {
+    flex: 1;
+}

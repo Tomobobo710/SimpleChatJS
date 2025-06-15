@@ -1,0 +1,210 @@
+/* Debug Styles - Debug panels, tool events, and developer tools */
+
+/* Debug Panel Styling */
+.debug-toggle {
+    position: absolute;
+    top: 2px;
+    right: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ccc;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+
+.debug-toggle:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.debug-toggle.active {
+    background: rgba(74, 144, 226, 0.3);
+    border-color: rgba(74, 144, 226, 0.5);
+    color: #4a90e2;
+}
+
+.debug-panel {
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    line-height: 1.4;
+    max-height: 300px;
+    overflow-y: auto;
+    transition: all 0.3s ease;
+}
+
+.debug-panel.hidden {
+    display: none;
+}
+
+.debug-section {
+    margin-bottom: 12px;
+}
+
+.debug-section:last-child {
+    margin-bottom: 0;
+}
+
+.debug-section-title {
+    color: #4a90e2;
+    font-weight: bold;
+    margin-bottom: 6px;
+    font-size: 11px;
+}
+
+.debug-content {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 8px;
+    border-radius: 4px;
+    border-left: 3px solid #4a90e2;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #e0e0e0;
+}
+
+.debug-json {
+    color: #98d982;
+}
+
+.debug-warning {
+    color: #f39c12;
+}
+
+.debug-error {
+    color: #e74c3c;
+}
+
+/* Debug subsection styling */
+.debug-subsection {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.debug-subsection-title {
+    color: #f39c12;
+    font-weight: bold;
+    margin-bottom: 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.debug-text {
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 3px solid #f39c12;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+/* Debug dropdown styles */
+.debug-dropdown {
+    margin: 8px 0;
+}
+
+.debug-dropdown-toggle {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: rgba(74, 144, 226, 0.1);
+    border: 1px solid rgba(74, 144, 226, 0.3);
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.debug-dropdown-toggle:hover {
+    background: rgba(74, 144, 226, 0.15);
+}
+
+.debug-dropdown-arrow {
+    color: #4a90e2;
+    font-size: 10px;
+    transition: transform 0.2s ease;
+}
+
+.debug-dropdown-title {
+    color: #4a90e2;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.debug-dropdown-content {
+    margin-top: 4px;
+}
+
+/* NEW: Styles for sequential debug format */
+.debug-timestamp {
+    font-size: 9px;
+    color: #888;
+    margin-bottom: 4px;
+    font-style: italic;
+}
+
+.debug-legacy-notice {
+    background: rgba(255, 165, 0, 0.1);
+    border: 1px solid rgba(255, 165, 0, 0.3);
+    color: #ffb347;
+    padding: 6px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 10px;
+    text-align: center;
+}
+
+/* Different colors for different step types */
+.debug-section[data-step-type="request"] .debug-section-title {
+    color: #4a90e2; /* Blue for requests */
+}
+
+.debug-section[data-step-type="response"] .debug-section-title {
+    color: #50c878; /* Green for responses */
+}
+
+.debug-section[data-step-type="tool_execution"] .debug-section-title {
+    color: #ffa500; /* Orange for tool execution */
+}
+
+.debug-section[data-step-type="tool_result"] .debug-section-title {
+    color: #90ee90; /* Light green for tool results */
+}
+
+.debug-section[data-step-type="tool_result"][data-status="error"] .debug-section-title {
+    color: #ff6b6b; /* Red for failed tools */
+}
+
+/* Conductor-specific styling */
+.debug-section[data-step-type="backend_response"] .debug-section-title {
+    color: #9370db; /* Purple for backend responses */
+}
+
+.debug-section[data-has-tools="true"] .debug-section-title {
+    color: #ffd700; /* Gold for responses with tool calls */
+}
+
+.conductor-debug {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 4px 8px;
+    margin: 2px 0;
+    font-size: 9px;
+    color: #888;
+    border-radius: 2px;
+}

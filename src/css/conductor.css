@@ -1,0 +1,33 @@
+/* Conductor Styles - Conductor mode specific styling */
+
+/* Conductor Mode Styles - moved from JavaScript */
+.conductor-phase-marker {
+    background: linear-gradient(135deg, #2a4a2a, #1a3a1a);
+    border: 1px solid #4a6a4a;
+    border-radius: 8px;
+    margin: 16px 0;
+    padding: 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    overflow: hidden;
+}
+
+.phase-marker-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+}
+
+.phase-text {
+    color: #90ee90;
+    font-weight: bold;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.phase-timestamp {
+    color: #70a070;
+    font-size: 9px;
+    opacity: 0.8;
+}

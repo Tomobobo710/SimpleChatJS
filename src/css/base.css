@@ -1,0 +1,82 @@
+/* Base Styles - Reset, fonts, and global styling */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    background: #2c2c2c;
+    color: #e0e0e0;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Scrollbar styling for Webkit browsers */
+::-webkit-scrollbar {
+    width: 16px;
+}
+
+::-webkit-scrollbar-track {
+    background: #2c2c2c;
+    border: 1px inset #555;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+    border: 1px outset #555;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
+}
+
+::-webkit-scrollbar-thumb:active {
+    border: 1px inset #555;
+}
+
+::-webkit-scrollbar-corner {
+    background: #2c2c2c;
+}
+
+/* Notification system */
+.notification {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+    z-index: 2000;
+    border: 1px solid;
+    max-width: 300px;
+    word-wrap: break-word;
+}
+
+.notification.success {
+    background: #2a4a2a;
+    color: #90ee90;
+    border-color: #4a6a4a;
+}
+
+.notification.error {
+    background: #4a2a2a;
+    color: #ff9999;
+    border-color: #6a4a4a;
+}
+
+.notification.warning {
+    background: #4a3a2a;
+    color: #ffcc99;
+    border-color: #6a5a4a;
+}
+
+.notification.fade-out {
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+}

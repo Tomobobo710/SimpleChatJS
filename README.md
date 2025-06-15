@@ -1,13 +1,14 @@
-# SimpleChatJS
+# SimpleChat JS
 
 A lightweight, no-frills AI chat application built with pure JavaScript and Node.js. Designed for developers who appreciate clean code, simple architecture, and direct control over their chat interface.
+
+![SimpleChat JS Interface](https://imgur.com/a/WLaP9Bo)
 
 ## Philosophy
 
 SimpleChat JS embraces a back-to-basics approach:
 
 - **Pure JavaScript Frontend** - No React, Vue, or complex frameworks. Just vanilla JS, HTML, and CSS that any developer can understand and modify.
-- **User Facing Debug Info** - Each conversation turn has a toggleable dropdown for investigation of API chatter.
 - **Clean Architecture** - Well-organized backend with clear separation of concerns. Easy to extend and maintain.
 - **OpenAI Compatible** - Works with any OpenAI-compatible API including Ollama, providing flexibility in your AI provider choice.
 - **MCP Integration** - Built-in support for Model Context Protocol, enabling powerful tool integrations.
@@ -20,11 +21,6 @@ SimpleChat JS embraces a back-to-basics approach:
 - Real-time streaming responses
 - Clean, dark-mode interface
 - Message history and chat management
-
-### File-based Storage
-- All settings and chat info stored locally
-- No browser or os-side storage at all
-- Portable
 
 ### Model Context Protocol (MCP) Support
 - Connect to MCP servers for enhanced AI capabilities
@@ -86,9 +82,7 @@ You'll need an AI API server running before starting SimpleChat JS. This could b
 
 ### MCP Setup (Optional)
 
-The MCP sdk includes some common "file system" MCP tools that are by default enabled and ready to go.
-
-To disable tool integrations:
+To enable tool integrations:
 
 1. Click the "MCP Config" button in the interface
 2. Configure your MCP servers in the JSON editor
