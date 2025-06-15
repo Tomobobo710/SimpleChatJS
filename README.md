@@ -2,7 +2,7 @@
 
 A lightweight, no-frills AI chat application built with pure JavaScript and Node.js. Designed for developers who appreciate clean code, simple architecture, and direct control over their chat interface.
 
-![SimpleChat JS Interface](https://imgur.com/a/WLaP9Bo)
+![image](https://github.com/user-attachments/assets/da1e06d8-a8d1-4ec4-84de-fb105be1f13c)
 
 ## Philosophy
 
