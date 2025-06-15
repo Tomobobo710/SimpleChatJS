@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat - AIM Style</title>
+    <link rel="stylesheet" href="src/css/style.css">
+</head>
+<body>
+    <div class="aim-container">
+        <!-- Chat List Sidebar -->
+        <div class="chat-sidebar">
+            <div class="sidebar-header">
+                <div class="user-info">
+                    <div class="user-name">SimpleChat User</div>
+                    <div class="user-status">Online</div>
+                </div>
+            </div>
+            
+            <div class="chat-controls">
+                <button id="newChatBtn" class="aim-button">New Chat</button>
+                <button id="settingsBtn" class="aim-button">Settings</button>
+            </div>
+            
+            <div class="chat-list-header">
+                <span>Chat History</span>
+                <div class="conductor-toggle">
+                    <label>
+                        <input type="checkbox" id="conductorMode"> Conductor
+                    </label>
+                </div>
+            </div>
+            
+            <div id="chatList" class="chat-list">
+                <!-- Chat items will be populated here -->
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="chat-main">
+            <div class="chat-header">
+                <div class="chat-title-section">
+                    <div class="chat-title" id="chatTitle">Select or create a new chat</div>
+                    <div class="chat-info" id="chatInfo"></div>
+                </div>
+                <div class="model-selector-section">
+                    <label for="mainModelSelect" class="model-label">Model:</label>
+                    <select id="mainModelSelect" class="model-dropdown">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="messagesContainer" class="messages-container">
+                <div id="messages" class="messages"></div>
+            </div>
+            
+            <div id="inputContainer" class="input-container">
+                <textarea id="messageInput" placeholder="Type your message and press Enter..." rows="2"></textarea>
+                <button id="sendBtn" class="send-button">Send</button>
+            </div>
+        </div>
+
+        </div>
+        
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="aim-modal hidden">
+            <div class="aim-modal-content">
+                <div class="aim-modal-header">
+                    <span class="aim-modal-title">Settings</span>
+                    <span class="close">&times;</span>
+                </div>
+                
+                <!-- Tab Navigation -->
+                <div class="tab-navigation">
+                    <button class="tab-button active" data-tab="general">General</button>
+                    <button class="tab-button" data-tab="mcp">MCP</button>
+                    <button class="tab-button" data-tab="debug">Debug</button>
+                    <button class="tab-button" data-tab="logging">Logging</button>
+                </div>
+                
+                <!-- General Tab -->
+                <div id="generalTab" class="tab-content active">
+                    <div class="settings-section">
+                        <h3>API Configuration</h3>
+                        <label for="apiUrl">API URL (required):</label>
+                        <input type="text" id="apiUrl" placeholder="http://localhost:11434/v1 (Ollama) or https://api.openai.com/v1">
+                        
+                        <label for="apiKey">API Key (optional for local APIs):</label>
+                        <input type="password" id="apiKey" placeholder="Leave empty for local APIs like Ollama">
+                        
+                        <label for="modelName">Model:</label>
+                        <div class="model-selector-container">
+                            <select id="modelSelect" class="model-dropdown">
+                                <option value="">-- Select a model --</option>
+                            </select>
+                            <input type="text" id="modelName" placeholder="Or enter custom model name" class="model-input">
+                            <button type="button" id="refreshModelsBtn" class="refresh-models-btn" title="Refresh model list">🔄</button>
+                        </div>
+                        
+                        <div class="api-config-actions">
+                            <button id="testConnectionBtn" class="test-connection-btn">Test Connection</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- MCP Tab -->
+                <div id="mcpTab" class="tab-content">
+                    <div class="settings-section">
+                        <div class="mcp-controls">
+                            <button id="refreshMcpBtn" class="aim-button">Refresh MCP Servers</button>
+                            <button id="mcpConfigBtn" class="aim-button">MCP Config</button>
+                        </div>
+                        <div id="mcpServers">
+                            <p>Loading MCP servers...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Debug Tab -->
+                <div id="debugTab" class="tab-content">
+                    <div class="settings-section">
+                        <h3>Debug Options</h3>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="debugPanels" />
+                            <label for="debugPanels">Show debug panels (+ button on messages)</label>
+                        </div>
+                        <p class="setting-description">Enable debug information panels that show API requests, tool filtering, and response metadata for each message.</p>
+                        
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="showPhaseMarkers" />
+                            <label for="showPhaseMarkers">Show phase markers (conductor mode)</label>
+                        </div>
+                        <p class="setting-description">Display visual phase markers during conductor mode conversations showing current phase progress.</p>
+                    </div>
+                </div>
+                
+                <!-- Logging Tab -->
+                <div id="loggingTab" class="tab-content">
+                    <div class="settings-section">
+                        <h3>Logging</h3>
+                        <label for="logLevel">Log Level:</label>
+                        <select id="logLevel">
+                            <option value="DEBUG">DEBUG (All logs)</option>
+                            <option value="INFO" selected>INFO (Normal operation)</option>
+                            <option value="WARN">WARN (Warnings and errors)</option>
+                            <option value="ERROR">ERROR (Errors only)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button id="saveSettings" class="aim-button">Save Settings</button>
+            </div>
+        </div>
+
+        <!-- MCP Config Modal -->
+        <div id="mcpConfigModal" class="aim-modal hidden">
+            <div class="aim-modal-content" style="max-width: 800px;">
+                <div class="aim-modal-header">
+                    <span class="aim-modal-title">MCP Configuration</span>
+                    <span class="close-mcp">&times;</span>
+                </div>
+                
+                <p>Configure MCP servers using Claude Desktop JSON format:</p>
+                
+                <div class="settings-section">
+                    <label for="mcpConfigText">MCP Config JSON:</label>
+                    <textarea id="mcpConfigText" rows="20" placeholder='{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/files"]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "your-api-key"
+      }
+    }
+  }
+}'></textarea>
+                </div>
+
+                <div class="button-group">
+                    <button id="saveMcpConfig" class="aim-button">Save MCP Config</button>
+                    <button id="testMcpConfig" class="aim-button">Check JSON Format</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 1998-style script tags -->
+    <!-- Core app utilities -->
+    <script src="src/js/app/logger.js"></script>
+    <script src="src/js/app/utils.js"></script>
+    <script src="src/js/app/api.js"></script>
+    
+    <!-- Rendering system -->
+    <script src="src/js/render/blocks.js"></script>
+    <script src="src/js/render/streamingDropdowns.js"></script>
+    <script src="src/js/render/streamingMessageProcessor.js"></script>
+    <script src="src/js/render/chatRenderer.js"></script>
+    <script src="src/js/render/liveRenderer.js"></script>
+    
+    <!-- Tools -->
+    <script src="src/js/tools/mcp.js"></script>
+    <script src="src/js/tools/toolHandler.js"></script>
+    
+    <!-- UI components -->
+    <script src="src/js/ui/debugPanel.js"></script>
+    <script src="src/js/ui/settings.js"></script>
+    <script src="src/js/ui/ui.js"></script>
+    
+    <!-- Chat functionality -->
+    <script src="src/js/chat/conductorDebugData.js"></script>
+    <script src="src/js/chat/conductor.js"></script>
+    <script src="src/js/chat/simpleChatMode.js"></script>
+    <script src="src/js/chat/chatManager.js"></script>
+    
+    <!-- Main application -->
+    <script src="src/js/app/main.js"></script>
+</body>
+</html>
