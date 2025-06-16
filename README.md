@@ -48,7 +48,18 @@ You'll need an AI API server running before starting SimpleChat JS. This could b
 - **OpenAI API** with your API key
 - **Any OpenAI-compatible API** (LM Studio, vLLM, etc.)
 
-### Installation
+### Requiremnets not currently installed/included
+
+- Node.js
+
+### Simple setup
+
+Just run start.bat/start.sh.
+
+- All node dependencies will be installed
+- Server will start and you can connect to the localhost on port 5500 in a browser
+
+### DIY Installation
 
 1. Clone or download this repository
 2. Install dependencies:
