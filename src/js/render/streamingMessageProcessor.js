@@ -5,9 +5,8 @@ class StreamingMessageProcessor {
         this.buffer = '';
         this.state = 'normal'; // 'normal', 'thinking', 'tool'
         this.blocks = [];
-        this.currentBlockContent = '';
-        this.currentBlockType = 'chat';
         this.currentThinkingBlock = null;
+        this.currentToolContent = ''; // Accumulate tool content across chunks
     }
     
     // Add chunk of streaming content
@@ -38,11 +37,11 @@ class StreamingMessageProcessor {
     checkForThinkingStart() {
         const thinkStartIndex = this.buffer.indexOf('<think>');
         if (thinkStartIndex !== -1) {
-            // Save any content before <think> as a chat block
+            // Create chat block for any content before <think>
             if (thinkStartIndex > 0) {
                 const contentBefore = this.buffer.slice(0, thinkStartIndex).trim();
                 if (contentBefore) {
-                    this.finalizeCurrentBlock(contentBefore, 'chat');
+                    this.createChatBlock(contentBefore);
                 }
             }
             
@@ -55,8 +54,7 @@ class StreamingMessageProcessor {
             this.blocks.push(thinkingBlock);
             this.currentThinkingBlock = thinkingBlock;
             
-            // Start new thinking block tracking
-            this.startNewBlock('thinking');
+            // Switch to thinking state
             this.buffer = this.buffer.slice(thinkStartIndex + 7); // Remove '<think>'
             this.state = 'thinking';
             logger.debug(`[PROCESSOR] THINKING BLOCK CREATED IMMEDIATELY! Total blocks: ${this.blocks.length}`);
@@ -70,27 +68,25 @@ class StreamingMessageProcessor {
         if (thinkEndIndex !== -1) {
             // Update the existing thinking block with final content
             const thinkingContent = this.buffer.slice(0, thinkEndIndex);
-            this.currentBlockContent += thinkingContent;
             
             if (this.currentThinkingBlock) {
-                this.currentThinkingBlock.content = this.currentBlockContent.trim();
+                this.currentThinkingBlock.content += thinkingContent;
+                this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
                 this.currentThinkingBlock.metadata.isStreaming = false;
-                logger.debug(`[PROCESSOR] Completed thinking block: ${this.currentBlockContent.length} chars`);
+                logger.debug(`[PROCESSOR] Completed thinking block: ${this.currentThinkingBlock.content.length} chars`);
             }
             
             // Continue with normal content
             this.buffer = this.buffer.slice(thinkEndIndex + 8); // Remove '</think>'
-            this.startNewBlock('chat');
             this.state = 'normal';
             this.currentThinkingBlock = null;
             return true;
         } else {
             // Still in thinking block, accumulate content and update live
-            this.currentBlockContent += this.buffer;
-            
             if (this.currentThinkingBlock) {
-                this.currentThinkingBlock.content = this.currentBlockContent.trim();
-                logger.debug(`[PROCESSOR] Updating thinking content: ${this.currentBlockContent.length} chars`);
+                this.currentThinkingBlock.content += this.buffer;
+                this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
+                logger.debug(`[PROCESSOR] Updating thinking content: ${this.currentThinkingBlock.content.length} chars`);
             }
             
             this.buffer = '';
@@ -101,16 +97,16 @@ class StreamingMessageProcessor {
     checkForToolStart() {
         const toolStartIndex = this.buffer.indexOf('[Executing tools...]');
         if (toolStartIndex !== -1) {
-            // Save any content before tool marker as a chat block
+            // Create chat block for any content before tool marker
             if (toolStartIndex > 0) {
                 const contentBefore = this.buffer.slice(0, toolStartIndex).trim();
                 if (contentBefore) {
-                    this.finalizeCurrentBlock(contentBefore, 'chat');
+                    this.createChatBlock(contentBefore);
                 }
             }
             
-            // Start tool block
-            this.startNewBlock('tool');
+            // Switch to tool state and reset tool accumulator
+            this.currentToolContent = '';
             this.buffer = this.buffer.slice(toolStartIndex + 20); // Remove '[Executing tools...]'
             this.state = 'tool';
             return true;
@@ -121,38 +117,50 @@ class StreamingMessageProcessor {
     checkForToolEnd() {
         const toolEndIndex = this.buffer.indexOf('[Tools completed]');
         if (toolEndIndex !== -1) {
-            // Finalize tool block
-            const toolContent = this.buffer.slice(0, toolEndIndex);
-            this.currentBlockContent += toolContent;
-            this.finalizeCurrentBlock(this.currentBlockContent, 'tool');
+            // Add final chunk to accumulated tool content
+            const finalChunk = this.buffer.slice(0, toolEndIndex);
+            this.currentToolContent += finalChunk;
+            
+            // Create tool block with all accumulated content
+            if (this.currentToolContent.trim()) {
+                this.createToolBlock(this.currentToolContent.trim());
+            }
             
             // Continue with normal content
             this.buffer = this.buffer.slice(toolEndIndex + 17); // Remove '[Tools completed]'
-            this.startNewBlock('chat');
             this.state = 'normal';
             return true;
         } else {
-            // Still in tool section, accumulate content
-            this.currentBlockContent += this.buffer;
+            // Still in tool section, accumulate content and clear buffer
+            this.currentToolContent += this.buffer;
             this.buffer = '';
         }
         return false;
     }
     
-    startNewBlock(type) {
-        this.currentBlockType = type;
-        this.currentBlockContent = '';
-    }
-    
-    finalizeCurrentBlock(content, type) {
+    // Create a chat block immediately
+    createChatBlock(content) {
         if (content.trim()) {
             const block = {
-                type: type,
+                type: 'chat',
                 content: content.trim(),
-                metadata: this.extractMetadata(content, type)
+                metadata: {}
             };
             this.blocks.push(block);
-            logger.debug(`[PROCESSOR] Created ${type} block: ${content.length} chars`);
+            logger.debug(`[PROCESSOR] Created chat block: ${content.length} chars`);
+        }
+    }
+    
+    // Create a tool block immediately
+    createToolBlock(content) {
+        if (content.trim()) {
+            const block = {
+                type: 'tool',
+                content: content.trim(),
+                metadata: this.extractMetadata(content, 'tool')
+            };
+            this.blocks.push(block);
+            logger.debug(`[PROCESSOR] Created tool block: ${content.length} chars`);
         }
     }
     
@@ -173,24 +181,26 @@ class StreamingMessageProcessor {
     finalize() {
         logger.debug(`[PROCESSOR] Finalizing in state: ${this.state}, blocks: ${this.blocks.length}`);
         
-        // Handle any remaining content
-        if (this.state === 'thinking' && this.currentBlockContent.trim()) {
-            // DON'T create a new thinking block - we already have one!
-            // Just make sure the existing thinking block has the final content
+        // Handle any remaining content based on current state
+        if (this.state === 'thinking') {
+            // Update existing thinking block if we have one
             if (this.currentThinkingBlock) {
-                this.currentThinkingBlock.content = this.currentBlockContent.trim();
+                this.currentThinkingBlock.content += this.buffer;
+                this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
                 this.currentThinkingBlock.metadata.isStreaming = false;
-                logger.debug(`[PROCESSOR] Updated existing thinking block instead of creating duplicate`);
+                logger.debug(`[PROCESSOR] Finalized existing thinking block`);
             }
-        } else if (this.state === 'tool' && this.currentBlockContent.trim()) {
-            this.finalizeCurrentBlock(this.currentBlockContent, 'tool');
-        } else if (this.state === 'normal' && this.buffer.trim()) {
-            this.finalizeCurrentBlock(this.buffer, 'chat');
-        }
-        
-        // Add any accumulated current block content
-        if (this.currentBlockContent.trim() && this.state === 'normal') {
-            this.finalizeCurrentBlock(this.currentBlockContent, 'chat');
+        } else if (this.state === 'tool') {
+            // Add any remaining buffer to tool content and create block
+            this.currentToolContent += this.buffer;
+            if (this.currentToolContent.trim()) {
+                this.createToolBlock(this.currentToolContent.trim());
+            }
+        } else if (this.state === 'normal') {
+            // Create chat block for any remaining normal content
+            if (this.buffer.trim()) {
+                this.createChatBlock(this.buffer);
+            }
         }
         
         logger.debug(`[PROCESSOR] Finalized with ${this.blocks.length} blocks`);

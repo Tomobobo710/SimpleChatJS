@@ -77,19 +77,25 @@ async function handleSimpleChat(message) {
     const liveRenderer = new ChatRenderer(tempContainer);
     
     try {
-        const response = await sendMessageWithTools(message, false, enabledToolDefinitions); // Pass actual tool definitions
+        // Generate messageId upfront and connect to tool events BEFORE making the request
+        const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        console.log('[SIMPLE-CHAT] Generated messageId:', messageId);
         
-        // Get message ID for tool events
-        const messageId = response.headers.get('X-Message-Id');
+        // Connect to tool events stream immediately
+        console.log('[SIMPLE-CHAT] Connecting to SSE:', `${window.location.origin}/api/tools/${messageId}`);
+        toolEventSource = new EventSource(`${window.location.origin}/api/tools/${messageId}`);
+        toolEventSource.onmessage = (event) => {
+            const toolEvent = JSON.parse(event.data);
+            console.log('[SIMPLE-CHAT] Received tool event:', toolEvent.type, toolEvent.data);
+            handleToolEvent(toolEvent, processor, liveRenderer, tempContainer);
+        };
+        toolEventSource.onerror = (error) => {
+            console.error('[SIMPLE-CHAT] SSE error:', error);
+        };
         
-        // Connect to tool events stream if we have a message ID
-        if (messageId) {
-            toolEventSource = new EventSource(`${window.location.origin}/api/tools/${messageId}`);
-            toolEventSource.onmessage = (event) => {
-                const toolEvent = JSON.parse(event.data);
-                handleToolEvent(toolEvent, processor, liveRenderer, tempContainer);
-            };
-        }
+        // Now make the request with the pre-generated messageId
+        console.log('[SIMPLE-CHAT] Making request with messageId:', messageId);
+        const response = await sendMessageWithTools(message, false, enabledToolDefinitions, null, null, false, false, messageId);
         
         // Stream the response cleanly - no debug parsing needed!
         for await (const chunk of streamResponse(response)) {
@@ -110,7 +116,7 @@ async function handleSimpleChat(message) {
         // After streaming completes, fetch debug data separately
         let debugData = null;
         
-        logger.info('[DEBUG-SEPARATION] Message ID from response headers:', messageId);
+        logger.info('[DEBUG-SEPARATION] Using pre-generated message ID:', messageId);
         
         if (messageId) {
             try {

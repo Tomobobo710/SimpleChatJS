@@ -1,10 +1,17 @@
-// Chat Service - Handle AI chat logic, streaming, and tool execution
+// Chat Service - Handle AI chat logic, streaming, and tool execution with adapters per api
 const https = require('https');
 const http = require('http');
 const { log } = require('../utils/logger');
+
+// Simple debug flag for adapter logs - set DEBUG=1 to enable
+const DEBUG_ADAPTERS = process.env.DEBUG === '1';
 const { getCurrentSettings } = require('./settingsService');
 const { executeMCPTool, getAvailableToolsForChat } = require('./mcpService');
 const { addToolEvent, storeDebugData } = require('./toolEventService');
+
+// Import adapter system
+const responseAdapterFactory = require('../adapters/ResponseAdapterFactory');
+const UnifiedResponse = require('../adapters/UnifiedResponse');
 
 // Handle chat with potential tool calls
 async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, messageId = null, existingDebugData = null, conductorPhase = null, blockToolExecution = false, blockRecursiveToolResponse = false) {
@@ -16,24 +23,30 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         return;
     }
     
-    const requestData = {
-        model: currentSettings.modelName,
-        messages: messages,
-        stream: true,
-        //think: false,
-        //extra_body: {"think": false},
-        //options: {"enable_thinking": false},
-        ...(tools.length > 0 ? { tools } : {})
-    };
+    // Get the appropriate adapter for current settings
+    const adapter = responseAdapterFactory.getAdapter(currentSettings);
+    log(`[ADAPTER] Using ${adapter.providerName} adapter`);
     
-    // Set up streaming response FIRST before any writes (only if headers not already sent)
+    // Set up tool event emitter for the adapter
+    adapter.setToolEventEmitter((eventType, data, msgId) => {
+        if (msgId) {
+            addToolEvent(msgId, { type: eventType, data: data });
+        }
+    });
+    
+    // Create unified request
+    const unifiedRequest = responseAdapterFactory.createUnifiedRequest(messages, tools, currentSettings.modelName);
+    
+    // Convert to provider-specific format
+    const requestData = adapter.convertRequest(unifiedRequest);
+    
+    // Set up streaming response FIRST
     if (!res.headersSent) {
         const headers = {
             'Content-Type': 'text/plain',
             'Transfer-Encoding': 'chunked'
         };
         
-        // Add messageId header for debug data fetching
         if (messageId) {
             headers['X-Message-Id'] = messageId;
         }
@@ -41,406 +54,344 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         res.writeHead(200, headers);
     }
     
-    // Collect debug data separately - NEVER write to content stream
+    // Initialize debug data
     let collectedDebugData = existingDebugData;
     let sequenceStep = 1;
     
-    // Initialize debug data on first call, or use existing
     if (debugData && messageId && !collectedDebugData) {
         collectedDebugData = {
             messageId: messageId,
-            type: 'debug',
+            sequence: [],
             metadata: {
-                endpoint: debugData.endpoint,
+                endpoint: adapter.getEndpointUrl(currentSettings),
                 timestamp: new Date().toISOString(),
-                tools: tools,
-                settings: debugData.settings
+                tools: tools.length,
+                provider: adapter.providerName,
+                model: currentSettings.modelName
             },
-            sequence: []
+            rawData: {
+                httpResponse: {
+                    statusCode: null,
+                    statusMessage: null,
+                    headers: null
+                },
+                errors: []
+            }
         };
-    }
-    
-    // Calculate next sequence step
-    if (collectedDebugData) {
-        sequenceStep = collectedDebugData.sequence.length + 1;
         
-        // Add this request to the sequence
-        const requestStep = {
+        // Add request step to sequence
+        collectedDebugData.sequence.push({
             type: 'request',
             step: sequenceStep++,
             timestamp: new Date().toISOString(),
             data: {
-                request: requestData,
-                responseNumber: responseCounter
+                request: requestData
             }
-        };
-        
-        // Add conductor phase info if available
-        if (conductorPhase !== null) {
-            requestStep.data.conductorPhase = conductorPhase;
-        }
-        
-        collectedDebugData.sequence.push(requestStep);
+        });
     }
     
-    const url = new URL(`${currentSettings.apiUrl}/chat/completions`);
+    // Get provider-specific URL and headers
+    const targetUrl = adapter.getEndpointUrl(currentSettings);
+    const headers = adapter.getHeaders(currentSettings);
+    headers['Content-Length'] = Buffer.byteLength(JSON.stringify(requestData));
+    
+    if (DEBUG_ADAPTERS) {
+        console.log(`[${adapter.providerName.toUpperCase()}-DEBUG] URL:`, targetUrl);
+        console.log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
+    }
+    
+    const url = new URL(targetUrl);
     const options = {
         hostname: url.hostname,
         port: url.port,
-        path: url.pathname,
+        path: url.pathname + url.search,
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(JSON.stringify(requestData)),
-            ...(currentSettings.apiKey ? { 'Authorization': `Bearer ${currentSettings.apiKey}` } : {})
-        }
+        headers: headers
     };
-
     
-    let assistantMessage = '';
-    let toolCalls = [];
-    let currentToolCall = null;
+    // Create unified response object
+    const unifiedResponse = new UnifiedResponse().setProvider(adapter.providerName);
+    const context = adapter.createContext();
     
-    // Make request - old school style
+    // Make HTTP request
     const httpModule = url.protocol === 'https:' ? https : http;
     const apiReq = httpModule.request(options, (apiRes) => {
-        // Capture RAW HTTP response data for debug
-        let rawResponseData = {
-            statusCode: apiRes.statusCode,
-            statusMessage: apiRes.statusMessage,
-            headers: apiRes.headers,
-            body: ''
-        };
+        // Capture debug data
+        if (collectedDebugData) {
+            collectedDebugData.rawData.httpResponse = {
+                statusCode: apiRes.statusCode,
+                statusMessage: apiRes.statusMessage,
+                headers: apiRes.headers
+            };
+        }
         
         if (apiRes.statusCode !== 200) {
+            let errorData = '';
+            apiRes.on('data', (chunk) => {
+                errorData += chunk.toString();
+            });
+            apiRes.on('end', () => {
+                console.log(`[${adapter.providerName.toUpperCase()}-ERROR] Status:`, apiRes.statusCode);
+                console.log(`[${adapter.providerName.toUpperCase()}-ERROR] Response:`, errorData);
+                if (collectedDebugData) {
+                    collectedDebugData.errors.push({ type: 'http_error', message: errorData });
+                }
+            });
             res.write(`API error: ${apiRes.statusCode} ${apiRes.statusMessage}`);
             res.end();
             return;
         }
         
-        // Stream the response back
+        // Stream response processing
         apiRes.on('data', (chunk) => {
-            // Capture raw response body for debug
-            rawResponseData.body += chunk.toString();
-            const chunkStr = chunk.toString();
-            const lines = chunkStr.split('\n');
-            
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.slice(6).trim();
-                    if (data === '[DONE]') continue;
-                    
-                    try {
-                        const parsed = JSON.parse(data);
-                        const delta = parsed.choices?.[0]?.delta;
-                        
-                        // Handle regular content
-                        if (delta?.content) {
-                            assistantMessage += delta.content;
-                            res.write(delta.content);
-                        }
-                        
-                        // Handle tool calls - send to tool events stream
-                        if (delta?.tool_calls) {
-                            for (const toolCall of delta.tool_calls) {
-                                const index = toolCall.index;
-                                
-                                if (!toolCalls[index]) {
-                                    toolCalls[index] = {
-                                        id: toolCall.id || `call_${Date.now()}_${index}`,
-                                        type: 'function',
-                                        function: { name: '', arguments: '' }
-                                    };
-                                    
-                                    // Send tool call detected event (only if tools aren't blocked)
-                                    if (messageId && !blockToolExecution) {
-                                        addToolEvent(messageId, {
-                                            type: 'tool_call_detected',
-                                            data: {
-                                                id: toolCalls[index].id,
-                                                index: index,
-                                                name: toolCall.function?.name || '',
-                                                timestamp: new Date().toISOString()
-                                            }
-                                        });
-                                    }
-                                }
-                                
-                                if (toolCall.function?.name) {
-                                    toolCalls[index].function.name = toolCall.function.name;
-                                }
-                                
-                                if (toolCall.function?.arguments) {
-                                    toolCalls[index].function.arguments += toolCall.function.arguments;
-                                }
+            try {
+                // Process chunk with adapter
+                const result = adapter.processChunk(chunk, unifiedResponse, context);
+                
+                // Handle any events generated - THIS IS CRITICAL FOR TOOL DROPDOWNS!
+                for (const event of result.events) {
+                    if (event.type === 'tool_call_detected' && messageId) {
+                        addToolEvent(messageId, {
+                            type: 'tool_call_detected',
+                            data: {
+                                name: event.data.toolName,
+                                id: event.data.toolId
                             }
-                        }
-                    } catch (e) {
-                        // Ignore parse errors
+                        });
+                        if (DEBUG_ADAPTERS) console.log(`[ADAPTER-TOOL-EVENT] Tool call detected:`, event.data.toolName);
                     }
+                }
+                
+                // Update context
+                Object.assign(context, result.context);
+                
+                // Stream any new content to client
+                let newContent = '';
+                if (unifiedResponse.content && context.lastContentLength !== unifiedResponse.content.length) {
+                    newContent = unifiedResponse.content.slice(context.lastContentLength || 0);
+                    if (newContent) {
+                        res.write(newContent);
+                        context.lastContentLength = unifiedResponse.content.length;
+                        
+                        // Capture the actual content being sent to frontend for debug
+                        if (collectedDebugData) {
+                            if (!collectedDebugData.streamedContent) {
+                                collectedDebugData.streamedContent = '';
+                            }
+                            collectedDebugData.streamedContent += newContent;
+                        }
+                    }
+                }
+                
+                // Add to debug data (accumulate response chunks)
+                if (collectedDebugData) {
+                    if (!collectedDebugData.rawResponseChunks) {
+                        collectedDebugData.rawResponseChunks = [];
+                    }
+                    collectedDebugData.rawResponseChunks.push({
+                        chunk: chunk.toString(),
+                        timestamp: new Date().toISOString()
+                    });
+                }
+                
+            } catch (error) {
+                console.error(`[${adapter.providerName.toUpperCase()}-ADAPTER] Error processing chunk:`, error);
+                if (collectedDebugData) {
+                    collectedDebugData.rawData.errors.push({ type: 'processing_error', message: error.message });
                 }
             }
         });
         
         apiRes.on('end', async () => {
-            // If we have tool calls, check execution flags
-            if (toolCalls.length > 0) {
-                
-                // Check if tool execution is blocked (Phase 1)
-                if (blockToolExecution) {
-                    log(`[TOOLS] Tool execution blocked by flag - skipping tools and ending response`);
-                    
-                    // Add response to debug sequence showing tools were detected but blocked
-                    if (collectedDebugData) {
-                        const responseStep = {
-                            type: 'response',
-                            step: sequenceStep++,
-                            timestamp: new Date().toISOString(),
-                            data: {
-                                responseNumber: responseCounter,
-                                content: assistantMessage,
-                                tool_calls: toolCalls,
-                                finish_reason: 'tool_calls_blocked',
-                                response_length: assistantMessage.length,
-                                has_tool_calls: true,
-                                tools_blocked: true,
-                                raw_http_response: rawResponseData
-                            }
-                        };
-                        
-                        if (conductorPhase !== null) {
-                            responseStep.data.conductorPhase = conductorPhase;
-                        }
-                        
-                        collectedDebugData.sequence.push(responseStep);
-                        
-                        // Store debug data
-                        storeDebugData(messageId, collectedDebugData);
-                        log(`[DEBUG-SEPARATION] Stored debug data for blocked tools message: ${messageId}`);
-                    }
-                    
-                    // End response without executing tools
-                    res.end();
-                    return;
-                }
-                // FIRST: Add response to debug sequence (shows AI decided to call tools)
-                if (collectedDebugData) {
-                    const responseStep = {
-                        type: 'response',
-                        step: sequenceStep++,
-                        timestamp: new Date().toISOString(),
-                        data: {
-                            responseNumber: responseCounter,
-                            content: assistantMessage,
-                            tool_calls: toolCalls,
-                            finish_reason: 'tool_calls',
-                            response_length: assistantMessage.length,
-                            has_tool_calls: true,
-                            // RAW HTTP RESPONSE DATA - exactly what came back from AI API
-                            raw_http_response: rawResponseData
-                        }
-                    };
-                    
-                    // Add conductor phase info if available
-                    if (conductorPhase !== null) {
-                        responseStep.data.conductorPhase = conductorPhase;
-                    }
-                    
-                    collectedDebugData.sequence.push(responseStep);
-                }
-                
-                // THEN: Execute tools silently without contaminating response stream
-                const toolResults = [];
-                for (const toolCall of toolCalls) {
-                    const toolStartTime = new Date().toISOString();
-                    try {
-                        const args = JSON.parse(toolCall.function.arguments || '{}');
-                        
-                        // Add tool execution start to debug sequence
-                        if (collectedDebugData) {
-                            collectedDebugData.sequence.push({
-                                type: 'tool_execution',
-                                step: sequenceStep++,
-                                timestamp: toolStartTime,
-                                data: {
-                                    tool_call_id: toolCall.id,
-                                    tool_name: toolCall.function.name,
-                                    arguments: args,
-                                    status: 'starting'
-                                }
-                            });
-                        }
-                        
-                        // Send tool execution start event
-                        if (messageId) {
-                            addToolEvent(messageId, {
-                                type: 'tool_execution_start',
-                                data: {
-                                    id: toolCall.id,
-                                    name: toolCall.function.name,
-                                    arguments: args,
-                                    timestamp: toolStartTime
-                                }
-                            });
-                        }
-                        
-                        const result = await executeMCPTool(toolCall.function.name, args);
-                        
-                        // Add tool execution result to debug sequence
-                        if (collectedDebugData) {
-                            collectedDebugData.sequence.push({
-                                type: 'tool_result',
-                                step: sequenceStep++,
-                                timestamp: new Date().toISOString(),
-                                data: {
-                                    tool_call_id: toolCall.id,
-                                    tool_name: toolCall.function.name,
-                                    status: 'success',
-                                    result: result,
-                                    execution_time_ms: Date.now() - new Date(toolStartTime).getTime()
-                                }
-                            });
-                        }
-                        
-                        toolResults.push({
-                            tool_call_id: toolCall.id,
-                            role: 'tool',
-                            content: result.content || 'Tool executed successfully'
-                        });
-                        
-                        // Send tool execution success event
-                        if (messageId) {
-                            addToolEvent(messageId, {
-                                type: 'tool_execution_complete',
-                                data: {
-                                    id: toolCall.id,
-                                    name: toolCall.function.name,
-                                    status: 'success',
-                                    result: result.content || 'Tool executed successfully',
-                                    execution_time_ms: Date.now() - new Date(toolStartTime).getTime(),
-                                    timestamp: new Date().toISOString()
-                                }
-                            });
-                        }
-                        
-                    } catch (error) {
-                        const errorMsg = `Error executing ${toolCall.function.name}: ${error.message}`;
-                        
-                        // Add tool execution error to debug sequence
-                        if (collectedDebugData) {
-                            collectedDebugData.sequence.push({
-                                type: 'tool_result',
-                                step: sequenceStep++,
-                                timestamp: new Date().toISOString(),
-                                data: {
-                                    tool_call_id: toolCall.id,
-                                    tool_name: toolCall.function.name,
-                                    status: 'error',
-                                    error: errorMsg,
-                                    execution_time_ms: Date.now() - new Date(toolStartTime).getTime()
-                                }
-                            });
-                        }
-                        
-                        toolResults.push({
-                            tool_call_id: toolCall.id,
-                            role: 'tool',
-                            content: errorMsg
-                        });
-                        
-                        // Send tool execution error event
-                        if (messageId) {
-                            addToolEvent(messageId, {
-                                type: 'tool_execution_complete',
-                                data: {
-                                    id: toolCall.id,
-                                    name: toolCall.function.name,
-                                    status: 'error',
-                                    error: errorMsg,
-                                    execution_time_ms: Date.now() - new Date(toolStartTime).getTime(),
-                                    timestamp: new Date().toISOString()
-                                }
-                            });
-                        }
-                    }
-                }
-                
-                // Continue conversation with tool results (no stream contamination)
-                const newMessages = [...messages];
-                newMessages.push({
-                    role: 'assistant',
-                    content: assistantMessage,
-                    tool_calls: toolCalls
-                });
-                newMessages.push(...toolResults);
-                
-                // Check if recursive call is blocked (Phase 3)
-                if (blockRecursiveToolResponse) {
-                    log(`[TOOLS] Recursive call blocked by flag - tools executed but no follow-up request`);
-                    
-                    // Store debug data and end response
-                    if (collectedDebugData) {
-                        storeDebugData(messageId, collectedDebugData);
-                        log(`[DEBUG-SEPARATION] Stored debug data for non-recursive tools: ${messageId}`);
-                    }
-                    
-                    res.end();
-                    return;
-                }
-                
-                // Make another API call with tool results (increment counter)
-                await handleChatWithTools(res, newMessages, tools, chatId, debugData, responseCounter + 1, messageId, collectedDebugData, conductorPhase, blockToolExecution, blockRecursiveToolResponse);
-                return;
-            }
+            console.log(`[${adapter.providerName.toUpperCase()}-ADAPTER] Stream ended`);
             
-            // Add final response to sequence (no tool calls)
+            // Add response step to debug sequence
             if (collectedDebugData) {
                 const responseStep = {
                     type: 'response',
                     step: sequenceStep++,
                     timestamp: new Date().toISOString(),
                     data: {
-                        responseNumber: responseCounter,
-                        content: assistantMessage,
-                        tool_calls: toolCalls,
-                        finish_reason: 'stop',
-                        response_length: assistantMessage.length,
-                        has_tool_calls: false,
-                        // RAW HTTP RESPONSE DATA - exactly what came back from AI API
-                        raw_http_response: rawResponseData
+                        raw_http_response: {
+                            status: collectedDebugData.rawData.httpResponse.statusCode,
+                            provider: adapter.providerName,
+                            response_chunks: collectedDebugData.rawResponseChunks || []
+                        },
+                        content: collectedDebugData.streamedContent || 'No content streamed',
+                        has_tool_calls: unifiedResponse.hasToolCalls()
                     }
                 };
-                
-                // Add conductor phase info if available
-                if (conductorPhase !== null) {
-                    responseStep.data.conductorPhase = conductorPhase;
-                }
-                
                 collectedDebugData.sequence.push(responseStep);
-                
-                // Store debug data in our separate store
-                storeDebugData(messageId, collectedDebugData);
-                log(`[DEBUG-SEPARATION] Stored debug data for message: ${messageId}`);
             }
             
-            res.end();
+            // Handle tool calls if any
+            if (unifiedResponse.hasToolCalls() && !blockToolExecution) {
+                log(`[ADAPTER] Processing ${unifiedResponse.toolCalls.length} tool calls`);
+                
+                // Add tool execution steps to debug sequence
+                if (collectedDebugData) {
+                    for (const toolCall of unifiedResponse.toolCalls) {
+                        collectedDebugData.sequence.push({
+                            type: 'tool_execution',
+                            step: sequenceStep++,
+                            timestamp: new Date().toISOString(),
+                            data: {
+                                tool_name: toolCall.function.name,
+                                tool_id: toolCall.id,
+                                arguments: JSON.parse(toolCall.function.arguments)
+                            }
+                        });
+                    }
+                }
+                
+                // Execute tools and continue conversation
+                await executeToolCallsAndContinue(
+                    res, unifiedResponse.toolCalls, messages, tools, chatId, 
+                    unifiedResponse.content, collectedDebugData, responseCounter, 
+                    messageId, conductorPhase, blockRecursiveToolResponse
+                );
+            } else {
+                // No tool calls, finish response
+                res.end();
+                
+                // Store debug data
+                if (collectedDebugData && messageId) {
+                    storeDebugData(messageId, collectedDebugData);
+                    log(`[ADAPTER-DEBUG] Debug data stored for message:`, messageId);
+                }
+            }
         });
     });
     
     apiReq.on('error', (error) => {
+        log(`[${adapter.providerName.toUpperCase()}] Request error:`, error);
+        if (collectedDebugData) {
+            collectedDebugData.rawData.errors.push({ type: 'request_error', message: error.message });
+        }
         res.write(`Connection error: ${error.message}`);
         res.end();
     });
     
-    // Send request data
     apiReq.write(JSON.stringify(requestData));
     apiReq.end();
 }
 
-// Process chat request
+// Execute tool calls and continue conversation
+async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, messageId, conductorPhase, blockRecursiveToolResponse) {
+    // Add assistant message with tool calls to conversation
+    const assistantMessageWithTools = {
+        role: 'assistant',
+        content: assistantMessage || '',
+        tool_calls: toolCalls
+    };
+    messages.push(assistantMessageWithTools);
+    
+    // Execute each tool call
+    for (const toolCall of toolCalls) {
+        log(`[TOOL-EXECUTION] Executing tool: ${toolCall.function.name}`);
+        
+        if (messageId) {
+            addToolEvent(messageId, {
+                type: 'tool_execution_start',
+                data: {
+                    toolName: toolCall.function.name, 
+                    toolId: toolCall.id 
+                }
+            });
+        }
+        
+        try {
+            const toolArgs = JSON.parse(toolCall.function.arguments);
+            const toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
+            
+            const toolMessage = {
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                tool_name: toolCall.function.name,  // Add tool name for Gemini conversion
+                content: JSON.stringify(toolResult)
+            };
+            messages.push(toolMessage);
+            
+            if (messageId) {
+                addToolEvent(messageId, {
+                    type: 'tool_execution_complete',
+                    data: {
+                        toolName: toolCall.function.name, 
+                        toolId: toolCall.id,
+                        result: toolResult 
+                    }
+                });
+            }
+            
+            // Add tool result to debug sequence
+            if (debugData && debugData.sequence) {
+                debugData.sequence.push({
+                    type: 'tool_result',
+                    step: debugData.sequence.length + 1,
+                    timestamp: new Date().toISOString(),
+                    data: {
+                        tool_name: toolCall.function.name,
+                        tool_id: toolCall.id,
+                        status: 'success',
+                        result: toolResult
+                    }
+                });
+            }
+            
+        } catch (error) {
+            log(`[TOOL-EXECUTION] Error executing tool ${toolCall.function.name}:`, error);
+            
+            const errorMessage = {
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                tool_name: toolCall.function.name,  // Add tool name for Gemini conversion
+                content: JSON.stringify({ error: error.message })
+            };
+            messages.push(errorMessage);
+            
+            if (messageId) {
+                addToolEvent(messageId, {
+                    type: 'tool_execution_error',
+                    data: {
+                        toolName: toolCall.function.name, 
+                        toolId: toolCall.id,
+                        error: error.message 
+                    }
+                });
+            }
+            
+            // Add tool error to debug sequence
+            if (debugData && debugData.sequence) {
+                debugData.sequence.push({
+                    type: 'tool_result',
+                    step: debugData.sequence.length + 1,
+                    timestamp: new Date().toISOString(),
+                    data: {
+                        tool_name: toolCall.function.name,
+                        tool_id: toolCall.id,
+                        status: 'error',
+                        error: error.message
+                    }
+                });
+            }
+        }
+    }
+    
+    // Continue conversation with tool results (unless blocked)
+    if (!blockRecursiveToolResponse) {
+        await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, messageId, debugData, conductorPhase, false, true);
+    } else {
+        res.end();
+        if (debugData && messageId) {
+            storeDebugData(messageId, debugData);
+        }
+    }
+}
+
+// Process chat request (entry point from routes)
 async function processChatRequest(req, res) {
     try {
-        const { message, chat_id, conductor_mode, enabled_tools, conductor_phase, message_role, block_tool_execution, block_recursive_call } = req.body;
+        const { message, chat_id, conductor_mode, enabled_tools, conductor_phase, message_role, block_tool_execution, block_recursive_call, message_id } = req.body;
         
         if (!message) {
             return res.status(400).json({ error: 'Message is required' });
@@ -481,14 +432,16 @@ async function processChatRequest(req, res) {
         const currentSettings = getCurrentSettings();
         const debugData = {
             requestStart: Date.now(),
-            endpoint: `${currentSettings.apiUrl}/chat/completions`,
+            endpoint: 'will_be_set_by_adapter',
             settings: currentSettings,
             toolsEnabled: tools.length
         };
         
-        // Generate unique message ID for debug data
+        // Use provided message ID or generate unique message ID for debug data
         const { generateMessageId, initializeToolEvents } = require('./toolEventService');
-        const messageId = generateMessageId();
+        const messageId = message_id || generateMessageId();
+        
+        log(`[CHAT] Using message ID: ${messageId} (provided: ${!!message_id})`);
         
         // Initialize tool events for this message
         initializeToolEvents(messageId);

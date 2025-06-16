@@ -14,26 +14,34 @@ function generateMessageId() {
 
 // Initialize tool events for a message
 function initializeToolEvents(messageId) {
+    log(`[TOOL-EVENT-SERVICE] Initializing tool events for messageId: ${messageId}`);
     toolEventsStore.set(messageId, {
         events: [],
         listeners: new Set()
     });
+    log(`[TOOL-EVENT-SERVICE] Tool events initialized, store now has ${toolEventsStore.size} entries`);
 }
 
 // Add tool event
 function addToolEvent(messageId, event) {
     const toolData = toolEventsStore.get(messageId);
+    log(`[TOOL-EVENT-SERVICE] Adding event ${event.type} for messageId: ${messageId}, toolData exists: ${!!toolData}`);
     if (toolData) {
         toolData.events.push(event);
+        log(`[TOOL-EVENT-SERVICE] Event buffered, notifying ${toolData.listeners.size} listeners`);
         // Notify all listeners
         toolData.listeners.forEach(listener => {
             try {
                 listener.write(`data: ${JSON.stringify(event)}\n\n`);
+                log(`[TOOL-EVENT-SERVICE] Event sent to listener: ${event.type}`);
             } catch (e) {
+                log(`[TOOL-EVENT-SERVICE] Failed to send to listener, removing: ${e.message}`);
                 // Remove dead listeners
                 toolData.listeners.delete(listener);
             }
         });
+    } else {
+        log(`[TOOL-EVENT-SERVICE] No toolData found for messageId: ${messageId}, available messageIds:`, Array.from(toolEventsStore.keys()));
     }
 }
 
@@ -52,10 +60,12 @@ function handleToolEventsStream(req, res) {
     });
     
     // Send initial connection event
-    res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'connected', data: { messageId: messageId, timestamp: new Date().toISOString() } })}\n\n`);
     
     const toolData = toolEventsStore.get(messageId);
+    log(`[TOOL-EVENTS] Tool data exists for ${messageId}: ${!!toolData}, available messageIds:`, Array.from(toolEventsStore.keys()));
     if (toolData) {
+        log(`[TOOL-EVENTS] Sending ${toolData.events.length} existing events to client`);
         // Send any existing events
         toolData.events.forEach(event => {
             res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -63,6 +73,7 @@ function handleToolEventsStream(req, res) {
         
         // Add this response to listeners for future events
         toolData.listeners.add(res);
+        log(`[TOOL-EVENTS] Added listener, now have ${toolData.listeners.size} listeners for messageId: ${messageId}`);
         
         // Clean up when client disconnects
         req.on('close', () => {
@@ -70,8 +81,21 @@ function handleToolEventsStream(req, res) {
             log(`[TOOL-EVENTS] Client disconnected from tool events for message: ${messageId}`);
         });
     } else {
-        // No tool data yet, just keep connection open for future events
-        log(`[TOOL-EVENTS] No tool data yet for message: ${messageId}, keeping connection open`);
+        // No tool data yet, initialize it and keep connection open
+        log(`[TOOL-EVENTS] No tool data yet for message: ${messageId}, initializing and keeping connection open`);
+        toolEventsStore.set(messageId, {
+            events: [],
+            listeners: new Set([res])
+        });
+        
+        // Clean up when client disconnects
+        req.on('close', () => {
+            const data = toolEventsStore.get(messageId);
+            if (data) {
+                data.listeners.delete(res);
+                log(`[TOOL-EVENTS] Client disconnected from tool events for message: ${messageId}`);
+            }
+        });
     }
 }
 

@@ -169,27 +169,17 @@ async function handleTestConnection() {
         
         logger.info('Testing API connection', { apiUrl, model: modelName });
         
-        // Prepare test request
-        const testData = {
-            model: modelName,
-            messages: [{ role: 'user', content: 'test' }],
-            max_tokens: 1,
-            stream: false
-        };
-        
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        
-        if (apiKey) {
-            headers['Authorization'] = `Bearer ${apiKey}`;
-        }
-        
-        // Make test request
-        const response = await fetch(`${apiUrl}/chat/completions`, {
+        // Make test request via backend proxy (fixes CORS)
+        const response = await fetch(`${window.location.origin}/api/test-connection`, {
             method: 'POST',
-            headers: headers,
-            body: JSON.stringify(testData)
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                apiUrl: apiUrl,
+                apiKey: apiKey,
+                modelName: modelName
+            })
         });
         
         if (response.ok) {
@@ -232,17 +222,16 @@ async function fetchAvailableModels(apiUrl, apiKey) {
     try {
         logger.info('Fetching available models from API');
         
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        
-        if (apiKey) {
-            headers['Authorization'] = `Bearer ${apiKey}`;
-        }
-        
-        const response = await fetch(`${apiUrl}/models`, {
-            method: 'GET',
-            headers: headers
+        // Call backend proxy instead of external API directly (fixes CORS)
+        const response = await fetch(`${window.location.origin}/api/models`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                apiUrl: apiUrl,
+                apiKey: apiKey
+            })
         });
         
         if (response.ok) {

@@ -66,10 +66,8 @@ Tools Available: ${typeof debugData.metadata.tools === 'number' ? debugData.meta
                     `RAW HTTP Response (with tool calls)${phaseInfo}` :
                     `RAW HTTP Response${phaseInfo}`;
                 
-                // Get clean response content for easier reading
-                const cleanContent = step.data.content || 
-                    (rawResponse && rawResponse.choices && rawResponse.choices[0] && rawResponse.choices[0].message && rawResponse.choices[0].message.content) || 
-                    'No content available';
+                // Get response content - same source as chat bubble
+                const cleanContent = step.data.content || 'No content captured';
                 
                 content += `
                     <div class="debug-section" data-step-type="response" ${hasToolCalls ? 'data-has-tools="true"' : ''}>
