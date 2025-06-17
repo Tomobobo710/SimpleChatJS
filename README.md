@@ -1,6 +1,6 @@
 # SimpleChatJS
 
-A lightweight, no-frills AI chat application built with pure JavaScript and Node.js. Designed for developers who appreciate simple architecture, and direct control over their chat interface.
+A lightweight, no-frills AI chat application built with pure JavaScript and Node.js. Designed for developers who appreciate simple architecture, and direct transparency with their chat interface.
 
 ![image](https://github.com/user-attachments/assets/da1e06d8-a8d1-4ec4-84de-fb105be1f13c)
 
