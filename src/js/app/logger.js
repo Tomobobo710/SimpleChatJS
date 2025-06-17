@@ -101,18 +101,15 @@ class Logger {
     }
 }
 
-// Create global logger instances
+// Create global logger instance
 const logger = new Logger('CHAT');
-const conductorLogger = new Logger('CONDUCTOR');
 
 // Set default log level
 logger.setLevel('INFO');
-conductorLogger.setLevel('INFO');
 
 // Helper to change log level at runtime
 function setLogLevel(level) {
     logger.setLevel(level);
-    conductorLogger.setLevel(level);
     
     // Save via settings system
     const currentSettings = loadSettings();
@@ -125,7 +122,6 @@ function setLogLevel(level) {
 
 // Expose to global scope for easy debugging
 window.logger = logger;
-window.conductorLogger = conductorLogger;
 window.setLogLevel = setLogLevel;
 
 

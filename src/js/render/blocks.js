@@ -180,7 +180,7 @@ class BlockManager {
     
     // Debug methods
     debugBlocks() {
-        console.log('[BLOCKS] Current blocks:', this.blocks.map(block => ({
+        logger.debug('[BLOCKS] Current blocks:', this.blocks.map(block => ({
             id: block.id,
             type: block.type,
             contentLength: block.content.length,

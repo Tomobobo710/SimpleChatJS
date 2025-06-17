@@ -19,7 +19,6 @@ async function loadInitialSettings() {
         // Apply log level
         if (settings.logLevel) {
             logger.setLevel(settings.logLevel);
-            conductorLogger.setLevel(settings.logLevel);
             const logLevelSelect = document.getElementById('logLevel');
             if (logLevelSelect) logLevelSelect.value = settings.logLevel;
         }

@@ -79,22 +79,22 @@ async function handleSimpleChat(message) {
     try {
         // Generate messageId upfront and connect to tool events BEFORE making the request
         const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        console.log('[SIMPLE-CHAT] Generated messageId:', messageId);
+        logger.debug('[SIMPLE-CHAT] Generated messageId:', messageId);
         
         // Connect to tool events stream immediately
-        console.log('[SIMPLE-CHAT] Connecting to SSE:', `${window.location.origin}/api/tools/${messageId}`);
+        logger.debug('[SIMPLE-CHAT] Connecting to SSE:', `${window.location.origin}/api/tools/${messageId}`);
         toolEventSource = new EventSource(`${window.location.origin}/api/tools/${messageId}`);
         toolEventSource.onmessage = (event) => {
             const toolEvent = JSON.parse(event.data);
-            console.log('[SIMPLE-CHAT] Received tool event:', toolEvent.type, toolEvent.data);
+            logger.debug('[SIMPLE-CHAT] Received tool event:', toolEvent.type, toolEvent.data);
             handleToolEvent(toolEvent, processor, liveRenderer, tempContainer);
         };
         toolEventSource.onerror = (error) => {
-            console.error('[SIMPLE-CHAT] SSE error:', error);
+            logger.error('[SIMPLE-CHAT] SSE error:', error);
         };
         
         // Now make the request with the pre-generated messageId
-        console.log('[SIMPLE-CHAT] Making request with messageId:', messageId);
+        logger.debug('[SIMPLE-CHAT] Making request with messageId:', messageId);
         const response = await sendMessageWithTools(message, false, enabledToolDefinitions, null, null, false, false, messageId);
         
         // Stream the response cleanly - no debug parsing needed!

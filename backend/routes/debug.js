@@ -16,11 +16,8 @@ router.post('/log', (req, res) => {
     try {
         const { level, component, message, data, timestamp } = req.body;
         const logMessage = `[${timestamp}] [${level}] [${component}] ${message}`;
-        if (data) {
-            console.log(logMessage, data);
-        } else {
-            console.log(logMessage);
-        }
+        // Use the log function to maintain consistency with backend logging
+        log(logMessage, data);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });

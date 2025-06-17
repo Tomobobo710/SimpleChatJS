@@ -96,8 +96,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     headers['Content-Length'] = Buffer.byteLength(JSON.stringify(requestData));
     
     if (DEBUG_ADAPTERS) {
-        console.log(`[${adapter.providerName.toUpperCase()}-DEBUG] URL:`, targetUrl);
-        console.log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
+        log(`[${adapter.providerName.toUpperCase()}-DEBUG] URL:`, targetUrl);
+        log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
     }
     
     const url = new URL(targetUrl);
@@ -131,8 +131,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 errorData += chunk.toString();
             });
             apiRes.on('end', () => {
-                console.log(`[${adapter.providerName.toUpperCase()}-ERROR] Status:`, apiRes.statusCode);
-                console.log(`[${adapter.providerName.toUpperCase()}-ERROR] Response:`, errorData);
+                log(`[${adapter.providerName.toUpperCase()}-ERROR] Status:`, apiRes.statusCode);
+                log(`[${adapter.providerName.toUpperCase()}-ERROR] Response:`, errorData);
                 if (collectedDebugData) {
                     collectedDebugData.errors.push({ type: 'http_error', message: errorData });
                 }
@@ -158,7 +158,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                                 id: event.data.toolId
                             }
                         });
-                        if (DEBUG_ADAPTERS) console.log(`[ADAPTER-TOOL-EVENT] Tool call detected:`, event.data.toolName);
+                        if (DEBUG_ADAPTERS) log(`[ADAPTER-TOOL-EVENT] Tool call detected:`, event.data.toolName);
                     }
                 }
                 
@@ -203,7 +203,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         });
         
         apiRes.on('end', async () => {
-            console.log(`[${adapter.providerName.toUpperCase()}-ADAPTER] Stream ended`);
+            log(`[${adapter.providerName.toUpperCase()}-ADAPTER] Stream ended`);
             
             // Add response step to debug sequence
             if (collectedDebugData) {

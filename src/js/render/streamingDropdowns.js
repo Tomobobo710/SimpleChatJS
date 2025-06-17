@@ -8,7 +8,7 @@ window.debugToolFormatting = false;
 function formatToolContent(content, toolName = null, toolArgs = null) {
     // Debug: log the content we're trying to parse
     if (window.debugToolFormatting) {
-        console.log('formatToolContent input:', { content, toolName, toolArgs });
+        logger.debug('formatToolContent input:', { content, toolName, toolArgs });
     }
     
     // Extract tool name and arguments from content if not provided
@@ -23,20 +23,20 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
         const argsMatch = content.match(/Arguments?:\s*({[\s\S]*?})(?=\s*\n(?:Result:|\[)|$)/i);
         if (argsMatch) {
             if (window.debugToolFormatting) {
-                console.log('Found arguments match:', argsMatch[1]);
+                logger.debug('Found arguments match:', argsMatch[1]);
             }
             try {
                 toolArgs = JSON.parse(argsMatch[1]);
             } catch (e) {
                 if (window.debugToolFormatting) {
-                    console.log('Failed to parse arguments JSON:', e);
+                    logger.warn('Failed to parse arguments JSON:', e);
                 }
                 toolArgs = { raw: argsMatch[1].trim() };
             }
         }
         
         if (window.debugToolFormatting && (!toolName || !toolArgs)) {
-            console.log('No tool/arguments match found in content:', content);
+            logger.debug('No tool/arguments match found in content:', content);
         }
     }
     
@@ -71,7 +71,7 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
     const result = formattedContent || '<em>No tool output available</em>';
     
     if (window.debugToolFormatting) {
-        console.log('formatToolContent output:', { toolName, toolArgs, result });
+        logger.debug('formatToolContent output:', { toolName, toolArgs, result });
     }
     
     return result;
