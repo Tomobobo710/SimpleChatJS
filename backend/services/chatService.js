@@ -294,8 +294,9 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             addToolEvent(messageId, {
                 type: 'tool_execution_start',
                 data: {
-                    toolName: toolCall.function.name, 
-                    toolId: toolCall.id 
+                    name: toolCall.function.name, 
+                    id: toolCall.id,
+                    arguments: JSON.parse(toolCall.function.arguments)
                 }
             });
         }
@@ -316,8 +317,9 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
                 addToolEvent(messageId, {
                     type: 'tool_execution_complete',
                     data: {
-                        toolName: toolCall.function.name, 
-                        toolId: toolCall.id,
+                        name: toolCall.function.name, 
+                        id: toolCall.id,
+                        status: 'success',
                         result: toolResult 
                     }
                 });
@@ -351,10 +353,11 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             if (messageId) {
                 addToolEvent(messageId, {
-                    type: 'tool_execution_error',
+                    type: 'tool_execution_complete',
                     data: {
-                        toolName: toolCall.function.name, 
-                        toolId: toolCall.id,
+                        name: toolCall.function.name, 
+                        id: toolCall.id,
+                        status: 'error',
                         error: error.message 
                     }
                 });

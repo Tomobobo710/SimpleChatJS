@@ -97,9 +97,31 @@ function handleToolEvent(toolEvent, processor, liveRenderer, tempContainer) {
                 b.type === 'tool' && b.metadata?.id === toolEvent.data.id
             );
             if (completeBlock) {
-                const resultContent = toolEvent.data.status === 'success' 
-                    ? toolEvent.data.result 
-                    : `ERROR: ${toolEvent.data.error}`;
+                let resultContent;
+                if (toolEvent.data.status === 'success') {
+                    // Extract readable text from result object
+                    try {
+                        const result = toolEvent.data.result;
+                        if (result && result.content) {
+                            // Parse the content JSON string
+                            const contentData = JSON.parse(result.content);
+                            if (contentData.content && contentData.content[0] && contentData.content[0].text) {
+                                resultContent = contentData.content[0].text;
+                            } else {
+                                resultContent = result.content;
+                            }
+                        } else {
+                            resultContent = JSON.stringify(result, null, 2);
+                        }
+                    } catch (e) {
+                        // Fallback to string representation
+                        resultContent = typeof toolEvent.data.result === 'string' 
+                            ? toolEvent.data.result 
+                            : JSON.stringify(toolEvent.data.result, null, 2);
+                    }
+                } else {
+                    resultContent = `ERROR: ${toolEvent.data.error}`;
+                }
                     
                 const finalContent = `[${toolEvent.data.name}]:\nArguments: ${JSON.stringify(completeBlock.metadata.arguments || {}, null, 2)}\nResult: ${resultContent}`;
                 completeBlock.content = finalContent;

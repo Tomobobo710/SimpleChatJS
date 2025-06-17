@@ -15,6 +15,14 @@ function generateMessageId() {
 // Initialize tool events for a message
 function initializeToolEvents(messageId) {
     log(`[TOOL-EVENT-SERVICE] Initializing tool events for messageId: ${messageId}`);
+    
+    // Preserve existing toolData if it exists (e.g., from SSE connection)
+    const existingToolData = toolEventsStore.get(messageId);
+    if (existingToolData) {
+        log(`[TOOL-EVENT-SERVICE] Tool data already exists, preserving ${existingToolData.listeners.size} listeners`);
+        return;
+    }
+    
     toolEventsStore.set(messageId, {
         events: [],
         listeners: new Set()
@@ -62,7 +70,16 @@ function handleToolEventsStream(req, res) {
     // Send initial connection event
     res.write(`data: ${JSON.stringify({ type: 'connected', data: { messageId: messageId, timestamp: new Date().toISOString() } })}\n\n`);
     
-    const toolData = toolEventsStore.get(messageId);
+    let toolData = toolEventsStore.get(messageId);
+    if (!toolData) {
+        // Initialize toolData if SSE connects before chat request
+        toolData = {
+            events: [],
+            listeners: new Set()
+        };
+        toolEventsStore.set(messageId, toolData);
+        log(`[TOOL-EVENTS] Initialized toolData for early SSE connection: ${messageId}`);
+    }
     log(`[TOOL-EVENTS] Tool data exists for ${messageId}: ${!!toolData}, available messageIds:`, Array.from(toolEventsStore.keys()));
     if (toolData) {
         log(`[TOOL-EVENTS] Sending ${toolData.events.length} existing events to client`);
@@ -74,6 +91,7 @@ function handleToolEventsStream(req, res) {
         // Add this response to listeners for future events
         toolData.listeners.add(res);
         log(`[TOOL-EVENTS] Added listener, now have ${toolData.listeners.size} listeners for messageId: ${messageId}`);
+        log(`[TOOL-EVENTS] Current store has ${toolEventsStore.size} messageIds:`, Array.from(toolEventsStore.keys()));
         
         // Clean up when client disconnects
         req.on('close', () => {
