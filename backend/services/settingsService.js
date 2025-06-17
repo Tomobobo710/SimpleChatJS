@@ -22,7 +22,7 @@ function loadSettings() {
         if (fs.existsSync(settingsPath)) {
             const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
             Object.assign(currentSettings, settings);
-            log('[SETTINGS] Loaded from file:', currentSettings);
+            log('[SETTINGS] Loaded from file');
             return settings;
         } else {
             log('[SETTINGS] No settings file found, using defaults');
@@ -43,7 +43,6 @@ function saveSettings(settings) {
         // Update server's in-memory settings immediately
         Object.assign(currentSettings, settings);
         
-        log('[SETTINGS] Settings saved and loaded:', currentSettings);
         return { success: true };
     } catch (error) {
         log('[SETTINGS] Save error:', error);
@@ -74,7 +73,7 @@ async function loadSettingsOnStartup() {
         if (fs.existsSync(settingsPath)) {
             const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
             Object.assign(currentSettings, settings);
-            log('[SETTINGS] Loaded from file:', currentSettings);
+            log('[SETTINGS] Loaded from file');
         } else {
             log('[SETTINGS] No settings file found, using defaults');
         }

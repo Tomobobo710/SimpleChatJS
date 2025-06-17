@@ -57,7 +57,7 @@ You'll need an AI API server running before starting SimpleChat JS. This could b
 Just run start.bat/start.sh.
 
 - All node dependencies will be installed
-- Server will start and you can connect to the localhost on port 5500 in a browser
+- Server will start and you can connect to the localhost on port 50505 in a browser
 
 ### DIY Installation
 
@@ -84,7 +84,7 @@ Just run start.bat/start.sh.
    npm start
    ```
 
-4. Open your browser to `http://localhost:5500`
+4. Open your browser to `http://localhost:50505`
 
 5. Configure your API settings in the Settings panel:
    - Set your API URL (e.g., `http://localhost:11434/v1` for Ollama)

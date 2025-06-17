@@ -1,6 +1,7 @@
 // Simple Chat JS Server - Slim main entry point
 const express = require('express');
 const path = require('path');
+const open = require('open');
 
 // Import utilities and services
 const { log } = require('./utils/logger');
@@ -15,7 +16,7 @@ const settingsRoutes = require('./routes/settings');
 const debugRoutes = require('./routes/debug');
 
 const app = express();
-const PORT = process.env.PORT || 5500;
+const PORT = process.env.PORT || 50505;
 
 // Express middleware - increase payload limit for long conductor conversations
 app.use(express.json({ limit: '50mb' }));
@@ -39,8 +40,17 @@ async function startServer() {
         
         // Start server
         app.listen(PORT, async () => {
-            log(`[SERVER] Simple Chat JS server running at http://localhost:${PORT}`);
+            const url = `http://localhost:${PORT}`;
+            log(`[SERVER] Simple Chat JS server running at ${url}`);
             await loadSettingsOnStartup();
+            
+            // Open browser automatically
+            try {
+                await open(url);
+                log('[BROWSER] Opened browser automatically');
+            } catch (error) {
+                log('[BROWSER] Failed to open browser:', error);
+            }
         });
     } catch (error) {
         log('[STARTUP] Failed to start server:', error);

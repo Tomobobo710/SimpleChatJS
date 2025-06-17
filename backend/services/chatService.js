@@ -406,21 +406,18 @@ async function processChatRequest(req, res) {
         // Get chat history if chat_id exists
         if (chat_id) {
             const { db } = require('../config/database');
-            const historyRows = await new Promise((resolve, reject) => {
-                db.all(
-                    'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp ASC',
-                    [chat_id],
-                    (err, rows) => {
-                        if (err) reject(err);
-                        else resolve(rows || []);
-                    }
-                );
-            });
-            
-            // Add history to messages
-            historyRows.forEach(row => {
-                messages.push({ role: row.role, content: row.content });
-            });
+            try {
+                const stmt = db.prepare('SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+                const historyRows = stmt.all(chat_id);
+                
+                // Add history to messages
+                historyRows.forEach(row => {
+                    messages.push({ role: row.role, content: row.content });
+                });
+            } catch (err) {
+                log('[CHAT] Error getting chat history:', err);
+                // Continue with empty history if there's an error
+            }
         } else {
             // No chat_id, add the current message with specified role or default to 'user'
             const role = message_role || 'user';

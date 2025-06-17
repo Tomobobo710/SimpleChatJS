@@ -227,7 +227,7 @@ async function loadChatHistory(chatId) {
 }
 
 // Update chat title
-function updateChatTitle(title) {
+async function updateChatTitle(title) {
     chatTitle.textContent = title;
     
     // Update the chat item in the list too
@@ -236,6 +236,14 @@ function updateChatTitle(title) {
         const titleEl = chatItem.querySelector('.chat-item-title');
         if (titleEl) {
             titleEl.textContent = title;
+            
+            // Update the title in the database
+            try {
+                await updateChatTitleInDatabase(currentChatId, title);
+            } catch (error) {
+                logger.error('Error updating chat title in database:', error);
+                // Continue anyway - UI is updated even if DB update fails
+            }
         }
     }
 }

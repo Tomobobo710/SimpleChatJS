@@ -99,25 +99,18 @@ function handleToolEvent(toolEvent, processor, liveRenderer, tempContainer) {
             if (completeBlock) {
                 let resultContent;
                 if (toolEvent.data.status === 'success') {
-                    // Extract readable text from result object
-                    try {
-                        const result = toolEvent.data.result;
-                        if (result && result.content) {
-                            // Parse the content JSON string
-                            const contentData = JSON.parse(result.content);
-                            if (contentData.content && contentData.content[0] && contentData.content[0].text) {
-                                resultContent = contentData.content[0].text;
-                            } else {
-                                resultContent = result.content;
-                            }
-                        } else {
-                            resultContent = JSON.stringify(result, null, 2);
-                        }
-                    } catch (e) {
-                        // Fallback to string representation
-                        resultContent = typeof toolEvent.data.result === 'string' 
-                            ? toolEvent.data.result 
-                            : JSON.stringify(toolEvent.data.result, null, 2);
+                    // Show just the raw content field as the AI would see it
+                    const result = toolEvent.data.result;
+                    if (result && result.content) {
+                        // Just show the raw content string with all escapes intact
+                        resultContent = JSON.stringify({
+                            success: result.success,
+                            content: result.content,
+                            isError: result.isError === false ? false : !!result.isError
+                        }, null, 2);
+                    } else {
+                        // Fallback to the entire result
+                        resultContent = JSON.stringify(result, null, 2);
                     }
                 } else {
                     resultContent = `ERROR: ${toolEvent.data.error}`;

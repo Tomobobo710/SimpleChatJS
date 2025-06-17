@@ -21,11 +21,15 @@
 .aim-modal-content {
     background: #2c2c2c;
     border: 2px outset #555;
-    max-width: 500px;
+    max-width: 600px;
     width: 90%;
-    max-height: 80vh;
+    max-height: 85vh;
     font-family: Tahoma, Arial, sans-serif;
     font-size: 11px;
+    overflow-y: auto; /* Add scroll if content overflows */
+    overflow-x: hidden; /* Prevent horizontal scrolling */
+    display: flex;
+    flex-direction: column; /* Stack header, tabs, content */
 }
 
 .aim-modal-header {
@@ -36,6 +40,10 @@
     justify-content: space-between;
     align-items: center;
     font-weight: bold;
+    position: sticky;
+    top: 0;
+    z-index: 6; /* Higher than the tabs */
+    flex-shrink: 0; /* Don't allow header to shrink */
 }
 
 .aim-modal-title {
@@ -68,6 +76,36 @@
 #mcpConfigModal .aim-modal-content {
     max-width: 800px;
     max-height: 90vh;
+}
+
+/* Responsive styling for high zoom levels */
+@media screen and (min-width: 1000px) {
+    .aim-modal-content {
+        max-width: 700px; /* Wider modal on larger screens */
+    }
+}
+
+/* Adjust for very high zoom levels */
+@media screen and (max-width: 600px) {
+    .tab-button {
+        padding: 4px 8px; /* Smaller padding for tabs */
+        font-size: 10px;
+    }
+    
+    .aim-modal-content {
+        width: 95%; /* Take up more space */
+        max-height: 90vh;
+    }
+    
+    .test-connection-btn {
+        display: block;
+        width: 100%;
+        margin-top: 10px;
+    }
+    
+    .api-config-actions {
+        display: block;
+    }
 }
 
 /* MCP Config textarea specific styling */
@@ -137,8 +175,24 @@
     display: none;
     min-height: 350px;
     padding: 5px 0;
+    overflow-y: visible; /* Let content extend naturally */
+    flex: 1; /* Take up available space */
 }
 
 .tab-content.active {
     display: block;
+}
+
+/* Ensure the tab system works with flexbox */
+.tab-navigation {
+    flex-shrink: 0; /* Don't allow tabs to shrink */
+    position: sticky; /* Keep tabs visible when scrolling */
+    top: 32px; /* Position below the header */
+    z-index: 5;
+    background: #2c2c2c;
+}
+
+/* Remove sticky positioning for save button */
+#saveSettings {
+    /* Remove sticky positioning */
 }

@@ -204,6 +204,7 @@
     gap: 4px;
     align-items: center;
     margin-bottom: 6px;
+    flex-wrap: wrap; /* Allow wrapping on small screens or high zoom */
 }
 
 .model-dropdown {
@@ -348,6 +349,7 @@ input[type="checkbox"]:disabled {
     margin: 20px auto 20px auto;
     padding: 8px 16px;
     font-size: 11px;
+    position: relative; /* Ensure it's part of normal flow */
 }
 
 /* API Configuration actions container */
@@ -357,4 +359,13 @@ input[type="checkbox"]:disabled {
     margin-top: 12px;
     padding-top: 8px;
     border-top: 1px solid #444;
+    position: relative; /* For absolute positioning fallback */
+}
+
+/* Ensure the Test Connection button stays properly positioned */
+.test-connection-btn {
+    position: sticky;
+    bottom: 10px;
+    align-self: flex-end;
+    margin-bottom: 10px;
 }

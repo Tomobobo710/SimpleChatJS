@@ -29,13 +29,13 @@
 
 .user-name {
     font-weight: bold;
-    font-size: 16px;
+    font-size: 18px; /* Increased from 16px */
     font-weight: bold;
     color: #ffffff;
 }
 
 .user-status {
-    font-size: 10px;
+    font-size: 12px; /* Increased from 10px */
     color: #b3d9ff;
 }
 
@@ -53,7 +53,7 @@
     padding: 5px 8px;
     border-bottom: 1px inset #2c2c2c;
     font-weight: bold;
-    font-size: 10px;
+    font-size: 12px; /* Increased from 10px */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -81,6 +81,7 @@
 .chat-list {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden; /* Prevent horizontal scrolling */
     background: #1e1e1e;
     border: 1px inset #2c2c2c;
     margin: 3px;
@@ -89,10 +90,11 @@
 .chat-item {
     display: flex;
     align-items: center;
-    padding: 4px 8px;
+    padding: 6px 8px; /* Slightly larger padding */
     border-bottom: 1px solid #333;
-    font-size: 11px;
+    font-size: 13px; /* Increased from 11px */
     color: #e0e0e0;
+    position: relative; /* For absolute positioning of child elements */
 }
 
 .chat-item:hover {
@@ -107,6 +109,10 @@
 .chat-item-title {
     font-weight: bold;
     margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 185px; /* Prevent long titles from causing horizontal scroll */
 }
 
 .chat-item-preview {
@@ -124,7 +130,9 @@
 .chat-item-time {
     font-size: 9px;
     color: #666;
-    float: right;
+    position: absolute;
+    top: 4px;
+    right: 28px; /* Make room for delete button */
 }
 
 .chat-item.active .chat-item-time {
@@ -134,6 +142,8 @@
 .chat-item-content {
     flex: 1;
     cursor: pointer;
+    min-width: 0; /* Allows flex item to shrink below content size */
+    overflow: hidden; /* Prevent content from spilling out */
 }
 
 .chat-delete-btn {
@@ -243,5 +253,29 @@
 @media (max-width: 768px) {
     .chat-sidebar {
         width: 200px;
+    }
+    
+    .chat-item-title {
+        max-width: 135px; /* Adjust for smaller sidebar */
+    }
+}
+
+/* Additional responsive adjustments for different zoom levels */
+@media (max-width: 480px) {
+    .aim-container {
+        flex-direction: column;
+    }
+    
+    .chat-sidebar {
+        width: 100%;
+        max-height: 30vh;
+    }
+    
+    .chat-main {
+        height: 70vh;
+    }
+    
+    .chat-item-title {
+        max-width: none; /* Full width on mobile */
     }
 }

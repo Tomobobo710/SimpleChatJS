@@ -143,6 +143,9 @@ window.saveEnabledTools = saveEnabledTools;
 window.getEnabledToolsForServer = getEnabledToolsForServer;
 window.cachedEnabledTools = cachedEnabledTools;
 
+// Make chat functions globally available
+window.updateChatTitleInDatabase = updateChatTitleInDatabase;
+
 // Stream response reader
 async function* streamResponse(response) {
     const reader = response.body.getReader();
@@ -291,6 +294,31 @@ function createNewChat() {
     logger.info(`Created new chat: ${currentChatId}`);
     return currentChatId;
 }
+// Update chat title in database
+async function updateChatTitleInDatabase(chatId, title) {
+    try {
+        // We'll use a PATCH request to partially update the chat record
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/title`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                title: title
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error updating chat title in database:', error, true);
+        throw error;
+    }
+}
+
 // Create new chat in database
 async function createNewChatInDatabase(chatId, title = 'New Chat') {
     try {
