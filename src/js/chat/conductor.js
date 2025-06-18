@@ -347,7 +347,7 @@ class Conductor {
         
         // Save assistant response to database so it's included in conversation history
         if (content.trim()) {
-            await saveMessageToBackend(currentChatId, 'assistant', content);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: content });
             logger.info(`[CONDUCTOR] Saved assistant response to database: ${content.length} chars`);
             
             // Also track locally for debug
@@ -393,7 +393,7 @@ class Conductor {
         logger.info(`[CONDUCTOR] Sending system prompt: ${systemPrompt}`);
         
         // 1. SAVE system prompt to database with correct role
-        await saveMessageToBackend(currentChatId, 'system', systemPrompt);
+        await saveCompleteMessage(currentChatId, { role: 'system', content: systemPrompt });
         logger.info(`[CONDUCTOR] Saved system prompt to database with role: system`);
         
         // 2. Send message to get AI response - backend will load conversation including the system prompt

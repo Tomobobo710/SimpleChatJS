@@ -344,28 +344,28 @@ async function createNewChatInDatabase(chatId, title = 'New Chat') {
     }
 }
 
-// Save a message directly to the backend
-async function saveMessageToBackend(chatId, role, content, debugData = null, blocks = null) {
-
+// Save complete message using unified approach
+async function saveCompleteMessage(chatId, messageData, debugData = null, blocks = null) {
     try {
-        const messageData = {
+        const requestData = {
             chat_id: chatId,
-            role: role,
-            content: content,
-            debug_data: debugData
+            role: messageData.role,
+            content: messageData.content,
+            debug_data: debugData,
+            blocks: blocks
         };
         
-        // Add blocks if provided
-        if (blocks) {
-            messageData.blocks = blocks;
-        }
+        // Add tool-specific fields if present
+        if (messageData.tool_calls) requestData.tool_calls = messageData.tool_calls;
+        if (messageData.tool_call_id) requestData.tool_call_id = messageData.tool_call_id;
+        if (messageData.tool_name) requestData.tool_name = messageData.tool_name;
         
         const response = await fetch(`${API_BASE}/api/message`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(messageData)
+            body: JSON.stringify(requestData)
         });
         
         if (!response.ok) {
@@ -374,10 +374,12 @@ async function saveMessageToBackend(chatId, role, content, debugData = null, blo
         
         return await response.json();
     } catch (error) {
-        logger.error('Error saving message:', error, true);
+        logger.error('Error saving complete message:', error, true);
         throw error;
     }
 }
+
+
 
 // MCP Config management
 async function loadMCPConfig() {

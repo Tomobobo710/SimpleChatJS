@@ -62,6 +62,16 @@ function initializeDatabase() {
                 }
             }
             
+            // Add message_data column to store complete message structure
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN message_data TEXT`);
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding message_data column:', err.message);
+                }
+            }
+            
             log('[DB] Database initialized successfully');
             resolve();
         } catch (err) {

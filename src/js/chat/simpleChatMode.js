@@ -52,7 +52,7 @@ async function handleSimpleChat(message) {
     
     // Save user message with blocks
     try {
-        await saveMessageToBackend(currentChatId, 'user', message, userDebugData, userBlocks);
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userDebugData, userBlocks);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
     }
@@ -181,7 +181,7 @@ async function handleSimpleChat(message) {
         
         // Save assistant message with both raw content and blocks
         try {
-            await saveMessageToBackend(currentChatId, 'assistant', fullResponse, debugData, finalBlocks);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: fullResponse }, debugData, finalBlocks);
             // Update chat preview with display content (clean text)
             const displayContent = processor.getDisplayContent() || fullResponse;
             updateChatPreview(currentChatId, displayContent);
@@ -239,7 +239,7 @@ async function handleSimpleChat(message) {
             
             // Save whatever content the AI actually generated (even if empty)
             try {
-                await saveMessageToBackend(currentChatId, 'assistant', fullResponse || '', stoppedDebugData, partialBlocks);
+                await saveCompleteMessage(currentChatId, { role: 'assistant', content: fullResponse || '' }, stoppedDebugData, partialBlocks);
                 updateChatPreview(currentChatId, fullResponse || '');
             } catch (saveError) {
                 logger.warn('Failed to save stopped message:', saveError);

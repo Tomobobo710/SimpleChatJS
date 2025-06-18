@@ -145,7 +145,7 @@ async function handleConductorChat(message) {
     
     // Save user message with blocks FIRST (same sequence as simple chat)
     try {
-        await saveMessageToBackend(currentChatId, 'user', message, userDebugData, userBlocks);
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userDebugData, userBlocks);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
     }
@@ -193,7 +193,7 @@ async function handleConductorChat(message) {
             
             // Save whatever content the AI actually generated (even if empty)
             try {
-                await saveMessageToBackend(currentChatId, 'assistant', result.content || '', result.debugData, result.blocks || []);
+                await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content || '' }, result.debugData, result.blocks || []);
                 updateChatPreview(currentChatId, result.content || '');
             } catch (saveError) {
                 logger.warn('[CONDUCTOR] Failed to save aborted message:', saveError);
@@ -206,7 +206,7 @@ async function handleConductorChat(message) {
         
         // Save assistant message with both raw content and blocks (same as simple chat)
         try {
-            await saveMessageToBackend(currentChatId, 'assistant', result.content, result.debugData, result.blocks || []);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content }, result.debugData, result.blocks || []);
             // Update chat preview with display content
             updateChatPreview(currentChatId, result.content);
         } catch (error) {
@@ -232,8 +232,8 @@ async function handleConductorChat(message) {
         }, true);
         
         try {
-            await saveMessageToBackend(currentChatId, 'user', message, userDebugData, userBlocks);
-            await saveMessageToBackend(currentChatId, 'assistant', `Error: ${error.message}`, null, []);
+            await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userDebugData, userBlocks);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: `Error: ${error.message}` }, null, []);
         } catch (saveError) {
             logger.error('[CONDUCTOR] Failed to save error message:', saveError);
         }

@@ -8,6 +8,40 @@ const DEBUG_ADAPTERS = process.env.DEBUG === '1';
 const { getCurrentSettings } = require('./settingsService');
 const { executeMCPTool, getAvailableToolsForChat } = require('./mcpService');
 const { addToolEvent, storeDebugData } = require('./toolEventService');
+// Save complete message structure to database
+async function saveCompleteMessageToDatabase(chatId, messageData, debugData = null, blocks = null) {
+    const { db } = require('../config/database');
+    
+    try {
+        // Store both the content and the complete message structure
+        const content = messageData.content || '';
+        const messageDataJson = JSON.stringify(messageData);
+        const debugDataJson = debugData ? JSON.stringify(debugData) : null;
+        const blocksJson = blocks ? JSON.stringify(blocks) : null;
+        
+        // Begin transaction
+        db.prepare('BEGIN TRANSACTION').run();
+        
+        // Insert message with complete structure including blocks and debug data
+        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, message_data, debug_data, blocks) VALUES (?, ?, ?, ?, ?, ?)');
+        insertStmt.run(chatId, messageData.role, content, messageDataJson, debugDataJson, blocksJson);
+        
+        // Update chat timestamp
+        const updateStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        updateStmt.run(chatId);
+        
+        // Commit transaction
+        db.prepare('COMMIT').run();
+        
+        log(`[CHAT-SAVE] Saved complete message: ${messageData.role} with ${blocks ? blocks.length : 0} blocks`);
+        
+    } catch (error) {
+        // Rollback on error
+        try { db.prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
+        log('[CHAT-SAVE] Error saving complete message:', error);
+        throw error;
+    }
+}
 
 // Import adapter system
 const responseAdapterFactory = require('../adapters/ResponseAdapterFactory');
@@ -318,6 +352,12 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     };
     messages.push(assistantMessageWithTools);
     
+    // Save assistant message with tool calls to database
+    if (chatId) {
+        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, null, null);
+        log(`[CHAT-SAVE] Saved assistant message with ${toolCalls.length} tool calls`);
+    }
+    
     // Execute each tool call
     for (const toolCall of toolCalls) {
         log(`[TOOL-EXECUTION] Executing tool: ${toolCall.function.name}`);
@@ -344,6 +384,12 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
                 content: JSON.stringify(toolResult)
             };
             messages.push(toolMessage);
+            
+            // Save tool message to database
+            if (chatId) {
+                await saveCompleteMessageToDatabase(chatId, toolMessage, null, null);
+                log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
+            }
             
             if (messageId) {
                 addToolEvent(messageId, {
@@ -382,6 +428,12 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
                 content: JSON.stringify({ error: error.message })
             };
             messages.push(errorMessage);
+            
+            // Save tool error message to database
+            if (chatId) {
+                await saveCompleteMessageToDatabase(chatId, errorMessage, null, null);
+                log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
+            }
             
             if (messageId) {
                 addToolEvent(messageId, {
@@ -439,35 +491,40 @@ async function processChatRequest(req, res) {
         if (chat_id) {
             const { db } = require('../config/database');
             try {
-                // We're now using the content from the messages table, which will contain
-                // the edited content if a message was edited
-                const stmt = db.prepare('SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+                // Get complete message structure from database - prefer message_data when available
+                const stmt = db.prepare('SELECT role, content, message_data FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
                 const historyRows = stmt.all(chat_id);
                 
-                // Add history to messages
+                // Add history to messages - require complete structure
                 historyRows.forEach(row => {
-                    messages.push({ role: row.role, content: row.content });
+                    if (!row.message_data) {
+                        throw new Error(`Message missing complete structure (message_data). Database needs migration or data is corrupted.`);
+                    }
+                    
+                    try {
+                        const completeMessage = JSON.parse(row.message_data);
+                        messages.push(completeMessage);
+                        log(`[CHAT] Added complete message structure: ${completeMessage.role}`);
+                    } catch (parseError) {
+                        throw new Error(`Failed to parse message_data: ${parseError.message}`);
+                    }
                 });
                 
                 // If this is a new message being added, append it
-                if (message && !historyRows.some(row => row.content === message)) {
+                if (message) {
                     const role = message_role || 'user';
                     messages.push({ role: role, content: message });
                     log(`[CHAT] Added new message with role: ${role}`);
                 }
             } catch (err) {
                 log('[CHAT] Error getting chat history:', err);
-                // Continue with empty history if there's an error
-                if (message) {
-                    const role = message_role || 'user';
-                    messages.push({ role: role, content: message });
-                }
+                throw new Error(`Failed to load chat history: ${err.message}`);
             }
         } else {
-            // No chat_id, add the current message with specified role or default to 'user'
+            // No chat_id, add the current message with complete structure
             const role = message_role || 'user';
             messages.push({ role: role, content: message });
-            log(`[CHAT] Added message with role: ${role}`);
+            log(`[CHAT] Added new message with role: ${role}`);
         }
         
         // Get available tools
@@ -509,5 +566,6 @@ async function processChatRequest(req, res) {
 
 module.exports = {
     handleChatWithTools,
-    processChatRequest
+    processChatRequest,
+    saveCompleteMessageToDatabase
 };

@@ -8,19 +8,27 @@ const router = express.Router();
 
 // Get all chats
 router.get('/chats', (req, res) => {
-    // Get chats with their last message
+    // Get chats with their last message from message_data
     const query = `
         SELECT 
             c.id,
             c.title,
             c.created_at,
             c.updated_at,
-            COALESCE(m.content, '') as last_message
+            COALESCE(
+                CASE 
+                    WHEN m.message_data IS NOT NULL 
+                    THEN JSON_EXTRACT(m.message_data, '$.content')
+                    ELSE m.content 
+                END, 
+                ''
+            ) as last_message
         FROM chats c
         LEFT JOIN (
             SELECT 
                 chat_id,
                 content,
+                message_data,
                 ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY timestamp DESC) as rn
             FROM messages
             WHERE role = 'user'
@@ -68,15 +76,29 @@ router.get('/chat/:id/history', (req, res) => {
     const chatId = req.params.id;
     
     try {
-        const stmt = db.prepare('SELECT role, content, timestamp, debug_data, blocks FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+        const stmt = db.prepare('SELECT role, content, timestamp, debug_data, blocks, message_data FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
         const rows = stmt.all(chatId);
         
-        const messages = (rows || []).map(row => ({
-            role: row.role,
-            content: row.content,
-            debug_data: row.debug_data ? JSON.parse(row.debug_data) : null,
-            blocks: row.blocks ? JSON.parse(row.blocks) : null
-        }));
+        const messages = (rows || []).map(row => {
+            // Require complete message structure - no fallbacks
+            if (!row.message_data) {
+                throw new Error(`Message missing complete structure (message_data). Chat history corrupted.`);
+            }
+            
+            let baseMessage;
+            try {
+                baseMessage = JSON.parse(row.message_data);
+            } catch (parseError) {
+                throw new Error(`Failed to parse message_data: ${parseError.message}`);
+            }
+            
+            // Add additional data for frontend rendering
+            return {
+                ...baseMessage,
+                debug_data: row.debug_data ? JSON.parse(row.debug_data) : null,
+                blocks: row.blocks ? JSON.parse(row.blocks) : null
+            };
+        });
         res.json({ messages });
     } catch (err) {
         log('[HISTORY] Error:', err);
@@ -114,39 +136,33 @@ router.delete('/chat/:id', (req, res) => {
     }
 });
 
-// Save message
+// Save message using unified approach
 router.post('/message', async (req, res) => {
     try {
-        const { chat_id, role, content, debug_data, blocks } = req.body;
+        const { chat_id, role, content, debug_data, blocks, tool_calls, tool_call_id, tool_name } = req.body;
         
         if (!chat_id || !role || content === null || content === undefined) {
             return res.status(400).json({ error: 'chat_id, role, and content are required' });
         }
         
-        // Save message with optional debug data and blocks
-        const debugDataJson = debug_data ? JSON.stringify(debug_data) : null;
-        const blocksJson = blocks ? JSON.stringify(blocks) : null;
+        // Create complete message structure with all possible fields
+        const completeMessage = {
+            role: role,
+            content: content
+        };
         
-        // Begin transaction
-        db.prepare('BEGIN TRANSACTION').run();
+        // Add tool-specific fields if present
+        if (tool_calls) completeMessage.tool_calls = tool_calls;
+        if (tool_call_id) completeMessage.tool_call_id = tool_call_id;
+        if (tool_name) completeMessage.tool_name = tool_name;
         
-        // Insert message
-        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, debug_data, blocks) VALUES (?, ?, ?, ?, ?)');
-        const result = insertStmt.run(chat_id, role, content, debugDataJson, blocksJson);
+        // Use the unified save function
+        const { saveCompleteMessageToDatabase } = require('../services/chatService');
+        await saveCompleteMessageToDatabase(chat_id, completeMessage, debug_data, blocks);
         
-        // Update chat timestamp
-        const updateStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-        updateStmt.run(chat_id);
-        
-        // Commit transaction
-        db.prepare('COMMIT').run();
-        
-        res.json({ success: true, messageId: result.lastInsertRowid });
+        res.json({ success: true });
         
     } catch (error) {
-        // Rollback on error
-        try { db.prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
-        
         log('[MESSAGE] Error:', error);
         res.status(500).json({ error: error.message });
     }
