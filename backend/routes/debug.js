@@ -14,8 +14,9 @@ router.get('/tools/:messageId', handleToolEventsStream);
 // Logging endpoint for frontend
 router.post('/log', (req, res) => {
     try {
-        const { level, component, message, data, timestamp } = req.body;
-        const logMessage = `[${timestamp}] [${level}] [${component}] ${message}`;
+        const { level, component, message, data } = req.body;
+        // Format the message but skip timestamp (log() will add it)
+        const logMessage = `[${level}] [${component}] ${message}`;
         // Use the log function to maintain consistency with backend logging
         log(logMessage, data);
         res.json({ success: true });

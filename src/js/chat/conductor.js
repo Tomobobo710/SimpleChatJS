@@ -51,7 +51,7 @@ class Conductor {
                 this.wasAborted = true;
                 
                 const partialBlocks = this.streamingProcessor.finalize();
-                const partialContent = this.streamingProcessor.getDisplayContent();
+                const partialContent = this.streamingProcessor.getRawContent();
                 
                 const abortDebugData = {
                     sequence: [{
@@ -90,7 +90,7 @@ class Conductor {
         
         // Finalize results
         const finalBlocks = this.streamingProcessor.finalize();
-        const displayContent = this.streamingProcessor.getDisplayContent();
+        const displayContent = this.streamingProcessor.getRawContent();
         const dropdownStates = this.captureDropdownStates();
         const allBlocks = finalBlocks;
         

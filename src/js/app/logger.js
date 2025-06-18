@@ -37,9 +37,12 @@ class Logger {
             return; // Skip logs below current level
         }
         
-        const timestamp = new Date().toISOString();
-        const shortTime = timestamp.substr(11, 12);
-        const logMessage = `[${shortTime}] [${level}] [${this.component}] ${message}`;
+        // Format timestamp with date and time for local display
+        const now = new Date();
+        const timestamp = now.toISOString();
+        const formattedDate = now.toLocaleDateString();
+        const formattedTime = now.toLocaleTimeString(undefined, { hour12: false });
+        const logMessage = `[${formattedDate} ${formattedTime}] [${level}] [${this.component}] ${message}`;
         
         // Browser console with colors
         const color = this.colors[level];

@@ -79,15 +79,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             }
         };
         
-        // Add request step to sequence
-        collectedDebugData.sequence.push({
-            type: 'request',
-            step: sequenceStep++,
-            timestamp: new Date().toISOString(),
-            data: {
-                request: requestData
-            }
-        });
+        // Real sequential debug will be added here
     }
     
     // Get provider-specific URL and headers
@@ -224,6 +216,24 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 collectedDebugData.sequence.push(responseStep);
             }
             
+            // Capture complete HTTP response (REAL data)
+            if (collectedDebugData && messageId) {
+                if (!collectedDebugData.httpSequence) {
+                    collectedDebugData.httpSequence = [];
+                }
+                
+                collectedDebugData.httpSequence.push({
+                    type: 'http_response',
+                    sequence: collectedDebugData.httpSequence.length,
+                    timestamp: new Date().toISOString(),
+                    content: unifiedResponse.content || '',
+                    toolCalls: unifiedResponse.toolCalls || [],
+                    hasToolCalls: unifiedResponse.hasToolCalls()
+                });
+                
+                log(`[SEQUENTIAL-DEBUG] Captured HTTP response, hasTools: ${unifiedResponse.hasToolCalls()}`);
+            }
+            
             // Handle tool calls if any
             if (unifiedResponse.hasToolCalls() && !blockToolExecution) {
                 log(`[ADAPTER] Processing ${unifiedResponse.toolCalls.length} tool calls`);
@@ -272,7 +282,29 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         res.end();
     });
     
-    apiReq.write(JSON.stringify(requestData));
+    // Capture ACTUAL HTTP request payload being sent
+    const actualRequestPayload = JSON.stringify(requestData);
+    
+    // Add to sequential debug data (real HTTP request)
+    if (collectedDebugData && messageId) {
+        if (!collectedDebugData.httpSequence) {
+            collectedDebugData.httpSequence = [];
+        }
+        
+        const requestSequenceNumber = collectedDebugData.httpSequence.length + 1;
+        
+        collectedDebugData.httpSequence.push({
+            type: 'http_request',
+            sequence: requestSequenceNumber,
+            timestamp: new Date().toISOString(),
+            payload: JSON.parse(actualRequestPayload),  // Store as object for debug panel
+            rawPayload: actualRequestPayload            // Store as string for exact representation
+        });
+        
+        log(`[SEQUENTIAL-DEBUG] Captured HTTP request #${requestSequenceNumber} with ${JSON.parse(actualRequestPayload).messages.length} messages`);
+    }
+    
+    apiReq.write(actualRequestPayload);
     apiReq.end();
 }
 
@@ -407,6 +439,8 @@ async function processChatRequest(req, res) {
         if (chat_id) {
             const { db } = require('../config/database');
             try {
+                // We're now using the content from the messages table, which will contain
+                // the edited content if a message was edited
                 const stmt = db.prepare('SELECT role, content FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
                 const historyRows = stmt.all(chat_id);
                 
@@ -414,9 +448,20 @@ async function processChatRequest(req, res) {
                 historyRows.forEach(row => {
                     messages.push({ role: row.role, content: row.content });
                 });
+                
+                // If this is a new message being added, append it
+                if (message && !historyRows.some(row => row.content === message)) {
+                    const role = message_role || 'user';
+                    messages.push({ role: role, content: message });
+                    log(`[CHAT] Added new message with role: ${role}`);
+                }
             } catch (err) {
                 log('[CHAT] Error getting chat history:', err);
                 // Continue with empty history if there's an error
+                if (message) {
+                    const role = message_role || 'user';
+                    messages.push({ role: role, content: message });
+                }
             }
         } else {
             // No chat_id, add the current message with specified role or default to 'user'

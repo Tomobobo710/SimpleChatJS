@@ -11,6 +11,15 @@ if [ ! -d "node_modules" ] || [ ! -d "node_modules/open" ] || [ ! -d "node_modul
     npm install
 fi
 
+# Kill any existing server on port 50505
+echo "Checking for existing server on port 50505..."
+PID=$(lsof -ti:50505 2>/dev/null)
+if [ ! -z "$PID" ]; then
+    echo "Found process $PID using port 50505, killing it..."
+    kill -9 $PID 2>/dev/null
+    sleep 1
+fi
+
 # Start the server
 echo "Starting server..."
 node backend/server.js

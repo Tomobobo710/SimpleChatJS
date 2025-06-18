@@ -1,146 +1,115 @@
-// Debug Panel Management
+// Sequential HTTP Debug Panel - Shows REAL HTTP request/response pairs
+class SequentialDebugPanel {
+    constructor() {
+        this.container = null;
+    }
 
-// Simple debug-specific dropdown
-function createDebugDropdown(title, content, isOpen = false, contentType = 'json') {
-    const dropdownId = `debug-dropdown-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const toggleClass = isOpen ? 'open' : 'closed';
-    const contentClass = contentType === 'text' ? 'debug-content debug-text' : 'debug-content debug-json';
-    
-    return `
-        <div class="debug-dropdown ${toggleClass}">
-            <div class="debug-dropdown-toggle" data-dropdown-id="${dropdownId}">
-                <span class="debug-dropdown-arrow">${isOpen ? '▼' : '▶'}</span>
-                <span class="debug-dropdown-title">${title}</span>
-            </div>
-            <div class="debug-dropdown-content" id="${dropdownId}" style="display: ${isOpen ? 'block' : 'none'}">
-                <div class="${contentClass}">${content}</div>
-            </div>
-        </div>
-    `;
-}
+    render(debugData) {
+        if (!debugData || !debugData.httpSequence) {
+            return '<div class="debug-panel"><p>No sequential HTTP data available</p></div>';
+        }
 
-// Debug panel functionality
-function createDebugPanel(messageId, debugData) {
-    const panel = document.createElement('div');
-    panel.className = 'debug-panel hidden';
-    panel.id = `debug-${messageId}`;
+        let content = '<div class="debug-panel">';
+        content += '<h3>Sequential HTTP Debug</h3>';
+        content += '<div class="debug-note">Real HTTP requests/responses as they happened</div>';
+        
+        // Group requests and responses in pairs
+        const requests = debugData.httpSequence.filter(item => item.type === 'http_request');
+        const responses = debugData.httpSequence.filter(item => item.type === 'http_response');
+        
+        for (let i = 0; i < Math.max(requests.length, responses.length); i++) {
+            const request = requests[i];
+            const response = responses[i];
+            
+            content += `<div class="http-pair">`;
+            content += `<h4>HTTP Interaction #${i + 1}</h4>`;
+            
+            // Show request
+            if (request) {
+                content += `
+                    <div class="debug-section">
+                        <div class="debug-section-title">→ REQUEST #${i + 1}</div>
+                        <div class="debug-timestamp">${request.timestamp}</div>
+                        ${this.createDropdown('Raw HTTP Request JSON', JSON.stringify(request.payload, null, 2))}
+                        ${this.createDropdown('Messages in Request', this.formatMessages(request.payload.messages))}
+                    </div>
+                `;
+            }
+            
+            // Show response
+            if (response) {
+                const toolCallsInfo = response.hasToolCalls ? ` (${response.toolCalls.length} tool calls)` : '';
+                content += `
+                    <div class="debug-section">
+                        <div class="debug-section-title">← RESPONSE #${i + 1}${toolCallsInfo}</div>
+                        <div class="debug-timestamp">${response.timestamp}</div>
+                        ${this.createDropdown('Response Content', response.content || 'No content')}
+                        ${response.hasToolCalls ? this.createDropdown('Tool Calls', JSON.stringify(response.toolCalls, null, 2)) : ''}
+                    </div>
+                `;
+            }
+            
+            content += `</div>`;  // Close http-pair
+        }
+        
+        content += '</div>';  // Close debug-panel
+        return content;
+    }
     
-    let content = '';
+    formatMessages(messages) {
+        if (!messages || !Array.isArray(messages)) {
+            return 'No messages';
+        }
+        
+        return messages.map((msg, index) => {
+            const hasThinkTags = msg.content && msg.content.includes('<think>');
+            const thinkWarning = hasThinkTags ? ' HAS THINK TAGS' : '';
+            return `Message ${index + 1} (${msg.role})${thinkWarning}:\n${msg.content || 'No content'}\n`;
+        }).join('\n---\n');
+    }
     
-    // Sequential display for both conductor and simple modes
-    if (debugData.sequence && debugData.sequence.length > 0) {
-        // Show metadata first
-        if (debugData.metadata) {
-            content += `
-                <div class="debug-section">
-                    <div class="debug-section-title">[INFO] Session Metadata</div>
-                    <div class="debug-content">Endpoint: ${debugData.metadata.endpoint}<br>
-Timestamp: ${debugData.metadata.timestamp}<br>
-Tools Available: ${typeof debugData.metadata.tools === 'number' ? debugData.metadata.tools : (debugData.metadata.tools?.length || 'unknown')}</div>
+    createDropdown(title, content, isExpanded = false, contentType = 'text') {
+        const expandedClass = isExpanded ? 'expanded' : '';
+        const displayStyle = isExpanded ? 'block' : 'none';
+        
+        return `
+            <div class="debug-dropdown ${expandedClass}" data-content-type="${contentType}">
+                <div class="debug-dropdown-header" onclick="toggleDebugDropdown(this)">
+                    <span class="dropdown-icon">▶</span>
+                    <span class="dropdown-title">${title}</span>
                 </div>
-            `;
-        }
-        
-        // Iterate through sequence steps
-        debugData.sequence.forEach(step => {
-            // Get phase info for conductor mode
-            const phaseInfo = step.data?.conductorPhase ? ` [Phase ${step.data.conductorPhase}]` : '';
-            
-            if (step.type === 'request') {
-                // Show RAW HTTP Request - exactly what was sent to AI API
-                content += `
-                    <div class="debug-section" data-step-type="request">
-                        <div class="debug-section-title">>> Step ${step.step}: RAW HTTP Request${phaseInfo}</div>
-                        <div class="debug-timestamp">${step.timestamp}</div>
-                        ${createDebugDropdown('Request JSON', JSON.stringify(step.data.request, null, 2))}
-                    </div>
-                `;
-            }
-            
-            if (step.type === 'response') {
-                // Show RAW HTTP Response - exactly what came back from AI API
-                const rawResponse = step.data.raw_http_response;
-                const hasToolCalls = step.data.has_tool_calls;
-                const responseIcon = '<<';
-                const responseTitle = hasToolCalls ? 
-                    `RAW HTTP Response (with tool calls)${phaseInfo}` :
-                    `RAW HTTP Response${phaseInfo}`;
-                
-                // Get response content - same source as chat bubble
-                const cleanContent = step.data.content || 'No content captured';
-                
-                content += `
-                    <div class="debug-section" data-step-type="response" ${hasToolCalls ? 'data-has-tools="true"' : ''}>
-                        <div class="debug-section-title">${responseIcon} Step ${step.step}: ${responseTitle}</div>
-                        <div class="debug-timestamp">${step.timestamp}</div>
-                        ${createDebugDropdown('Raw Response JSON', JSON.stringify(rawResponse, null, 2))}
-                        
-                        ${createDebugDropdown('📄 Complete Response (Parsed)', cleanContent.replace(/</g, '&lt;').replace(/>/g, '&gt;'), false, 'text')}
-                    </div>
-                `;
-            }
-            
-            if (step.type === 'tool_execution') {
-                // Show tool execution start
-                content += `
-                    <div class="debug-section" data-step-type="tool_execution">
-                        <div class="debug-section-title">[EXEC] Step ${step.step}: Tool Execution Start${phaseInfo}</div>
-                        <div class="debug-timestamp">${step.timestamp}</div>
-                        ${createDebugDropdown('Tool Execution Data', JSON.stringify(step.data, null, 2))}
-                    </div>
-                `;
-            }
-            
-            if (step.type === 'tool_result') {
-                // Show tool execution result
-                const statusIcon = step.data.status === 'success' ? '[OK]' : '[ERR]';
-                content += `
-                    <div class="debug-section" data-step-type="tool_result">
-                        <div class="debug-section-title">${statusIcon} Step ${step.step}: Tool Result${phaseInfo}</div>
-                        <div class="debug-timestamp">${step.timestamp}</div>
-                        ${createDebugDropdown('Tool Result Data', JSON.stringify(step.data, null, 2))}
-                    </div>
-                `;
-            }
-        });
-    }
-    
-    panel.innerHTML = content;
-    return panel;
-}
-
-// Handle debug toggle clicks
-function toggleDebugPanel(messageId) {
-    const panel = document.getElementById(`debug-${messageId}`);
-    const toggle = document.querySelector(`[data-message-id="${messageId}"] .debug-toggle`);
-    
-    if (panel && toggle) {
-        panel.classList.toggle('hidden');
-        toggle.classList.toggle('active');
+                <div class="debug-dropdown-content" style="display: ${displayStyle}">
+                    <pre>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                </div>
+            </div>
+        `;
     }
 }
 
-// Event delegation for debug toggles
-document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('debug-toggle')) {
-        const messageId = e.target.dataset.messageId;
-        toggleDebugPanel(messageId);
-    }
+// Create debug panel content
+function createDebugPanelContent(debugData) {
+    const panel = new SequentialDebugPanel();
+    return panel.render(debugData);
+}
+
+// Export functions
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        createDebugPanelContent
+    };
+}
+// Toggle debug dropdown function
+function toggleDebugDropdown(headerElement) {
+    const dropdown = headerElement.parentNode;
+    const content = dropdown.querySelector('.debug-dropdown-content');
+    const icon = headerElement.querySelector('.dropdown-icon');
     
-    // Handle debug dropdown toggles
-    if (e.target.classList.contains('debug-dropdown-toggle') || e.target.closest('.debug-dropdown-toggle')) {
-        const toggle = e.target.classList.contains('debug-dropdown-toggle') ? e.target : e.target.closest('.debug-dropdown-toggle');
-        const dropdownId = toggle.dataset.dropdownId;
-        const content = document.getElementById(dropdownId);
-        const arrow = toggle.querySelector('.debug-dropdown-arrow');
-        const dropdown = toggle.closest('.debug-dropdown');
+    if (dropdown && content && icon) {
+        const isExpanded = dropdown.classList.contains('expanded');
         
-        if (content && arrow && dropdown) {
-            const isVisible = content.style.display === 'block';
-            content.style.display = isVisible ? 'none' : 'block';
-            arrow.textContent = isVisible ? '▶' : '▼';
-            dropdown.classList.toggle('open', !isVisible);
-            dropdown.classList.toggle('closed', isVisible);
-        }
+        // Toggle class and display
+        dropdown.classList.toggle('expanded');
+        content.style.display = isExpanded ? 'none' : 'block';
+        icon.textContent = isExpanded ? '▶' : '▼';
     }
-});
+}
