@@ -8,6 +8,43 @@ const DEBUG_ADAPTERS = process.env.DEBUG === '1';
 const { getCurrentSettings } = require('./settingsService');
 const { executeMCPTool, getAvailableToolsForChat } = require('./mcpService');
 const { addToolEvent, storeDebugData } = require('./toolEventService');
+// Get chat history in API format
+function getChatHistoryForAPI(chat_id) {
+    if (!chat_id) {
+        return [];
+    }
+    
+    const { db } = require('../config/database');
+    const messages = [];
+    
+    try {
+        // Get complete message structure from database - prefer message_data when available
+        const stmt = db.prepare('SELECT role, content, message_data FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+        const historyRows = stmt.all(chat_id);
+        
+        // Add history to messages - require complete structure
+        historyRows.forEach(row => {
+            if (!row.message_data) {
+                throw new Error(`Message missing complete structure (message_data). Database needs migration or data is corrupted.`);
+            }
+            
+            try {
+                const completeMessage = JSON.parse(row.message_data);
+                messages.push(completeMessage);
+                log(`[CHAT-HISTORY] Added complete message structure: ${completeMessage.role}`);
+            } catch (parseError) {
+                throw new Error(`Failed to parse message_data: ${parseError.message}`);
+            }
+        });
+        
+        log(`[CHAT-HISTORY] Retrieved ${messages.length} messages for chat ${chat_id}`);
+        return messages;
+        
+    } catch (err) {
+        log('[CHAT-HISTORY] Error getting chat history:', err);
+        throw new Error(`Failed to load chat history: ${err.message}`);
+    }
+}
 // Save complete message structure to database
 async function saveCompleteMessageToDatabase(chatId, messageData, debugData = null, blocks = null) {
     const { db } = require('../config/database');
@@ -298,8 +335,30 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 // No tool calls, finish response
                 res.end();
                 
-                // Store debug data
+                // Save final assistant response to database BEFORE storing debug data
+                if (chatId && unifiedResponse.content) {
+                    const finalAssistantMessage = {
+                        role: 'assistant',
+                        content: unifiedResponse.content
+                    };
+                    try {
+                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, null, null);
+                    } catch (error) {
+                        log(`[CHAT-SAVE] Error saving final assistant response: ${error.message}`);
+                    }
+                }
+                
+                // Store debug data with complete history
                 if (collectedDebugData && messageId) {
+                    // Add complete chat history to debug data
+                    if (chatId) {
+                        try {
+                            collectedDebugData.completeMessageHistory = getChatHistoryForAPI(chatId);
+                        } catch (error) {
+                            collectedDebugData.completeMessageHistory = { error: error.message };
+                        }
+                    }
+                    
                     storeDebugData(messageId, collectedDebugData);
                     log(`[ADAPTER-DEBUG] Debug data stored for message:`, messageId);
                 }
@@ -484,47 +543,29 @@ async function processChatRequest(req, res) {
             return res.status(400).json({ error: 'Message is required' });
         }
                 
-        // Build messages for API - include chat history if available
-        const messages = [];
+        // Build messages for API - get chat history first
+        const messages = getChatHistoryForAPI(chat_id);
         
-        // Get chat history if chat_id exists
-        if (chat_id) {
-            const { db } = require('../config/database');
-            try {
-                // Get complete message structure from database - prefer message_data when available
-                const stmt = db.prepare('SELECT role, content, message_data FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
-                const historyRows = stmt.all(chat_id);
-                
-                // Add history to messages - require complete structure
-                historyRows.forEach(row => {
-                    if (!row.message_data) {
-                        throw new Error(`Message missing complete structure (message_data). Database needs migration or data is corrupted.`);
-                    }
-                    
-                    try {
-                        const completeMessage = JSON.parse(row.message_data);
-                        messages.push(completeMessage);
-                        log(`[CHAT] Added complete message structure: ${completeMessage.role}`);
-                    } catch (parseError) {
-                        throw new Error(`Failed to parse message_data: ${parseError.message}`);
-                    }
-                });
-                
-                // If this is a new message being added, append it
-                if (message) {
-                    const role = message_role || 'user';
-                    messages.push({ role: role, content: message });
-                    log(`[CHAT] Added new message with role: ${role}`);
-                }
-            } catch (err) {
-                log('[CHAT] Error getting chat history:', err);
-                throw new Error(`Failed to load chat history: ${err.message}`);
-            }
-        } else {
-            // No chat_id, add the current message with complete structure
+        // Add the new message if provided
+        if (message) {
             const role = message_role || 'user';
-            messages.push({ role: role, content: message });
-            log(`[CHAT] Added new message with role: ${role}`);
+            const newMessage = { role: role, content: message };
+            
+            // Check if this message is already the last one in history (avoid duplication)
+            const lastMessage = messages[messages.length - 1];
+            const isDuplicate = lastMessage && 
+                               lastMessage.role === newMessage.role && 
+                               lastMessage.content === newMessage.content;
+            
+            if (!isDuplicate) {
+                messages.push(newMessage);
+                log(`[CHAT] Added new message with role: ${role}`);
+            } else {
+                log(`[CHAT] Skipped duplicate message with role: ${role}`);
+            }
+        } else if (messages.length === 0) {
+            // No chat_id and no message - this shouldn't happen but handle gracefully
+            throw new Error('No message provided and no chat history available');
         }
         
         // Get available tools
@@ -567,5 +608,6 @@ async function processChatRequest(req, res) {
 module.exports = {
     handleChatWithTools,
     processChatRequest,
-    saveCompleteMessageToDatabase
+    saveCompleteMessageToDatabase,
+    getChatHistoryForAPI
 };

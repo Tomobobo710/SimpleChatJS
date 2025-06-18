@@ -52,6 +52,27 @@ class SequentialDebugPanel {
             content += `</div>`;  // Close http-pair
         }
         
+        // Add complete message history section at the end
+        if (debugData.completeMessageHistory) {
+            content += `<div class="message-history-section">`;
+            content += `<h4>Complete Message History</h4>`;
+            content += `<div class="debug-note">Final history for this message</div>`;
+            
+            if (debugData.completeMessageHistory.error) {
+                content += `<div class="debug-error">Error: ${debugData.completeMessageHistory.error}</div>`;
+            } else {
+                const messageCount = Array.isArray(debugData.completeMessageHistory) ? debugData.completeMessageHistory.length : 0;
+                content += this.createDropdown(
+                    `Complete Message History (${messageCount} messages)`,
+                    JSON.stringify(debugData.completeMessageHistory, null, 2),
+                    false,
+                    'json'
+                );
+            }
+            
+            content += `</div>`;  // Close message-history-section
+        }
+        
         content += '</div>';  // Close debug-panel
         return content;
     }
