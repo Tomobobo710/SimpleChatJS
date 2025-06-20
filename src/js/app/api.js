@@ -33,7 +33,7 @@ async function sendMessage(message, conductorMode = false) {
 }
 
 // Send a chat message with pre-filtered tool definitions
-async function sendMessageWithTools(message, conductorMode = false, toolDefinitions = [], phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, messageId = null) {
+async function sendMessageWithTools(message, conductorMode = false, toolDefinitions = [], phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
     try {
         const requestBody = {
             message: message,
@@ -43,7 +43,7 @@ async function sendMessageWithTools(message, conductorMode = false, toolDefiniti
             block_tool_execution: blockToolExecution,
             block_recursive_call: blockRecursiveToolResponse,
             ...(messageRole && { message_role: messageRole }), // Add message_role if provided
-            ...(messageId && { message_id: messageId }) // Add pre-generated message_id if provided
+            ...(requestId && { request_id: requestId }) // Add pre-generated request_id if provided
         };
         
         // Add phase number for conductor mode

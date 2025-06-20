@@ -85,7 +85,7 @@ const responseAdapterFactory = require('../adapters/ResponseAdapterFactory');
 const UnifiedResponse = require('../adapters/UnifiedResponse');
 
 // Handle chat with potential tool calls
-async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, messageId = null, existingDebugData = null, conductorPhase = null, blockToolExecution = false, blockRecursiveToolResponse = false) {
+async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null, conductorPhase = null, blockToolExecution = false, blockRecursiveToolResponse = false) {
     const currentSettings = getCurrentSettings();
     
     // Ensure we have a model name
@@ -99,9 +99,9 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     log(`[ADAPTER] Using ${adapter.providerName} adapter`);
     
     // Set up tool event emitter for the adapter
-    adapter.setToolEventEmitter((eventType, data, msgId) => {
-        if (msgId) {
-            addToolEvent(msgId, { type: eventType, data: data });
+    adapter.setToolEventEmitter((eventType, data, reqId) => {
+        if (reqId) {
+            addToolEvent(reqId, { type: eventType, data: data });
         }
     });
     
@@ -118,8 +118,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             'Transfer-Encoding': 'chunked'
         };
         
-        if (messageId) {
-            headers['X-Message-Id'] = messageId;
+        if (requestId) {
+            headers['X-Request-Id'] = requestId;
         }
         
         res.writeHead(200, headers);
@@ -129,9 +129,9 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     let collectedDebugData = existingDebugData;
     let sequenceStep = 1;
     
-    if (debugData && messageId && !collectedDebugData) {
+    if (debugData && requestId && !collectedDebugData) {
         collectedDebugData = {
-            messageId: messageId,
+            requestId: requestId,
             sequence: [],
             metadata: {
                 endpoint: adapter.getEndpointUrl(currentSettings),
@@ -213,8 +213,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 
                 // Handle any events generated - THIS IS CRITICAL FOR TOOL DROPDOWNS!
                 for (const event of result.events) {
-                    if (event.type === 'tool_call_detected' && messageId) {
-                        addToolEvent(messageId, {
+                    if (event.type === 'tool_call_detected' && requestId) {
+                        addToolEvent(requestId, {
                             type: 'tool_call_detected',
                             data: {
                                 name: event.data.toolName,
@@ -288,7 +288,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             }
             
             // Capture complete HTTP response (REAL data)
-            if (collectedDebugData && messageId) {
+            if (collectedDebugData && requestId) {
                 if (!collectedDebugData.httpSequence) {
                     collectedDebugData.httpSequence = [];
                 }
@@ -329,7 +329,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 await executeToolCallsAndContinue(
                     res, unifiedResponse.toolCalls, messages, tools, chatId, 
                     unifiedResponse.content, collectedDebugData, responseCounter, 
-                    messageId, conductorPhase, blockRecursiveToolResponse
+                    requestId, conductorPhase, blockRecursiveToolResponse
                 );
             } else {
                 // No tool calls, finish response
@@ -349,7 +349,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 }
                 
                 // Store debug data with complete history
-                if (collectedDebugData && messageId) {
+                if (collectedDebugData && requestId) {
                     // Add complete chat history to debug data
                     if (chatId) {
                         try {
@@ -359,8 +359,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                         }
                     }
                     
-                    storeDebugData(messageId, collectedDebugData);
-                    log(`[ADAPTER-DEBUG] Debug data stored for message:`, messageId);
+                    storeDebugData(requestId, collectedDebugData);
+                    log(`[ADAPTER-DEBUG] Debug data stored for request:`, requestId);
                 }
             }
         });
@@ -379,7 +379,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     const actualRequestPayload = JSON.stringify(requestData);
     
     // Add to sequential debug data (real HTTP request)
-    if (collectedDebugData && messageId) {
+    if (collectedDebugData && requestId) {
         if (!collectedDebugData.httpSequence) {
             collectedDebugData.httpSequence = [];
         }
@@ -402,7 +402,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
 }
 
 // Execute tool calls and continue conversation
-async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, messageId, conductorPhase, blockRecursiveToolResponse) {
+async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, conductorPhase, blockRecursiveToolResponse) {
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
         role: 'assistant',
@@ -421,8 +421,8 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     for (const toolCall of toolCalls) {
         log(`[TOOL-EXECUTION] Executing tool: ${toolCall.function.name}`);
         
-        if (messageId) {
-            addToolEvent(messageId, {
+        if (requestId) {
+            addToolEvent(requestId, {
                 type: 'tool_execution_start',
                 data: {
                     name: toolCall.function.name, 
@@ -450,8 +450,8 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
             
-            if (messageId) {
-                addToolEvent(messageId, {
+            if (requestId) {
+                addToolEvent(requestId, {
                     type: 'tool_execution_complete',
                     data: {
                         name: toolCall.function.name, 
@@ -494,8 +494,8 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
             
-            if (messageId) {
-                addToolEvent(messageId, {
+            if (requestId) {
+                addToolEvent(requestId, {
                     type: 'tool_execution_complete',
                     data: {
                         name: toolCall.function.name, 
@@ -525,11 +525,11 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     
     // Continue conversation with tool results (unless blocked)
     if (!blockRecursiveToolResponse) {
-        await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, messageId, debugData, conductorPhase, false, true);
+        await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, conductorPhase, false, true);
     } else {
         res.end();
-        if (debugData && messageId) {
-            storeDebugData(messageId, debugData);
+        if (debugData && requestId) {
+            storeDebugData(requestId, debugData);
         }
     }
 }
@@ -537,7 +537,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
 // Process chat request (entry point from routes)
 async function processChatRequest(req, res) {
     try {
-        const { message, chat_id, conductor_mode, enabled_tools, conductor_phase, message_role, block_tool_execution, block_recursive_call, message_id } = req.body;
+        const { message, chat_id, conductor_mode, enabled_tools, conductor_phase, message_role, block_tool_execution, block_recursive_call, request_id } = req.body;
         
         if (!message) {
             return res.status(400).json({ error: 'Message is required' });
@@ -580,16 +580,16 @@ async function processChatRequest(req, res) {
             toolsEnabled: tools.length
         };
         
-        // Use provided message ID or generate unique message ID for debug data
-        const { generateMessageId, initializeToolEvents } = require('./toolEventService');
-        const messageId = message_id || generateMessageId();
+        // Use provided request ID or generate unique request ID for debug data
+        const { generateRequestId, initializeToolEvents } = require('./toolEventService');
+        const requestId = request_id || generateRequestId();
         
-        log(`[CHAT] Using message ID: ${messageId} (provided: ${!!message_id})`);
+        log(`[CHAT] Using request ID: ${requestId} (provided: ${!!request_id})`);
         
-        // Initialize tool events for this message
-        initializeToolEvents(messageId);
+        // Initialize tool events for this request
+        initializeToolEvents(requestId);
         
-        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, messageId, null, conductor_phase, block_tool_execution, block_recursive_call);
+        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null, conductor_phase, block_tool_execution, block_recursive_call);
         // Response is handled in handleChatWithTools via streaming
         
     } catch (error) {

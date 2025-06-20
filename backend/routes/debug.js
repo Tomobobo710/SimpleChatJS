@@ -6,10 +6,10 @@ const { log } = require('../utils/logger');
 const router = express.Router();
 
 // Debug data endpoint - completely separate from content
-router.get('/debug/:messageId', handleDebugDataRequest);
+router.get('/debug/:requestId', handleDebugDataRequest);
 
 // Tool events endpoint - Server-Sent Events for real-time tool data
-router.get('/tools/:messageId', handleToolEventsStream);
+router.get('/tools/:requestId', handleToolEventsStream);
 
 // Logging endpoint for frontend
 router.post('/log', (req, res) => {

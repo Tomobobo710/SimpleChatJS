@@ -6,7 +6,7 @@ class Conductor {
         this.conversationHistory = [];
         this.currentPhase = 1;
         this.maxPhases = 10;
-        this.currentMessageId = null;
+        this.currentRequestId = null;
         this.streamingProcessor = null;
         this.tempContainer = null;
         this.liveRenderer = null;
@@ -257,20 +257,20 @@ class Conductor {
             });
         }
         
-        // Get message ID from response headers
-        const messageId = response.headers.get('X-Message-Id');
-        this.currentMessageId = messageId;  // Store for phase events
-        logger.info(`[CONDUCTOR] Phase ${this.currentPhase} using messageId: ${messageId}`);
+        // Get request ID from response headers
+        const requestId = response.headers.get('X-Request-Id');
+        this.currentRequestId = requestId;  // Store for phase events
+        logger.info(`[CONDUCTOR] Phase ${this.currentPhase} using requestId: ${requestId}`);
         
-        // Connect to tool events SSE if we have a messageId
-        if (messageId) {
+        // Connect to tool events SSE if we have a requestId
+        if (requestId) {
             // Close previous connection
             if (this.toolEventSource) {
                 this.toolEventSource.close();
             }
             
             // Connect to tool events SSE
-            this.toolEventSource = new EventSource(`${window.location.origin}/api/tools/${messageId}`);
+            this.toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
             this.toolEventSource.onmessage = (event) => {
                 const toolEvent = JSON.parse(event.data);
                 
@@ -286,7 +286,7 @@ class Conductor {
                 }
             };
             
-            logger.info(`[CONDUCTOR] Connected to tool events SSE for message ${messageId}`);
+            logger.info(`[CONDUCTOR] Connected to tool events SSE for request ${requestId}`);
         }
         
         // Start surgical monitoring
@@ -342,7 +342,7 @@ class Conductor {
         logger.info(`[CONDUCTOR] Surgical stream completed. Stopped on: ${stoppedOn}`);
         
         // The backend stores debug data asynchronously after the stream ends
-        logger.info(`[CONDUCTOR] Stream completed for phase ${this.currentPhase}, messageId: ${messageId}`);
+        logger.info(`[CONDUCTOR] Stream completed for phase ${this.currentPhase}, requestId: ${requestId}`);
         let backendDebugData = null; // Will be fetched later
         
         // Save assistant response to database so it's included in conversation history
@@ -369,7 +369,7 @@ class Conductor {
             conversationLength: this.conversationHistory.length,
             
             // Minimal identification metadata
-            messageId: messageId,
+            requestId: requestId,
             timestamp: new Date().toISOString(),
             conductorPhase: this.currentPhase,
             stoppedOn: stoppedOn,

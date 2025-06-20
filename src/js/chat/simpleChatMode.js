@@ -79,13 +79,13 @@ async function handleSimpleChat(message, conversationHistory) {
     const liveRenderer = new ChatRenderer(tempContainer);
     
     try {
-        // Generate messageId upfront and connect to tool events BEFORE making the request
-        const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        logger.debug('[SIMPLE-CHAT] Generated messageId:', messageId);
+        // Generate requestId upfront and connect to tool events BEFORE making the request
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        logger.debug('[SIMPLE-CHAT] Generated requestId:', requestId);
         
         // Connect to tool events stream immediately
-        logger.debug('[SIMPLE-CHAT] Connecting to SSE:', `${window.location.origin}/api/tools/${messageId}`);
-        toolEventSource = new EventSource(`${window.location.origin}/api/tools/${messageId}`);
+        logger.debug('[SIMPLE-CHAT] Connecting to SSE:', `${window.location.origin}/api/tools/${requestId}`);
+        toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
         toolEventSource.onmessage = (event) => {
             const toolEvent = JSON.parse(event.data);
             logger.debug('[SIMPLE-CHAT] Received tool event:', toolEvent.type, toolEvent.data);
@@ -95,9 +95,9 @@ async function handleSimpleChat(message, conversationHistory) {
             logger.error('[SIMPLE-CHAT] SSE error:', error);
         };
         
-        // Now make the request with the pre-generated messageId
-        logger.debug('[SIMPLE-CHAT] Making request with messageId:', messageId);
-        const response = await sendMessageWithTools(message, false, enabledToolDefinitions, null, null, false, false, messageId);
+        // Now make the request with the pre-generated requestId
+        logger.debug('[SIMPLE-CHAT] Making request with requestId:', requestId);
+        const response = await sendMessageWithTools(message, false, enabledToolDefinitions, null, null, false, false, requestId);
         
         // Stream the response cleanly - no debug parsing needed!
         for await (const chunk of streamResponse(response)) {
@@ -118,11 +118,11 @@ async function handleSimpleChat(message, conversationHistory) {
         // After streaming completes, fetch debug data separately
         let debugData = null;
         
-        logger.info('[DEBUG-SEPARATION] Using pre-generated message ID:', messageId);
+        logger.info('[DEBUG-SEPARATION] Using pre-generated request ID:', requestId);
         
-        if (messageId) {
+        if (requestId) {
             try {
-                const debugResponse = await fetch(`${window.location.origin}/api/debug/${messageId}`);
+                const debugResponse = await fetch(`${window.location.origin}/api/debug/${requestId}`);
                 if (debugResponse.ok) {
                     const rawDebugData = await debugResponse.json();
                     
@@ -131,7 +131,7 @@ async function handleSimpleChat(message, conversationHistory) {
                         debugData = rawDebugData;
                     } 
                 } else {
-                    logger.warn('No debug data available for message:', messageId);
+                    logger.warn('No debug data available for request:', requestId);
                 }
             } catch (error) {
                 logger.warn('Failed to fetch debug data:', error);

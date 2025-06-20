@@ -77,12 +77,12 @@ class BaseResponseAdapter {
      * Emit tool-related events during processing
      * @param {string} eventType - Event type
      * @param {Object} data - Event data
-     * @param {string} messageId - Message ID
+     * @param {string} requestId - Request ID
      */
-    emitToolEvent(eventType, data, messageId) {
+    emitToolEvent(eventType, data, requestId) {
         // This will be injected by the chat service
         if (this.toolEventEmitter) {
-            this.toolEventEmitter(eventType, data, messageId);
+            this.toolEventEmitter(eventType, data, requestId);
         }
     }
 
