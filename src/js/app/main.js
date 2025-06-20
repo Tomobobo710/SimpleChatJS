@@ -73,12 +73,15 @@ async function handleSendMessage() {
     setLoading(true);
     
     try {
+        // Get clean conversation history once using our utility function
+        const conversationHistory = await getCleanConversationHistory(currentChatId, message);
+        
         if (isConductorMode) {
             // Use conductor mode with block system
-            await handleConductorChat(message);
+            await handleConductorChat(message, conversationHistory);
         } else {
             // Simple chat mode
-            await handleSimpleChat(message);
+            await handleSimpleChat(message, conversationHistory);
         }
     } catch (error) {
         if (error.name === 'AbortError') {
@@ -93,7 +96,7 @@ async function handleSendMessage() {
 }
 
 // Handle conductor chat using blocks
-async function handleConductorChat(message) {
+async function handleConductorChat(message, conversationHistory) {
     logger.info('[CONDUCTOR] Starting conductor mode with blocks');
     
     // Get settings and tools for debug data
@@ -132,7 +135,9 @@ async function handleConductorChat(message) {
             timestamp: new Date().toISOString(),
             tools: enabledToolDefinitions.length
         }
-    };
+    };    
+    // Use the conversation history passed from main.js
+    userDebugData.conversationHistory = conversationHistory;
     
     // Add user message to UI using unified renderer
     const userBlocks = [{ type: 'chat', content: message, metadata: {} }];

@@ -193,6 +193,20 @@ router.patch('/chat/:id/title', (req, res) => {
     }
 });
 
+// Get clean chat history in API format (for user debug panels)
+router.get('/chat/:id/api-history', (req, res) => {
+    const chatId = req.params.id;
+    
+    try {
+        const { getChatHistoryForAPI } = require('../services/chatService');
+        const apiHistory = getChatHistoryForAPI(chatId);
+        res.json(apiHistory);
+    } catch (err) {
+        log('[API-HISTORY] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Main chat endpoint that frontend expects
 router.post('/chat', processChatRequest);
 

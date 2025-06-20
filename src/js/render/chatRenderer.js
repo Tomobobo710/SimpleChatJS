@@ -15,13 +15,6 @@ class ChatRenderer {
         messageDiv.className = `message ${role}`;
         messageDiv.dataset.messageId = messageId;
         
-        // Store original message content for potential edits
-        if (messageData.content) {
-            messageDiv.dataset.originalContent = messageData.content;
-        } else if (blocks && blocks.length > 0) {
-            messageDiv.dataset.originalContent = this.extractTextFromBlocks(blocks);
-        }
-        
         // Create content container
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
@@ -53,14 +46,6 @@ class ChatRenderer {
         }
         
         messageDiv.appendChild(contentDiv);
-        
-        // Add edit button for user and assistant messages
-        if (role === 'user' || role === 'assistant') {
-            this.addEditButton(messageDiv, messageId, currentChatId);
-            
-            // Create edit form (initially hidden)
-            this.addEditForm(messageDiv, messageData.content || this.extractTextFromBlocks(blocks));
-        }
         
         // Add debug toggle and panel if debug data provided
         if (debug_data) {
@@ -89,13 +74,6 @@ class ChatRenderer {
         messageDiv.className = `message ${role}`;
         messageDiv.dataset.messageId = messageId;
         
-        // Store original message content for potential edits
-        if (messageData.content) {
-            messageDiv.dataset.originalContent = messageData.content;
-        } else if (blocks && blocks.length > 0) {
-            messageDiv.dataset.originalContent = this.extractTextFromBlocks(blocks);
-        }
-        
         // Create content container
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
@@ -127,14 +105,6 @@ class ChatRenderer {
         }
         
         messageDiv.appendChild(contentDiv);
-        
-        // Add edit button for user and assistant messages
-        if (role === 'user' || role === 'assistant') {
-            this.addEditButton(messageDiv, messageId, currentChatId);
-            
-            // Create edit form (initially hidden)
-            this.addEditForm(messageDiv, messageData.content || this.extractTextFromBlocks(blocks));
-        }
         
         // Add debug toggle and panel if debug data provided
         if (debug_data) {
@@ -283,181 +253,6 @@ class ChatRenderer {
                     .join(' ');
     }
     
-    // Add edit button to message
-    addEditButton(messageDiv, messageId, chatId) {
-        const editBtn = document.createElement('button');
-        editBtn.className = 'edit-message-btn';
-        editBtn.dataset.messageId = messageId;
-        editBtn.innerHTML = 'Edit';
-        editBtn.title = 'Edit message';
-        
-        editBtn.addEventListener('click', () => {
-            // Toggle edit mode
-            messageDiv.classList.add('editing');
-            
-            // Focus the textarea
-            const textarea = messageDiv.querySelector('.message-edit-textarea');
-            if (textarea) {
-                textarea.focus();
-            }
-        });
-        
-        messageDiv.appendChild(editBtn);
-    }
-    
-    // Add edit form to message
-    addEditForm(messageDiv, content) {
-        const editForm = document.createElement('div');
-        editForm.className = 'message-edit-form';
-        
-        // Get the full raw content of all blocks, including thinking and tool calls
-        let fullContent = content || '';
-        
-        // If this is an assistant message, try to get all the content including thinking and tool calls
-        if (messageDiv.classList.contains('assistant')) {
-            // Extract all visible text from the message
-            fullContent = this.extractAllContentFromMessage(messageDiv);
-        }
-        
-        const textarea = document.createElement('textarea');
-        textarea.className = 'message-edit-textarea';
-        textarea.value = fullContent;
-        
-        const actionsDiv = document.createElement('div');
-        actionsDiv.className = 'message-edit-actions';
-        
-        const saveBtn = document.createElement('button');
-        saveBtn.className = 'edit-save-btn';
-        saveBtn.innerHTML = 'Save';
-        
-        const cancelBtn = document.createElement('button');
-        cancelBtn.className = 'edit-cancel-btn';
-        cancelBtn.innerHTML = 'Cancel';
-        
-        actionsDiv.appendChild(cancelBtn);
-        actionsDiv.appendChild(saveBtn);
-        
-        editForm.appendChild(textarea);
-        editForm.appendChild(actionsDiv);
-        
-        // Event listeners
-        saveBtn.addEventListener('click', () => {
-            this.saveEditedMessage(messageDiv, textarea.value);
-        });
-        
-        cancelBtn.addEventListener('click', () => {
-            // Exit edit mode without saving
-            messageDiv.classList.remove('editing');
-        });
-        
-        // Allow Ctrl+Enter or Command+Enter to save
-        textarea.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                e.preventDefault();
-                this.saveEditedMessage(messageDiv, textarea.value);
-            }
-            // Escape key to cancel
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                messageDiv.classList.remove('editing');
-            }
-        });
-        
-        messageDiv.appendChild(editForm);
-    }
-    
-    // Extract all content from a message including thinking and tool calls
-    extractAllContentFromMessage(messageDiv) {
-        let content = '';
-        
-        // Get content from chat blocks
-        const chatBlocks = messageDiv.querySelectorAll('.chat-block');
-        chatBlocks.forEach(block => {
-            content += block.textContent + '\n\n';
-        });
-        
-        // Get content from thinking blocks
-        const thinkingBlocks = messageDiv.querySelectorAll('.thinking-dropdown');
-        thinkingBlocks.forEach(block => {
-            const title = block.querySelector('.dropdown-title');
-            const innerContent = block.querySelector('.dropdown-inner');
-            if (title && innerContent) {
-                content += `[Thinking: ${title.textContent}]\n${innerContent.textContent}\n\n`;
-            }
-        });
-        
-        // Get content from tool blocks
-        const toolBlocks = messageDiv.querySelectorAll('.tool-dropdown');
-        toolBlocks.forEach(block => {
-            const title = block.querySelector('.dropdown-title');
-            const innerContent = block.querySelector('.dropdown-inner');
-            if (title && innerContent) {
-                content += `[Tool: ${title.textContent}]\n${innerContent.textContent}\n\n`;
-            }
-        });
-        
-        return content.trim();
-    }
-    
-    // Save edited message content
-    async saveEditedMessage(messageDiv, newContent) {
-        try {
-            const role = messageDiv.classList.contains('user') ? 'user' : 'assistant';
-            const messageId = messageDiv.dataset.messageId;
-            
-            // Exit edit mode
-            messageDiv.classList.remove('editing');
-            
-            // Store the original content in the dataset
-            messageDiv.dataset.originalContent = newContent;
-            
-            // Update the message in the database
-            const chatId = currentChatId;
-            if (chatId) {
-                try {
-                    // Find the position of this message in the conversation
-                    const allMessages = Array.from(document.querySelectorAll('.message'));
-                    const messageIndex = allMessages.indexOf(messageDiv);
-                    
-                    // Get all messages from the chat history
-                    const messagesData = await getChatHistory(chatId);
-                    if (messagesData && messagesData.messages && messagesData.messages[messageIndex]) {
-                        // Get the original message
-                        const updatedMessage = messagesData.messages[messageIndex];
-                        
-                        // For assistant messages with complex structure (thinking blocks, tool calls):
-                        // Replace the entire message with the new content as a single block
-                        updatedMessage.content = newContent;
-                        
-                        // For assistant messages, replace the blocks with a single chat block
-                        if (role === 'assistant') {
-                            updatedMessage.blocks = [{
-                                type: 'chat',
-                                content: newContent
-                            }];
-                        }
-                        
-                        // Save the updated message
-                        await updateMessageInDatabase(chatId, messageIndex, updatedMessage);
-                        
-                        // Update chat preview if needed
-                        updateChatPreview(chatId, newContent);
-                        
-                        logger.info(`Message edited successfully: ${role} message at index ${messageIndex}`);
-                        
-                        // Reload the chat to display the edited message
-                        await loadChatHistory(chatId);
-                    }
-                } catch (error) {
-                    logger.error('Error updating message in database:', error);
-                    showError('Failed to save edited message');
-                }
-            }
-        } catch (error) {
-            logger.error('Error saving edited message:', error);
-            showError('Failed to save edited message');
-        }
-    }
 }
 
 // Global renderer instance
@@ -478,6 +273,7 @@ if (document.readyState === 'loading') {
 } else {
     initializeChatRenderer();
 }
+
 // Create debug panel DOM element using sequential debug system
 function createDebugPanel(messageId, debugData) {
     const debugPanel = document.createElement('div');

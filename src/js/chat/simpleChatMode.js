@@ -1,6 +1,6 @@
 // Simple Chat Mode - Direct streaming chat without conductor complexity
 
-async function handleSimpleChat(message) {
+async function handleSimpleChat(message, conversationHistory) {
     logger.info('Starting simple chat');
     
     // Get enabled tools that will be sent to AI (do this ONCE)
@@ -39,7 +39,9 @@ async function handleSimpleChat(message) {
             timestamp: new Date().toISOString(),
             tools: enabledToolDefinitions.length
         }
-    };
+    };    
+    // Use the conversation history passed from main.js
+    userDebugData.conversationHistory = conversationHistory;
     
     // Add user message to UI using unified renderer
     const userBlocks = [{ type: 'chat', content: message, metadata: {} }];

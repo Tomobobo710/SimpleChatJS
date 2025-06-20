@@ -270,34 +270,6 @@ function updateChatPreview(chatId, message) {
     }
 }
 
-// Update message in database at specific index
-async function updateMessageInDatabase(chatId, messageIndex, updatedMessage) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/message/${messageIndex}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                role: updatedMessage.role,
-                content: updatedMessage.content,
-                blocks: updatedMessage.blocks,
-                debug_data: updatedMessage.debug_data
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        const result = await response.json();
-        return result;
-    } catch (error) {
-        logger.error('Error updating message in database:', error);
-        throw error;
-    }
-}
-
 // Get chat history from backend
 async function getChatHistory(chatId) {
     try {
