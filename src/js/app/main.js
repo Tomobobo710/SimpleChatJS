@@ -161,9 +161,11 @@ async function handleConductorChat(message, conversationHistory) {
             timestamp: new Date().toISOString(),
             tools: enabledToolDefinitions.length
         }
-    };    
-    // Use the conversation history passed from main.js
-    userDebugData.conversationHistory = conversationHistory;
+    };
+    
+    // Use same field names as assistant debug data for consistency
+    userDebugData.completeMessageHistory = conversationHistory || [];
+    userDebugData.currentTurnNumber = userTurnNumber;
     
     // Get turn number for this user message
     const userTurnNumber = getNextTurnNumber();
@@ -178,11 +180,18 @@ async function handleConductorChat(message, conversationHistory) {
         turn_number: userTurnNumber
     }, true);
     
-    // Save user message with blocks FIRST (same sequence as simple chat)
+    // Save user message and debug data separately (turn-based approach)
     try {
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userTurnNumber, userDebugData, userBlocks);
+        // Save user message without debug data
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userBlocks, userTurnNumber);
+        
+        // Save debug data to turn-based storage
+        if (userDebugData) {
+            await saveTurnData(currentChatId, userTurnNumber, userDebugData);
+            logger.info(`[TURN-DEBUG] Saved user debug data for turn ${userTurnNumber}`);
+        }
     } catch (error) {
-        logger.warn('Failed to save user message:', error);
+        logger.warn('Failed to save user message or debug data:', error);
     }
     
     // Create assistant message div (same pattern as simple chat)
@@ -235,10 +244,18 @@ async function handleConductorChat(message, conversationHistory) {
             
             // Save whatever content the AI actually generated (even if empty)
             try {
-                await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content || '' }, assistantTurnNumber, result.debugData, result.blocks || []);
+                // Save assistant message without debug data (turn-based approach)
+                await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content || '' }, result.blocks || [], assistantTurnNumber);
+                
+                // Save debug data to turn-based storage
+                if (result.debugData) {
+                    await saveTurnData(currentChatId, assistantTurnNumber, result.debugData);
+                    logger.info(`[TURN-DEBUG] Saved aborted debug data for turn ${assistantTurnNumber}`);
+                }
+                
                 updateChatPreview(currentChatId, result.content || '');
             } catch (saveError) {
-                logger.warn('[CONDUCTOR] Failed to save aborted message:', saveError);
+                logger.warn('[CONDUCTOR] Failed to save aborted message or debug data:', saveError);
             }
             
             return; // Exit cleanly
@@ -246,13 +263,21 @@ async function handleConductorChat(message, conversationHistory) {
         
         // Normal completion - already handled by seamless replacement above
         
-        // Save assistant message with both raw content and blocks (same as simple chat)
+        // Save assistant message and debug data separately (turn-based approach)
         try {
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content }, assistantTurnNumber, result.debugData, result.blocks || []);
+            // Save assistant message without debug data
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content }, result.blocks || [], assistantTurnNumber);
+            
+            // Save debug data to turn-based storage
+            if (result.debugData) {
+                await saveTurnData(currentChatId, assistantTurnNumber, result.debugData);
+                logger.info(`[TURN-DEBUG] Saved assistant debug data for turn ${assistantTurnNumber}`);
+            }
+            
             // Update chat preview with display content
             updateChatPreview(currentChatId, result.content);
         } catch (error) {
-            logger.error('[CONDUCTOR] Failed to save messages:', error);
+            logger.error('[CONDUCTOR] Failed to save messages or debug data:', error);
         }
         
         logger.info('[CONDUCTOR] Conductor session completed successfully');
@@ -278,7 +303,7 @@ async function handleConductorChat(message, conversationHistory) {
         
         try {
             // User message was already saved above, just save the error assistant message
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: `Error: ${error.message}` }, errorTurnNumber, null, []);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: `Error: ${error.message}` }, [], errorTurnNumber);
         } catch (saveError) {
             logger.error('[CONDUCTOR] Failed to save error message:', saveError);
         }

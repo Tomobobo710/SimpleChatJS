@@ -59,6 +59,46 @@ async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
     }
 }
 
+// Turn data functions (clean RESTful API)
+async function saveTurnData(chatId, turnNumber, data) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turns/${turnNumber}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ data })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error saving turn data:', error);
+        throw error;
+    }
+}
+
+async function getTurnData(chatId, turnNumber) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turns/${turnNumber}`);
+        
+        if (!response.ok) {
+            if (response.status === 404) {
+                return null; // No data for this turn
+            }
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting turn data:', error);
+        throw error;
+    }
+}
+
 // Initiate a request without awaiting the response (returns controller and requestId)
 function initiateMessageRequest(message, conductorMode = false, toolDefinitions = [], phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
     try {
@@ -210,18 +250,6 @@ function setToolEnabled(serverName, toolName, enabled) {
 function getEnabledToolsForServer(serverName, allTools) {
     return allTools.filter(tool => isToolEnabled(serverName, tool));
 }
-// Make tool functions globally available
-window.isToolEnabled = isToolEnabled;
-window.setToolEnabled = setToolEnabled;
-window.loadEnabledTools = loadEnabledTools;
-window.loadEnabledToolsFromBackend = loadEnabledToolsFromBackend;
-window.saveEnabledTools = saveEnabledTools;
-window.getEnabledToolsForServer = getEnabledToolsForServer;
-window.cachedEnabledTools = cachedEnabledTools;
-
-// Make chat functions globally available
-window.updateChatTitleInDatabase = updateChatTitleInDatabase;
-window.initiateMessageRequest = initiateMessageRequest;
 
 // Stream response reader
 async function* streamResponse(response) {
@@ -422,14 +450,13 @@ async function createNewChatInDatabase(chatId, title = 'New Chat') {
 }
 
 // Save complete message using unified approach
-async function saveCompleteMessage(chatId, messageData, turnNumber, debugData = null, blocks = null) {
+async function saveCompleteMessage(chatId, messageData, blocks = null, turnNumber = null) {
     try {
         const requestData = {
             chat_id: chatId,
             role: messageData.role,
             content: messageData.content,
             turn_number: turnNumber,
-            debug_data: debugData,
             blocks: blocks
         };
         

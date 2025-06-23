@@ -131,8 +131,7 @@ class SequentialDebugPanel {
             content += `<h4>Messages In This Turn</h4>`;
             content += `<div class="debug-note">Turn #${debugData.currentTurnNumber} - Filtered from complete history</div>`;
             
-            // Filter messages for this turn from complete history
-            const turnMessages = debugData.completeMessageHistory.filter(msg => msg.turn_number === debugData.currentTurnNumber);
+            const turnMessages = this.getMessagesForTurn(debugData.completeMessageHistory, debugData.currentTurnNumber);
             const messageCount = turnMessages.length;
             
             content += this.createDropdown(
@@ -334,6 +333,11 @@ class SequentialDebugPanel {
                 </div>
             </div>
         `;
+    }
+    
+    // Get messages for a specific turn
+    getMessagesForTurn(messages, turnNumber) {
+        return messages.filter(msg => msg.turn_number === turnNumber);
     }
 }
 

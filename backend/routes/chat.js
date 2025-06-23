@@ -1,34 +1,26 @@
 // Chat routes - Handle chat operations and messaging
 const express = require('express');
 const { db } = require('../config/database');
-const { processChatRequest } = require('../services/chatService');
+const { processChatRequest, saveTurnDebugData, getTurnDebugData, getAllTurnDebugData } = require('../services/chatService');
 const { log } = require('../utils/logger');
 
 const router = express.Router();
 
 // Get all chats
 router.get('/chats', (req, res) => {
-    // Get chats with their last message from message_data
+    // Get chats with their last message content
     const query = `
         SELECT 
             c.id,
             c.title,
             c.created_at,
             c.updated_at,
-            COALESCE(
-                CASE 
-                    WHEN m.message_data IS NOT NULL 
-                    THEN JSON_EXTRACT(m.message_data, '$.content')
-                    ELSE m.content 
-                END, 
-                ''
-            ) as last_message
+            COALESCE(m.content, '') as last_message
         FROM chats c
         LEFT JOIN (
             SELECT 
                 chat_id,
                 content,
-                message_data,
                 ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY timestamp DESC) as rn
             FROM messages
             WHERE role = 'user'
@@ -76,26 +68,24 @@ router.get('/chat/:id/history', (req, res) => {
     const chatId = req.params.id;
     
     try {
-        const stmt = db.prepare('SELECT role, content, timestamp, debug_data, blocks, message_data FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+        // Get message data directly from columns
+        const stmt = db.prepare('SELECT role, content, timestamp, blocks, turn_number FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
         const rows = stmt.all(chatId);
         
+        // Get all turn data for this chat
+        const turnDataMap = getAllTurnDebugData(chatId);
+        
         const messages = (rows || []).map(row => {
-            // Require complete message structure - no fallbacks
-            if (!row.message_data) {
-                throw new Error(`Message missing complete structure (message_data). Chat history corrupted.`);
-            }
+            // Get turn data from the turn-based storage
+            const turnData = row.turn_number ? turnDataMap[row.turn_number] : null;
             
-            let baseMessage;
-            try {
-                baseMessage = JSON.parse(row.message_data);
-            } catch (parseError) {
-                throw new Error(`Failed to parse message_data: ${parseError.message}`);
-            }
-            
-            // Add additional data for frontend rendering
+            // Build message object from direct columns
             return {
-                ...baseMessage,
-                debug_data: row.debug_data ? JSON.parse(row.debug_data) : null,
+                role: row.role,
+                content: row.content,
+                timestamp: row.timestamp,
+                turn_number: row.turn_number,
+                debug_data: turnData, // Now comes from turn-based storage
                 blocks: row.blocks ? JSON.parse(row.blocks) : null
             };
         });
@@ -139,7 +129,7 @@ router.delete('/chat/:id', (req, res) => {
 // Save message using unified approach
 router.post('/message', async (req, res) => {
     try {
-        const { chat_id, role, content, turn_number, debug_data, blocks, tool_calls, tool_call_id, tool_name } = req.body;
+        const { chat_id, role, content, turn_number, blocks, tool_calls, tool_call_id, tool_name } = req.body;
         
         if (!chat_id || !role || content === null || content === undefined) {
             return res.status(400).json({ error: 'chat_id, role, and content are required' });
@@ -159,7 +149,7 @@ router.post('/message', async (req, res) => {
         // Use the unified save function
         const { saveCompleteMessageToDatabase, incrementTurnNumber } = require('../services/chatService');
         // Use turn number provided by frontend
-        await saveCompleteMessageToDatabase(chat_id, completeMessage, debug_data, blocks, turn_number);
+        await saveCompleteMessageToDatabase(chat_id, completeMessage, blocks, turn_number);
         
         // Increment turn number when user sends a message (starts new conversation turn)
         if (role === 'user') {
@@ -243,6 +233,69 @@ router.patch('/message/debug', async (req, res) => {
         
     } catch (error) {
         log('[UPDATE-DEBUG] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Turn data endpoints (RESTful design)
+// Save turn data
+router.post('/chat/:id/turns/:turnNumber', async (req, res) => {
+    try {
+        const { id: chatId, turnNumber } = req.params;
+        const { data } = req.body;
+        const turnNum = parseInt(turnNumber, 10);
+        
+        if (isNaN(turnNum)) {
+            return res.status(400).json({ error: 'Invalid turn number' });
+        }
+        
+        if (!data) {
+            return res.status(400).json({ error: 'data is required' });
+        }
+        
+        await saveTurnDebugData(chatId, turnNum, data);
+        res.json({ success: true });
+        
+    } catch (error) {
+        log('[TURN-DATA-SAVE] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get turn data
+router.get('/chat/:id/turns/:turnNumber', (req, res) => {
+    try {
+        const { id: chatId, turnNumber } = req.params;
+        const turnNum = parseInt(turnNumber, 10);
+        
+        if (isNaN(turnNum)) {
+            return res.status(400).json({ error: 'Invalid turn number' });
+        }
+        
+        const turnData = getTurnDebugData(chatId, turnNum);
+        
+        if (turnData) {
+            res.json(turnData);
+        } else {
+            res.status(404).json({ error: 'Turn data not found' });
+        }
+        
+    } catch (error) {
+        log('[TURN-DATA-GET] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get all turn data for a chat
+router.get('/chat/:id/turns', (req, res) => {
+    try {
+        const { id: chatId } = req.params;
+        
+        const turnDataMap = getAllTurnDebugData(chatId);
+        res.json(turnDataMap);
+        
+    } catch (error) {
+        log('[ALL-TURN-DATA] Error:', error);
         res.status(500).json({ error: error.message });
     }
 });

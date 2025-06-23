@@ -62,16 +62,6 @@ function initializeDatabase() {
                 }
             }
             
-            // Add message_data column to store complete message structure
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN message_data TEXT`);
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding message_data column:', err.message);
-                }
-            }
-            
             // Add turn_number column for grouping messages into turns
             try {
                 db.exec(`ALTER TABLE messages ADD COLUMN turn_number INTEGER`);
@@ -91,6 +81,17 @@ function initializeDatabase() {
                     log('[DB] Error adding turn_number to chats:', err.message);
                 }
             }
+            
+            // Create turn_debug_data table for turn-based debug storage
+            db.exec(`CREATE TABLE IF NOT EXISTS turn_debug_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                turn_number INTEGER NOT NULL,
+                debug_data TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(chat_id, turn_number),
+                FOREIGN KEY (chat_id) REFERENCES chats (id)
+            )`);
             
             log('[DB] Database initialized successfully');
             resolve();

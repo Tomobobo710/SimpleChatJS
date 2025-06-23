@@ -28,7 +28,7 @@ async function handleSimpleChat(message, conversationHistory) {
     // Save user message to database
     console.log(`[FRONTEND] Saving user message to chat ${currentChatId}`);
     try {
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userTurnNumber, null, userBlocks);
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userBlocks, userTurnNumber);
         console.log(`[FRONTEND] Successfully saved user message to chat ${currentChatId}`);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
@@ -69,8 +69,10 @@ async function handleSimpleChat(message, conversationHistory) {
         },
         currentTurnNumber: userTurnNumber // Add turn number at top level
     };    
-    // Use the conversation history passed from main.js
-    userDebugData.conversationHistory = conversationHistory;
+    
+    // Use same field names as assistant debug data for consistency
+    userDebugData.completeMessageHistory = conversationHistory || [];
+    userDebugData.currentTurnNumber = userTurnNumber;
     
     // INITIATE the API request here (but don't await the response)
     requestInfo = initiateMessageRequest(message, false, enabledToolDefinitions, null, null, false, false, requestId);
@@ -96,11 +98,12 @@ async function handleSimpleChat(message, conversationHistory) {
         timestamp: new Date().toISOString()
     };
     
-    // Update message with debug data
+    // Save user debug data to turn-based storage
     try {
-        await updateMessageDebugData(currentChatId, 'user', userTurnNumber, userDebugData);
+        await saveTurnData(currentChatId, userTurnNumber, userDebugData);
+        logger.info(`[TURN-DEBUG] Saved user debug data for turn ${userTurnNumber}`);
     } catch (error) {
-        logger.warn('Failed to update user message with debug data:', error);
+        logger.warn('Failed to save user turn debug data:', error);
     }
     
     // Update user turn with debug data - find the last user message and update it
@@ -275,13 +278,22 @@ async function handleSimpleChat(message, conversationHistory) {
             turn_number: assistantTurnNumber
         }, true); // Enable scrolling
         
-        // Save with blocks from processor
+        // Save assistant message and debug data separately
         try {
             const cleanContent = processor.getDisplayContent() || '';
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: cleanContent }, assistantTurnNumber, debugData, finalBlocks);
+            
+            // Save assistant message without debug data (turn-based approach)
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: cleanContent }, finalBlocks, assistantTurnNumber);
+            
+            // Save debug data to turn-based storage
+            if (debugData) {
+                await saveTurnData(currentChatId, assistantTurnNumber, debugData);
+                logger.info(`[TURN-DEBUG] Saved assistant debug data for turn ${assistantTurnNumber}`);
+            }
+            
             updateChatPreview(currentChatId, cleanContent);
         } catch (error) {
-            logger.error('Failed to save assistant message:', error);
+            logger.error('Failed to save assistant message or debug data:', error);
         }
         
         logger.info('Simple chat completed successfully');
@@ -344,7 +356,16 @@ async function handleSimpleChat(message, conversationHistory) {
                 }
                 
                 const partialContent = processor.getDisplayContent() || '';
-                await saveCompleteMessage(currentChatId, { role: 'assistant', content: partialContent }, assistantTurnNumber, stoppedDebugData, partialBlocks);
+                
+                // Save stopped message without debug data (turn-based approach)
+                await saveCompleteMessage(currentChatId, { role: 'assistant', content: partialContent }, partialBlocks, assistantTurnNumber);
+                
+                // Save debug data to turn-based storage
+                if (stoppedDebugData) {
+                    await saveTurnData(currentChatId, assistantTurnNumber, stoppedDebugData);
+                    logger.info(`[TURN-DEBUG] Saved stopped debug data for turn ${assistantTurnNumber}`);
+                }
+                
                 updateChatPreview(currentChatId, partialContent);
             } catch (saveError) {
                 logger.warn('Failed to save stopped message:', saveError);

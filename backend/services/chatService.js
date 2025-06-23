@@ -34,6 +34,75 @@ async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
     }
 }
 
+// Turn-based debug data functions
+async function saveTurnDebugData(chatId, turnNumber, debugData) {
+    const { db } = require('../config/database');
+    
+    try {
+        const debugDataJson = JSON.stringify(debugData);
+        
+        // Use INSERT OR REPLACE to handle both new and updated debug data
+        const stmt = db.prepare(
+            'INSERT OR REPLACE INTO turn_debug_data (chat_id, turn_number, debug_data) VALUES (?, ?, ?)'
+        );
+        const result = stmt.run(chatId, turnNumber, debugDataJson);
+        
+        log(`[TURN-DEBUG] Saved debug data for turn ${turnNumber} in chat ${chatId}`);
+        return result;
+        
+    } catch (err) {
+        log('[TURN-DEBUG] Error saving turn debug data:', err);
+        throw err;
+    }
+}
+
+function getTurnDebugData(chatId, turnNumber) {
+    const { db } = require('../config/database');
+    
+    try {
+        const stmt = db.prepare('SELECT debug_data FROM turn_debug_data WHERE chat_id = ? AND turn_number = ?');
+        const result = stmt.get(chatId, turnNumber);
+        
+        if (result) {
+            const debugData = JSON.parse(result.debug_data);
+            log(`[TURN-DEBUG] Retrieved debug data for turn ${turnNumber} in chat ${chatId}`);
+            return debugData;
+        } else {
+            log(`[TURN-DEBUG] No debug data found for turn ${turnNumber} in chat ${chatId}`);
+            return null;
+        }
+        
+    } catch (err) {
+        log('[TURN-DEBUG] Error getting turn debug data:', err);
+        return null;
+    }
+}
+
+function getAllTurnDebugData(chatId) {
+    const { db } = require('../config/database');
+    
+    try {
+        const stmt = db.prepare('SELECT turn_number, debug_data FROM turn_debug_data WHERE chat_id = ? ORDER BY turn_number ASC');
+        const rows = stmt.all(chatId);
+        
+        const turnDebugMap = {};
+        rows.forEach(row => {
+            try {
+                turnDebugMap[row.turn_number] = JSON.parse(row.debug_data);
+            } catch (parseError) {
+                log(`[TURN-DEBUG] Error parsing debug data for turn ${row.turn_number}:`, parseError);
+            }
+        });
+        
+        log(`[TURN-DEBUG] Retrieved debug data for ${rows.length} turns in chat ${chatId}`);
+        return turnDebugMap;
+        
+    } catch (err) {
+        log('[TURN-DEBUG] Error getting all turn debug data:', err);
+        return {};
+    }
+}
+
 // Get current turn number for a chat
 function getCurrentTurnNumber(chat_id) {
     if (!chat_id) {
@@ -85,25 +154,19 @@ function getChatHistoryForAPI(chat_id) {
     const messages = [];
     
     try {
-        // Get complete message structure from database - prefer message_data when available
-        const stmt = db.prepare('SELECT role, content, message_data, turn_number FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+        // Get message data directly from columns
+        const stmt = db.prepare('SELECT role, content, turn_number FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
         const historyRows = stmt.all(chat_id);
         
-        // Add history to messages - require complete structure
+        // Build messages from direct columns
         historyRows.forEach(row => {
-            if (!row.message_data) {
-                throw new Error(`Message missing complete structure (message_data). Database needs migration or data is corrupted.`);
-            }
-            
-            try {
-                const completeMessage = JSON.parse(row.message_data);
-                // Add turn number to the message object
-                completeMessage.turn_number = row.turn_number;
-                messages.push(completeMessage);
-                log(`[CHAT-HISTORY] Added complete message structure: ${completeMessage.role}`);
-            } catch (parseError) {
-                throw new Error(`Failed to parse message_data: ${parseError.message}`);
-            }
+            const message = {
+                role: row.role,
+                content: row.content,
+                turn_number: row.turn_number
+            };
+            messages.push(message);
+            log(`[CHAT-HISTORY] Added message: ${message.role}`);
         });
         
         log(`[CHAT-HISTORY] Retrieved ${messages.length} messages for chat ${chat_id}`);
@@ -115,14 +178,13 @@ function getChatHistoryForAPI(chat_id) {
     }
 }
 // Save complete message structure to database
-async function saveCompleteMessageToDatabase(chatId, messageData, debugData = null, blocks = null, turnNumber = null) {
+async function saveCompleteMessageToDatabase(chatId, messageData, blocks = null, turnNumber = null) {
     const { db } = require('../config/database');
     
     try {
-        // Store both the content and the complete message structure
+        // Store message data directly in columns
         const content = messageData.content || '';
-        const messageDataJson = JSON.stringify(messageData);
-        const debugDataJson = debugData ? JSON.stringify(debugData) : null;
+        const role = messageData.role;
         const blocksJson = blocks ? JSON.stringify(blocks) : null;
         
         // Begin transaction
@@ -130,11 +192,11 @@ async function saveCompleteMessageToDatabase(chatId, messageData, debugData = nu
         
         // Frontend determines turn numbers - backend just stores what it's told
         let assignedTurnNumber = turnNumber || 0;
-        log(`[CHAT-SAVE] Storing message with turn ${assignedTurnNumber} (role: ${messageData.role}) in chat ${chatId}`);
+        log(`[CHAT-SAVE] Storing message with turn ${assignedTurnNumber} (role: ${role}) in chat ${chatId}`);
 
-        // Insert message with complete structure including blocks, debug data, and turn number
-        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, message_data, debug_data, blocks, turn_number) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        insertStmt.run(chatId, messageData.role, content, messageDataJson, debugDataJson, blocksJson, assignedTurnNumber);
+        // Insert message with direct columns (no redundant message_data or debug_data)
+        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, blocks, turn_number) VALUES (?, ?, ?, ?, ?)');
+        insertStmt.run(chatId, role, content, blocksJson, assignedTurnNumber);
         
         // Update chat timestamp
         const updateStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
@@ -143,7 +205,7 @@ async function saveCompleteMessageToDatabase(chatId, messageData, debugData = nu
         // Commit transaction
         db.prepare('COMMIT').run();
         
-        log(`[CHAT-SAVE] Saved complete message: ${messageData.role} in turn ${assignedTurnNumber} with ${blocks ? blocks.length : 0} blocks`);
+        log(`[CHAT-SAVE] Saved complete message: ${role} in turn ${assignedTurnNumber} with ${blocks ? blocks.length : 0} blocks`);
         return assignedTurnNumber; // Return the assigned turn number
         
     } catch (error) {
@@ -440,7 +502,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                         content: unifiedResponse.content
                     };
                     try {
-                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, null, null, currentTurn);
+                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, null, currentTurn);
                         log(`[CHAT-SAVE] Saved final assistant response to history`);
                     } catch (error) {
                         log(`[CHAT-SAVE] Error saving final assistant response: ${error.message}`);
@@ -529,7 +591,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     
     // Save assistant message with tool calls to database
     if (chatId) {
-        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, null, null, currentTurn);
+        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, null, currentTurn);
         log(`[CHAT-SAVE] Saved assistant message with ${toolCalls.length} tool calls`);
     }
     
@@ -562,7 +624,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, toolMessage, null, null, currentTurn);
+                await saveCompleteMessageToDatabase(chatId, toolMessage, null, currentTurn);
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
             
@@ -611,7 +673,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool error message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, errorMessage, null, null, currentTurn);
+                await saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn);
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
             
@@ -730,5 +792,9 @@ module.exports = {
     updateMessageDebugData,
     getChatHistoryForAPI,
     getCurrentTurnNumber,
-    incrementTurnNumber
+    incrementTurnNumber,
+    // Turn-based debug data functions
+    saveTurnDebugData,
+    getTurnDebugData,
+    getAllTurnDebugData
 };
