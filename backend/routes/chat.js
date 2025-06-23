@@ -139,7 +139,7 @@ router.delete('/chat/:id', (req, res) => {
 // Save message using unified approach
 router.post('/message', async (req, res) => {
     try {
-        const { chat_id, role, content, debug_data, blocks, tool_calls, tool_call_id, tool_name } = req.body;
+        const { chat_id, role, content, turn_number, debug_data, blocks, tool_calls, tool_call_id, tool_name } = req.body;
         
         if (!chat_id || !role || content === null || content === undefined) {
             return res.status(400).json({ error: 'chat_id, role, and content are required' });
@@ -157,8 +157,14 @@ router.post('/message', async (req, res) => {
         if (tool_name) completeMessage.tool_name = tool_name;
         
         // Use the unified save function
-        const { saveCompleteMessageToDatabase } = require('../services/chatService');
-        await saveCompleteMessageToDatabase(chat_id, completeMessage, debug_data, blocks);
+        const { saveCompleteMessageToDatabase, incrementTurnNumber } = require('../services/chatService');
+        // Use turn number provided by frontend
+        await saveCompleteMessageToDatabase(chat_id, completeMessage, debug_data, blocks, turn_number);
+        
+        // Increment turn number when user sends a message (starts new conversation turn)
+        if (role === 'user') {
+            incrementTurnNumber(chat_id);
+        }
         
         res.json({ success: true });
         
@@ -204,6 +210,40 @@ router.get('/chat/:id/api-history', (req, res) => {
     } catch (err) {
         log('[API-HISTORY] Error:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Get current turn number for a chat
+router.get('/chat/:id/current-turn', (req, res) => {
+    const { id: chatId } = req.params;
+    
+    try {
+        const { getCurrentTurnNumber } = require('../services/chatService');
+        const turnNumber = getCurrentTurnNumber(chatId);
+        res.json({ turn_number: turnNumber });
+    } catch (err) {
+        log('[CURRENT-TURN] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update debug data for a message
+router.patch('/message/debug', async (req, res) => {
+    try {
+        const { chat_id, role, turn_number, debug_data } = req.body;
+        
+        if (!chat_id || !role || !turn_number) {
+            return res.status(400).json({ error: 'chat_id, role, and turn_number are required' });
+        }
+        
+        const { updateMessageDebugData } = require('../services/chatService');
+        await updateMessageDebugData(chat_id, role, turn_number, debug_data);
+        
+        res.json({ success: true });
+        
+    } catch (error) {
+        log('[UPDATE-DEBUG] Error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 

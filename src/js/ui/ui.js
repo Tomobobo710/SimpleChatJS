@@ -4,7 +4,7 @@
 function initializeElements() {
     messageInput = document.getElementById('messageInput');
     sendBtn = document.getElementById('sendBtn');
-    messagesContainer = document.getElementById('messages');        // Inner div for appending messages
+    turnsContainer = document.getElementById('messages');        // Inner div for appending turns
     scrollContainer = document.getElementById('messagesContainer');   // Outer div for scrolling
     conductorModeCheckbox = document.getElementById('conductorMode');
     

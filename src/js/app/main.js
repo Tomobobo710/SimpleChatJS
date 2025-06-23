@@ -1,7 +1,7 @@
 // Main application logic - App initialization, DOM setup, and message routing
 
 // DOM elements
-let messageInput, sendBtn, messagesContainer, scrollContainer, conductorModeCheckbox;
+let messageInput, sendBtn, turnsContainer, scrollContainer, conductorModeCheckbox;
 let settingsModal, settingsBtn, newChatBtn, closeModalBtn;
 let apiUrlInput, apiKeyInput, modelNameInput, modelSelectDropdown, mainModelSelect, refreshModelsBtn, saveSettingsBtn, debugPanelsInput, testConnectionBtn;
 let mcpServersDiv;
@@ -10,6 +10,7 @@ let chatList, chatTitle, chatInfo;
 
 // Chat state
 let chatHistories = new Map(); // Store chat histories locally
+let currentTurnNumber = 0; // Track current turn number for active chat
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
@@ -51,6 +52,31 @@ async function getEnabledToolDefinitions() {
         logger.warn('Failed to get MCP tools:', error);
     }
     return enabledToolDefinitions;
+}
+// Turn management functions
+function getNextTurnNumber() {
+    return ++currentTurnNumber;
+}
+
+function resetTurnTracking() {
+    currentTurnNumber = 0;
+}
+
+async function initializeTurnTrackingForChat(chatId) {
+    try {
+        if (!chatId) {
+            resetTurnTracking();
+            return;
+        }
+        
+        // Get the highest turn number from this chat
+        const response = await getCurrentTurnNumber(chatId);
+        currentTurnNumber = response.turn_number || 0;
+        logger.debug(`[TURN] Initialized turn tracking for chat ${chatId}: currentTurnNumber=${currentTurnNumber}`);
+    } catch (error) {
+        logger.warn('[TURN] Failed to initialize turn tracking, starting from 0:', error);
+        resetTurnTracking();
+    }
 }
 
 // Handle sending a message
@@ -139,18 +165,22 @@ async function handleConductorChat(message, conversationHistory) {
     // Use the conversation history passed from main.js
     userDebugData.conversationHistory = conversationHistory;
     
+    // Get turn number for this user message
+    const userTurnNumber = getNextTurnNumber();
+    
     // Add user message to UI using unified renderer
     const userBlocks = [{ type: 'chat', content: message, metadata: {} }];
-    chatRenderer.renderMessage({
+    chatRenderer.renderTurn({
         role: 'user',
         blocks: userBlocks,
         debug_data: userDebugData,
-        content: message
+        content: message,
+        turn_number: userTurnNumber
     }, true);
     
     // Save user message with blocks FIRST (same sequence as simple chat)
     try {
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userDebugData, userBlocks);
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userTurnNumber, userDebugData, userBlocks);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
     }
@@ -159,7 +189,7 @@ async function handleConductorChat(message, conversationHistory) {
     const assistantMessageDiv = document.createElement('div');
     assistantMessageDiv.className = 'message assistant';
     assistantMessageDiv.innerHTML = '';
-    messagesContainer.appendChild(assistantMessageDiv);
+    turnsContainer.appendChild(assistantMessageDiv);
     
     try {
         // Initialize conductor
@@ -168,17 +198,24 @@ async function handleConductorChat(message, conversationHistory) {
         // Run conductor and get result
         const result = await conductor.runConductor(message, assistantMessageDiv);
         
+        // Get turn number and inject it into debug data BEFORE creating final message data
+        const assistantTurnNumber = getNextTurnNumber();
+        if (result.debugData) {
+            result.debugData.currentTurnNumber = assistantTurnNumber;
+        }
+        
         // Prepare final content BEFORE removing temp elements (seamless transition)
         const finalMessageData = {
             role: 'assistant',
             blocks: result.blocks || [],
             debug_data: result.debugData,
             dropdownStates: result.dropdownStates || {},
-            isPartial: result.wasAborted
+            isPartial: result.wasAborted,
+            turn_number: assistantTurnNumber
         };
         
         // Create final content off-screen (no flicker!)
-        const finalContent = chatRenderer.createMessageElement(finalMessageData, false);
+        const finalContent = chatRenderer.createTurnElement(finalMessageData, false);
         
         // Seamless replacement: swap content atomically
         const parent = assistantMessageDiv.parentNode;
@@ -198,7 +235,7 @@ async function handleConductorChat(message, conversationHistory) {
             
             // Save whatever content the AI actually generated (even if empty)
             try {
-                await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content || '' }, result.debugData, result.blocks || []);
+                await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content || '' }, assistantTurnNumber, result.debugData, result.blocks || []);
                 updateChatPreview(currentChatId, result.content || '');
             } catch (saveError) {
                 logger.warn('[CONDUCTOR] Failed to save aborted message:', saveError);
@@ -211,7 +248,7 @@ async function handleConductorChat(message, conversationHistory) {
         
         // Save assistant message with both raw content and blocks (same as simple chat)
         try {
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content }, result.debugData, result.blocks || []);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content }, assistantTurnNumber, result.debugData, result.blocks || []);
             // Update chat preview with display content
             updateChatPreview(currentChatId, result.content);
         } catch (error) {
@@ -226,19 +263,22 @@ async function handleConductorChat(message, conversationHistory) {
         
         // Show error in UI using ChatRenderer (unified with simple chat)
         assistantMessageDiv.remove();
-        chatRenderer.renderMessage({
+        const errorTurnNumber = getNextTurnNumber();
+        
+        chatRenderer.renderTurn({
             role: 'assistant',
             blocks: [{
                 type: 'chat',
                 content: `[ERROR] Conductor failed: ${error.message}`,
                 metadata: {}
             }],
-            debug_data: null
+            debug_data: null,
+            turn_number: errorTurnNumber
         }, true);
         
         try {
-            await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userDebugData, userBlocks);
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: `Error: ${error.message}` }, null, []);
+            // User message was already saved above, just save the error assistant message
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: `Error: ${error.message}` }, errorTurnNumber, null, []);
         } catch (saveError) {
             logger.error('[CONDUCTOR] Failed to save error message:', saveError);
         }

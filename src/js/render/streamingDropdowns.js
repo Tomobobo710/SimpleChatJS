@@ -95,7 +95,7 @@ class StreamingDropdown {
                 <span class="dropdown-arrow">${this.isCollapsed ? '▶' : '▼'}</span>
                 <span class="dropdown-title">${this.title}</span>
             </button>
-            <div class="dropdown-content" ${this.isCollapsed ? 'style="display: none;"' : ''}>
+            <div class="dropdown-content${this.isCollapsed ? '' : ' expanded'}">
                 <div class="dropdown-inner" id="dropdown-content-${this.id}"></div>
             </div>
         `;
@@ -144,7 +144,11 @@ class StreamingDropdown {
             button.className = `dropdown-toggle ${this.isCollapsed ? 'collapsed' : 'expanded'}`;
         }
         if (content) {
-            content.style.display = this.isCollapsed ? 'none' : 'block';
+            if (this.isCollapsed) {
+                content.classList.remove('expanded');
+            } else {
+                content.classList.add('expanded');
+            }
         }
         if (arrow) {
             arrow.textContent = this.isCollapsed ? '▶' : '▼';

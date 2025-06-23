@@ -1,13 +1,40 @@
 // Simple Chat Mode - Direct streaming chat without conductor complexity
 
 async function handleSimpleChat(message, conversationHistory) {
+    // These variables will be used across both user and assistant phases
+    let requestId, requestInfo;
     logger.info('Starting simple chat');
     
     // Get enabled tools that will be sent to AI (do this ONCE)
     const settings = loadSettings();
     const enabledToolDefinitions = await getEnabledToolDefinitions();
     
-    // Always prepare debug data for user message using sequence format (regardless of setting)
+    // Generate requestId upfront - will be used for both user and assistant
+    requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    logger.debug('[SIMPLE-CHAT] Generated requestId:', requestId);
+    
+    // Get turn number for this user message (frontend manages turns now)
+    const userTurnNumber = getNextTurnNumber();
+    
+    // Add user message to UI using global chatRenderer (same as saved chats)
+    const userBlocks = [{ type: 'chat', content: message, metadata: {} }];
+    chatRenderer.renderTurn({
+        role: 'user',
+        blocks: userBlocks,
+        content: message,
+        turn_number: userTurnNumber
+    }, true);
+    
+    // Save user message to database
+    console.log(`[FRONTEND] Saving user message to chat ${currentChatId}`);
+    try {
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userTurnNumber, null, userBlocks);
+        console.log(`[FRONTEND] Successfully saved user message to chat ${currentChatId}`);
+    } catch (error) {
+        logger.warn('Failed to save user message:', error);
+    }
+    
+    // Prepare debug data with the correct turn number
     const userDebugData = {
         sequence: [
             {
@@ -19,7 +46,8 @@ async function handleSimpleChat(message, conversationHistory) {
                         chat_id: currentChatId,
                         conductor_mode: false,
                         timestamp: new Date().toISOString(),
-                        message_length: message.length
+                        message_length: message.length,
+                        turn_number: userTurnNumber // Include turn number
                     },
                     tools: {
                         total: enabledToolDefinitions.length,
@@ -38,34 +66,95 @@ async function handleSimpleChat(message, conversationHistory) {
             endpoint: 'user_input',
             timestamp: new Date().toISOString(),
             tools: enabledToolDefinitions.length
-        }
+        },
+        currentTurnNumber: userTurnNumber // Add turn number at top level
     };    
     // Use the conversation history passed from main.js
     userDebugData.conversationHistory = conversationHistory;
     
-    // Add user message to UI using unified renderer
-    const userBlocks = [{ type: 'chat', content: message, metadata: {} }];
-    chatRenderer.renderMessage({
-        role: 'user',
-        blocks: userBlocks,
-        debug_data: userDebugData,
-        content: message
-    }, true);
+    // INITIATE the API request here (but don't await the response)
+    requestInfo = initiateMessageRequest(message, false, enabledToolDefinitions, null, null, false, false, requestId);
+    logger.info('[SIMPLE-CHAT] Initiated API request with requestId:', requestId);
     
-    // Save user message with blocks
+    // Add API request info to debug data
+    userDebugData.sequence.push({
+        type: 'ai_http_request',
+        step: userDebugData.sequence.length + 1,
+        timestamp: new Date().toISOString(),
+        data: {
+            requestId: requestId,
+            endpoint: 'chat',
+            message: message,
+            tools_enabled: enabledToolDefinitions.length,
+            turn_number: userTurnNumber // Include turn number here too
+        }
+    });
+    userDebugData.apiRequest = {
+        url: `${window.location.origin}/api/chat`,
+        method: 'POST',
+        requestId: requestId,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Update message with debug data
     try {
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userDebugData, userBlocks);
+        await updateMessageDebugData(currentChatId, 'user', userTurnNumber, userDebugData);
     } catch (error) {
-        logger.warn('Failed to save user message:', error);
+        logger.warn('Failed to update user message with debug data:', error);
+    }
+    
+    // Update user turn with debug data - find the last user message and update it
+    const userMessages = turnsContainer.querySelectorAll('.turn.user-turn, .message.user');
+    const lastUserMessage = userMessages[userMessages.length - 1];
+    if (lastUserMessage) {
+        // Add debug panel to existing user message
+        const messageId = lastUserMessage.dataset.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        lastUserMessage.dataset.messageId = messageId;
+        
+        // Remove existing debug panel if any
+        const existingDebug = lastUserMessage.querySelector('.debug-panel-container');
+        const existingToggle = lastUserMessage.querySelector('.debug-toggle');
+        if (existingDebug) existingDebug.remove();
+        if (existingToggle) existingToggle.remove();
+        
+        // Add debug panel using the same method as ChatRenderer
+        lastUserMessage.classList.add('has-debug');
+        
+        const debugToggle = document.createElement('button');
+        debugToggle.className = 'debug-toggle';
+        debugToggle.dataset.messageId = messageId;
+        debugToggle.innerHTML = '+';
+        debugToggle.title = 'Show debug info';
+        
+        const settings = loadSettings();
+        if (!settings.debugPanels) {
+            debugToggle.style.display = 'none';
+        }
+        
+        debugToggle.addEventListener('click', () => {
+            const debugPanel = lastUserMessage.querySelector('.debug-panel-container');
+            if (debugPanel) {
+                const isHidden = debugPanel.style.display === 'none';
+                debugPanel.style.display = isHidden ? 'block' : 'none';
+                debugToggle.innerHTML = isHidden ? '−' : '+';
+                debugToggle.classList.toggle('active', isHidden);
+            }
+        });
+        
+        lastUserMessage.appendChild(debugToggle);
+        
+        // Create debug panel
+        const debugPanel = createDebugPanel(messageId, userDebugData, userTurnNumber);
+        lastUserMessage.appendChild(debugPanel);
     }
     
     // Prepare for assistant response
-    const assistantMessageDiv = document.createElement('div');
-    assistantMessageDiv.className = 'message assistant';
-    assistantMessageDiv.innerHTML = '';
-    messagesContainer.appendChild(assistantMessageDiv);
+    const assistantTurnDiv = document.createElement('div');
+    assistantTurnDiv.className = 'turn assistant-turn';
+    assistantTurnDiv.innerHTML = '';
+    turnsContainer.appendChild(assistantTurnDiv);
     
-    let fullResponse = '';
+    // Removed fullResponse accumulation to prevent concatenation
     let debugData = null;
     let toolEventSource = null; // Declare outside try block so catch can access it
     let wasAborted = false; // Track if we aborted
@@ -75,15 +164,14 @@ async function handleSimpleChat(message, conversationHistory) {
     
     // Create a temporary container for real-time rendering during streaming
     const tempContainer = document.createElement('div');
-    assistantMessageDiv.appendChild(tempContainer);
+    tempContainer.style.width = '100%';
+    tempContainer.style.boxSizing = 'border-box';
+    assistantTurnDiv.appendChild(tempContainer);
     const liveRenderer = new ChatRenderer(tempContainer);
     
     try {
-        // Generate requestId upfront and connect to tool events BEFORE making the request
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        logger.debug('[SIMPLE-CHAT] Generated requestId:', requestId);
-        
-        // Connect to tool events stream immediately
+        // Connect to tool events stream for the requestId that was generated in the user bubble phase
+        // requestId and requestInfo are now already available from the user bubble phase
         logger.debug('[SIMPLE-CHAT] Connecting to SSE:', `${window.location.origin}/api/tools/${requestId}`);
         toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
         toolEventSource.onmessage = (event) => {
@@ -95,13 +183,13 @@ async function handleSimpleChat(message, conversationHistory) {
             logger.error('[SIMPLE-CHAT] SSE error:', error);
         };
         
-        // Now make the request with the pre-generated requestId
-        logger.debug('[SIMPLE-CHAT] Making request with requestId:', requestId);
-        const response = await sendMessageWithTools(message, false, enabledToolDefinitions, null, null, false, false, requestId);
+        // Now AWAIT the response from the request that was already initiated in the user bubble phase
+        logger.debug('[SIMPLE-CHAT] Awaiting response for requestId:', requestId);
+        const response = await requestInfo.fetchPromise;
         
         // Stream the response cleanly - no debug parsing needed!
         for await (const chunk of streamResponse(response)) {
-            fullResponse += chunk;
+            // Don't accumulate fullResponse to avoid concatenation across tool calls
             processor.addChunk(chunk);
             // Update live rendering
             updateLiveRendering(processor, liveRenderer, tempContainer);
@@ -170,25 +258,30 @@ async function handleSimpleChat(message, conversationHistory) {
         
         // Replace temp container with final rendered content
         tempContainer.remove();
+        assistantTurnDiv.remove();
         
-        // Remove the temporary assistant message div and use ChatRenderer
-        assistantMessageDiv.remove();
+        // Get turn number and inject it into debug data BEFORE rendering
+        const assistantTurnNumber = getNextTurnNumber();
+        if (debugData) {
+            debugData.currentTurnNumber = assistantTurnNumber;
+        }
         
-        chatRenderer.renderMessage({
+        // Use global chatRenderer (same as saved chats) for final assistant message
+        const renderedTurn = chatRenderer.renderTurn({
             role: 'assistant',
             blocks: finalBlocks,
             debug_data: debugData,
-            dropdownStates: dropdownStates
+            dropdownStates: dropdownStates,
+            turn_number: assistantTurnNumber
         }, true); // Enable scrolling
         
-        // Save assistant message with both raw content and blocks
+        // Save with blocks from processor
         try {
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: fullResponse }, debugData, finalBlocks);
-            // Update chat preview with display content (clean text)
-            const displayContent = processor.getDisplayContent() || fullResponse;
-            updateChatPreview(currentChatId, displayContent);
+            const cleanContent = processor.getDisplayContent() || '';
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: cleanContent }, assistantTurnNumber, debugData, finalBlocks);
+            updateChatPreview(currentChatId, cleanContent);
         } catch (error) {
-            logger.warn('Failed to save assistant message:', error);
+            logger.error('Failed to save assistant message:', error);
         }
         
         logger.info('Simple chat completed successfully');
@@ -209,7 +302,7 @@ async function handleSimpleChat(message, conversationHistory) {
             
             // Remove temp elements
             tempContainer.remove();
-            assistantMessageDiv.remove();
+            assistantTurnDiv.remove();
             
             // Simple debug data for stopped request
             const stoppedDebugData = {
@@ -219,7 +312,7 @@ async function handleSimpleChat(message, conversationHistory) {
                     timestamp: new Date().toISOString(),
                     data: {
                         message: 'Generation stopped by user',
-                        partial_content: fullResponse
+                        partial_content: processor.getDisplayContent() || ''
                     }
                 }],
                 metadata: {
@@ -229,9 +322,11 @@ async function handleSimpleChat(message, conversationHistory) {
                 }
             };
             
-            // Get blocks and render with debug panel - simple
+            // Get blocks and render with debug panel using global chatRenderer
             const partialBlocks = processor.finalize();
-            chatRenderer.renderMessage({
+            
+            // Render the partial message using global chatRenderer
+            chatRenderer.renderTurn({
                 role: 'assistant',
                 blocks: partialBlocks,
                 debug_data: stoppedDebugData,
@@ -241,8 +336,16 @@ async function handleSimpleChat(message, conversationHistory) {
             
             // Save whatever content the AI actually generated (even if empty)
             try {
-                await saveCompleteMessage(currentChatId, { role: 'assistant', content: fullResponse || '' }, stoppedDebugData, partialBlocks);
-                updateChatPreview(currentChatId, fullResponse || '');
+                const assistantTurnNumber = getNextTurnNumber();
+                
+                // Inject turn number into debug data for proper debug panel display
+                if (stoppedDebugData) {
+                    stoppedDebugData.currentTurnNumber = assistantTurnNumber;
+                }
+                
+                const partialContent = processor.getDisplayContent() || '';
+                await saveCompleteMessage(currentChatId, { role: 'assistant', content: partialContent }, assistantTurnNumber, stoppedDebugData, partialBlocks);
+                updateChatPreview(currentChatId, partialContent);
             } catch (saveError) {
                 logger.warn('Failed to save stopped message:', saveError);
             }
@@ -252,9 +355,10 @@ async function handleSimpleChat(message, conversationHistory) {
         
         // Handle other errors
         logger.error('Simple chat failed:', error, true);
-        assistantMessageDiv.remove();
-        // Show error using unified renderer
-        chatRenderer.renderMessage({
+        assistantTurnDiv.remove();
+        
+        // Show error using global chatRenderer
+        chatRenderer.renderTurn({
             role: 'assistant',
             blocks: [{ type: 'chat', content: `[ERROR] ${error.message}`, metadata: {} }],
             debug_data: debugData,

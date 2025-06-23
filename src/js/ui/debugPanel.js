@@ -124,10 +124,39 @@ class SequentialDebugPanel {
         }
         
         // Add complete message history section at the end
+        // Show messages in current turn first (more relevant for debugging)
+        // Show Messages In This Turn (filter from complete history)
+        if (debugData.currentTurnNumber !== null && debugData.currentTurnNumber !== undefined && debugData.completeMessageHistory) {
+            content += `<div class="message-history-section">`;
+            content += `<h4>Messages In This Turn</h4>`;
+            content += `<div class="debug-note">Turn #${debugData.currentTurnNumber} - Filtered from complete history</div>`;
+            
+            // Filter messages for this turn from complete history
+            const turnMessages = debugData.completeMessageHistory.filter(msg => msg.turn_number === debugData.currentTurnNumber);
+            const messageCount = turnMessages.length;
+            
+            content += this.createDropdown(
+                `Turn #${debugData.currentTurnNumber} Messages (${messageCount} messages)`,
+                JSON.stringify(turnMessages, null, 2),
+                false, // Collapsed by default
+                'json'
+            );
+            
+            content += `</div>`;  // Close message-history-section
+        } else {
+            // Fallback: Show a note about missing turn information
+            content += `<div class="message-history-section">`;
+            content += `<h4>Messages In This Turn</h4>`;
+            content += `<div class="debug-note">Turn information not available</div>`;
+            content += `<div class="debug-info">This message was saved before turn tracking was properly implemented. The complete message history below contains all context.</div>`;
+            content += `</div>`;  // Close message-history-section
+        }
+        
+        // Still show complete history (collapsed by default)
         if (debugData.completeMessageHistory) {
             content += `<div class="message-history-section">`;
             content += `<h4>Complete Message History</h4>`;
-            content += `<div class="debug-note">Final history for this message</div>`;
+            content += `<div class="debug-note">Complete history across all turns</div>`;
             
             if (debugData.completeMessageHistory.error) {
                 content += `<div class="debug-error">Error: ${debugData.completeMessageHistory.error}</div>`;
@@ -136,7 +165,7 @@ class SequentialDebugPanel {
                 content += this.createDropdown(
                     `Complete Message History (${messageCount} messages)`,
                     JSON.stringify(debugData.completeMessageHistory, null, 2),
-                    false,
+                    false, // Collapsed by default
                     'json'
                 );
             }
@@ -154,7 +183,80 @@ class SequentialDebugPanel {
         content += '<h3>User HTTP Request Debug</h3>';
         content += '<div class="debug-note">HTTP request payload sent to AI provider</div>';
         
-            // Construct unified request from available data
+        // Look for the ai_http_request event in the sequence
+        const requestEvent = debugData.sequence.find(step => step.type === 'ai_http_request');
+        if (requestEvent) {
+            content += `<div class="debug-section timeline-item">`;
+            content += `<div class="debug-section-title">STEP 1: AI HTTP REQUEST</div>`;
+            content += `<div class="debug-timestamp">${requestEvent.timestamp}</div>`;
+            content += `<div class="debug-note">Request initiated from user bubble phase</div>`;
+            content += this.createDropdown('Request Details', JSON.stringify(requestEvent.data, null, 2));
+            content += `</div>`;
+        }
+        
+        // Add "Messages In This Turn" section with turn info
+        content += `<div class="message-history-section">`;
+        content += `<h4>Messages In This Turn</h4>`;
+        
+        // Show turn number if available
+        if (debugData.currentTurnNumber) {
+            content += `<div class="debug-note">Turn #${debugData.currentTurnNumber}</div>`;
+        } else {
+            content += `<div class="debug-note">Current user message</div>`;
+        }
+        
+        // Find the user message from the sequence
+        const userInputStep = debugData.sequence.find(step => step.type === 'user_input');
+        if (userInputStep && userInputStep.data && userInputStep.data.userQuery) {
+            const userMessage = {
+                role: 'user',
+                content: userInputStep.data.userQuery.message
+            };
+            
+            // Format as a JSON array with just this message
+            const messagesInTurn = [userMessage];
+            
+            content += this.createDropdown(
+                `Current User Message`,
+                JSON.stringify(messagesInTurn, null, 2),
+                true,  // Show expanded by default
+                'json'
+            );
+            
+            // Also show the conversation history
+            if (debugData.conversationHistory && debugData.conversationHistory.length > 0) {
+                // Show only the last turn's messages (the most recent assistant response)
+                const prevTurnMessages = [];
+                let foundPrevTurn = false;
+                
+                // Go backwards through history to find the last assistant message
+                for (let i = debugData.conversationHistory.length - 1; i >= 0; i--) {
+                    const msg = debugData.conversationHistory[i];
+                    if (msg.role === 'assistant' && !foundPrevTurn) {
+                        prevTurnMessages.unshift(msg);  // Add to beginning
+                        foundPrevTurn = true;
+                    } else if (foundPrevTurn && msg.role === 'user') {
+                        prevTurnMessages.unshift(msg);  // Add the user message that triggered this assistant response
+                        break;  // Found complete previous turn
+                    }
+                }
+                
+                if (prevTurnMessages.length > 0) {
+                    content += this.createDropdown(
+                        `Previous Turn Context (${prevTurnMessages.length} messages)`,
+                        JSON.stringify(prevTurnMessages, null, 2),
+                        false,  // Collapsed by default
+                        'json'
+                    );
+                }
+            }
+        } else {
+            content += `<div class="debug-note">No user message found in debug data</div>`;
+        }
+        
+        content += `</div>`;  // Close message-history-section
+        
+        // Construct unified request from available data
         content += `<div class="http-request-section">`;
         content += `<h4>HTTP Request to AI Provider</h4>`;
         content += `<div class="debug-note">Unified request structure that would be sent to AI</div>`;
@@ -167,7 +269,7 @@ class SequentialDebugPanel {
         }
         
         // Add tools from user input data
-        const userInputStep = debugData.sequence.find(step => step.type === 'user_input');
+        // We already have userInputStep from above, so we don't need to find it again
         if (userInputStep && userInputStep.data && userInputStep.data.tools && userInputStep.data.tools.definitions) {
             unifiedRequest.tools = userInputStep.data.tools.definitions;
         }
@@ -185,6 +287,21 @@ class SequentialDebugPanel {
         
         content += `</div>`;
         
+        // Add complete message history in collapsed form for reference
+        if (debugData.conversationHistory && debugData.conversationHistory.length > 0) {
+            content += `<div class="message-history-section">`;
+            content += `<h4>Complete Message History</h4>`;
+            content += `<div class="debug-note">Complete history across all turns</div>`;
+            
+            content += this.createDropdown(
+                `Complete Message History (${debugData.conversationHistory.length} messages)`,
+                JSON.stringify(debugData.conversationHistory, null, 2),
+                false,  // Collapsed by default
+                'json'
+            );
+            
+            content += `</div>`;
+        }
         
         content += '</div>';  // Close debug-panel
         return content;

@@ -72,6 +72,26 @@ function initializeDatabase() {
                 }
             }
             
+            // Add turn_number column for grouping messages into turns
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN turn_number INTEGER`);
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding turn_number column:', err.message);
+                }
+            }
+            
+            // Add turn_number to chats table for proper turn tracking
+            try {
+                db.exec(`ALTER TABLE chats ADD COLUMN turn_number INTEGER DEFAULT 0`);
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding turn_number to chats:', err.message);
+                }
+            }
+            
             log('[DB] Database initialized successfully');
             resolve();
         } catch (err) {

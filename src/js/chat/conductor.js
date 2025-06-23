@@ -345,12 +345,11 @@ class Conductor {
         logger.info(`[CONDUCTOR] Stream completed for phase ${this.currentPhase}, requestId: ${requestId}`);
         let backendDebugData = null; // Will be fetched later
         
-        // Save assistant response to database so it's included in conversation history
+        // Track content locally for debug (main.js handles database saving with proper turn numbers)
         if (content.trim()) {
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: content });
-            logger.info(`[CONDUCTOR] Saved assistant response to database: ${content.length} chars`);
+            logger.info(`[CONDUCTOR] Generated assistant response: ${content.length} chars`);
             
-            // Also track locally for debug
+            // Track locally for debug
             this.conversationHistory.push({
                 role: 'assistant',
                 content: content

@@ -32,7 +32,83 @@ async function sendMessage(message, conductorMode = false) {
     }
 }
 
-// Send a chat message with pre-filtered tool definitions
+// Update debug data for a message
+async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
+    try {
+        const response = await fetch(`${API_BASE}/api/message/debug`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                chat_id: chatId,
+                role: role,
+                turn_number: turnNumber,
+                debug_data: debugData
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error updating message debug data:', error);
+        throw error;
+    }
+}
+
+// Initiate a request without awaiting the response (returns controller and requestId)
+function initiateMessageRequest(message, conductorMode = false, toolDefinitions = [], phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
+    try {
+        // Generate requestId if not provided
+        const generatedRequestId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const requestBody = {
+            message: message,
+            chat_id: currentChatId,
+            conductor_mode: conductorMode,
+            enabled_tools: toolDefinitions,
+            block_tool_execution: blockToolExecution,
+            block_recursive_call: blockRecursiveToolResponse,
+            ...(messageRole && { message_role: messageRole }),
+            request_id: generatedRequestId // Always include the requestId
+        };
+        
+        // Add phase number for conductor mode
+        if (phaseNumber !== null) {
+            requestBody.conductor_phase = phaseNumber;
+        }
+        
+        // Create abort controller for this request
+        const abortController = new AbortController();
+        currentAbortController = abortController;
+        
+        // Start the request but don't await it
+        const fetchPromise = fetch(`${API_BASE}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody),
+            signal: abortController.signal
+        });
+        
+        logger.debug('[API] Initiated message request with requestId:', generatedRequestId);
+        
+        // Return the information needed to track and await this request
+        return {
+            requestId: generatedRequestId,
+            controller: abortController,
+            fetchPromise: fetchPromise
+        };
+    } catch (error) {
+        logger.error('[API] Error initiating message request:', error);
+        throw error;
+    }
+}
+
 async function sendMessageWithTools(message, conductorMode = false, toolDefinitions = [], phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
     try {
         const requestBody = {
@@ -145,6 +221,7 @@ window.cachedEnabledTools = cachedEnabledTools;
 
 // Make chat functions globally available
 window.updateChatTitleInDatabase = updateChatTitleInDatabase;
+window.initiateMessageRequest = initiateMessageRequest;
 
 // Stream response reader
 async function* streamResponse(response) {
@@ -345,12 +422,13 @@ async function createNewChatInDatabase(chatId, title = 'New Chat') {
 }
 
 // Save complete message using unified approach
-async function saveCompleteMessage(chatId, messageData, debugData = null, blocks = null) {
+async function saveCompleteMessage(chatId, messageData, turnNumber, debugData = null, blocks = null) {
     try {
         const requestData = {
             chat_id: chatId,
             role: messageData.role,
             content: messageData.content,
+            turn_number: turnNumber,
             debug_data: debugData,
             blocks: blocks
         };
@@ -418,6 +496,37 @@ async function saveMCPConfig(configText) {
         return await response.json();
     } catch (error) {
         logger.error('Error saving MCP config:', error, true);
+        throw error;
+    }
+}
+
+// Get current turn number for a chat
+async function getCurrentTurnNumber(chatId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/current-turn`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting current turn number:', error);
+        throw error;
+    }
+}
+// Get messages for a specific turn
+async function getTurnMessages(chatId, turnNumber) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting turn messages:', error);
         throw error;
     }
 }

@@ -1,0 +1,271 @@
+/* Turn Styles - Clean and Consistent */
+
+/* Base styling for all turn bubbles */
+.turn, .message {
+    width: 70%;
+    max-width: 70%;
+    word-wrap: break-word;
+    font-size: 11px;
+    line-height: 1.4;
+    position: relative;
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin: 8px 0;
+}
+
+/* User turn styling */
+.turn.user-turn, .message.user {
+    align-self: flex-end;
+    background: #2a4a7a;
+    color: #ffffff;
+}
+
+/* Assistant turn styling */
+.turn.assistant-turn, .message.assistant {
+    align-self: flex-start;
+    background: #4a4a4a;
+    color: #e0e0e0;
+}
+
+/* Content containers */
+.turn-content, .message-content {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Debug panel spacing - applies to both user and assistant equally */
+.turn.has-debug .turn-content, .message.has-debug .message-content {
+    padding-right: 40px;
+}
+
+/* Status turns */
+.message.status {
+    width: auto;
+    max-width: 300px;
+    align-self: center;
+    background: rgba(0, 0, 0, 0.3);
+    color: #90ee90;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    text-align: center;
+    margin: 4px auto;
+    font-size: 10px;
+}
+
+/* Block System Styling */
+.streaming-content {
+    opacity: 0.7;
+    border-left: 2px solid #666;
+    padding-left: 8px;
+    font-style: italic;
+}
+
+[data-block-id] {
+    margin: 4px 0;
+}
+
+/* Block debugging */
+.block-debug {
+    font-size: 10px;
+    color: #666;
+    font-family: monospace;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 4px;
+    border-radius: 2px;
+    margin: 2px 0;
+}
+
+/* Text formatting */
+.text p {
+    margin: 0;
+    padding: 0;
+}
+
+.text p:not(:last-child) {
+    margin-bottom: 8px;
+}
+
+/* Code blocks */
+.text pre {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+}
+
+.text code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+}
+
+/* Dropdown styling */
+details {
+    margin: 4px 0;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    background: #2a2a2a;
+    overflow: hidden;
+}
+
+details summary {
+    padding: 8px 12px;
+    background: #333;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 11px;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+details summary:hover {
+    background: #3a3a3a;
+}
+
+details div {
+    padding: 4px 6px;
+    font-size: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0 0 4px 4px;
+    color: #ccc;
+}
+
+.thinking {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.5rem;
+    border-radius: 4px;
+    margin: 0.5rem 0;
+    font-style: italic;
+}
+
+/* Streaming Dropdowns */
+.streaming-dropdown {
+    margin: 8px 0;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    background: #2a2a2a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+}
+
+.dropdown-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    padding: 10px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+
+    gap: 8px;
+    font-size: 13px;
+    text-align: left;
+    transition: background-color 0.2s;
+    font-weight: 500;
+}
+
+.dropdown-toggle:hover {
+    background: #333;
+}
+
+.thinking-dropdown .dropdown-toggle {
+    background: rgba(74, 158, 255, 0.1);
+    border-left: 3px solid #4a9eff;
+}
+
+.tool-dropdown .dropdown-toggle {
+    background: rgba(64, 192, 87, 0.1);
+    border-left: 3px solid #40c057;
+}
+
+.dropdown-content {
+    display: none;
+    border-top: 1px solid #555;
+    background: #1a1a1a;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 12px;
+    font-size: 11px;
+    line-height: 1.4;
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+}
+
+.dropdown-content.expanded {
+    display: block;
+}
+
+.dropdown-arrow {
+    transition: transform 0.2s;
+}
+
+.dropdown-title {
+    flex: 1;
+    font-weight: 500;
+    text-align: left;
+}
+
+.dropdown-arrow.expanded {
+    transform: rotate(180deg);
+}
+
+/* Tool Content Formatting */
+.tool-section {
+    margin-bottom: 16px;
+}
+
+.tool-section:last-child {
+    margin-bottom: 0;
+}
+
+.tool-section-title {
+    font-weight: bold;
+    color: #4a90e2;
+    margin-bottom: 8px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tool-content {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 12px;
+    margin: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #e0e0e0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+}
+
+/* Loading animation */
+.loading-dots {
+    display: inline-block;
+}
+
+.loading-dots::after {
+    content: '';
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+    100% { content: ''; }
+}

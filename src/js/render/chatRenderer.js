@@ -7,17 +7,26 @@ class ChatRenderer {
     }
     
     // Main render method - takes blocks and renders them to DOM
-    renderMessage(messageData, shouldScroll = true) {
-        const { role, blocks, debug_data, dropdownStates = {}, original_content } = messageData;
+    renderTurn(turnData, shouldScroll = true) {
+        const { role, blocks, debug_data, dropdownStates = {}, original_content, turn_number } = turnData;
         
-        const messageDiv = document.createElement('div');
-        const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        messageDiv.className = `message ${role}`;
-        messageDiv.dataset.messageId = messageId;
+        const turnDiv = document.createElement('div');
+        const turnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Use the new turn-based class names
+        if (role === 'user') {
+            turnDiv.className = 'turn user-turn';
+        } else if (role === 'assistant') {
+            turnDiv.className = 'turn assistant-turn';
+        } else {
+            turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
+        }
+        
+        turnDiv.dataset.turnId = turnId;
         
         // Create content container
         const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
+        contentDiv.className = 'turn-content';
         
         // Render each block
         if (blocks && blocks.length > 0) {
@@ -45,14 +54,14 @@ class ChatRenderer {
             });
         }
         
-        messageDiv.appendChild(contentDiv);
+        turnDiv.appendChild(contentDiv);
         
         // Add debug toggle and panel if debug data provided
         if (debug_data) {
-            this.addDebugPanel(messageDiv, messageId, debug_data);
+            this.addDebugPanel(turnDiv, turnId, debug_data, turn_number);
         }
         
-        this.container.appendChild(messageDiv);
+        this.container.appendChild(turnDiv);
         
         // Handle scrolling
         if (shouldScroll) {
@@ -60,23 +69,32 @@ class ChatRenderer {
         }
         
         // Update chat preview and handle title generation
-        this.handleMessageMeta(role, messageData.content || this.extractTextFromBlocks(blocks));
+        this.handleTurnMeta(role, turnData.content || this.extractTextFromBlocks(blocks));
         
-        return messageDiv;
+        return turnDiv;
     }
     
     // Create message element without appending to container (for seamless replacement)
-    createMessageElement(messageData, shouldScroll = true) {
-        const { role, blocks, debug_data, dropdownStates = {} } = messageData;
+    createTurnElement(turnData, shouldScroll = true) {
+        const { role, blocks, debug_data, dropdownStates = {}, turn_number } = turnData;
         
-        const messageDiv = document.createElement('div');
-        const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        messageDiv.className = `message ${role}`;
-        messageDiv.dataset.messageId = messageId;
+        const turnDiv = document.createElement('div');
+        const turnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Use the new turn-based class names
+        if (role === 'user') {
+            turnDiv.className = 'turn user-turn';
+        } else if (role === 'assistant') {
+            turnDiv.className = 'turn assistant-turn';
+        } else {
+            turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
+        }
+        
+        turnDiv.dataset.turnId = turnId;
         
         // Create content container
         const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
+        contentDiv.className = 'turn-content';
         
         // Render each block
         if (blocks && blocks.length > 0) {
@@ -104,17 +122,17 @@ class ChatRenderer {
             });
         }
         
-        messageDiv.appendChild(contentDiv);
+        turnDiv.appendChild(contentDiv);
         
         // Add debug toggle and panel if debug data provided
         if (debug_data) {
-            this.addDebugPanel(messageDiv, messageId, debug_data);
+            this.addDebugPanel(turnDiv, turnId, debug_data, turn_number);
         }
         
         // Handle metadata but don't scroll yet
-        this.handleMessageMeta(role, messageData.content || this.extractTextFromBlocks(blocks));
+        this.handleTurnMeta(role, turnData.content || this.extractTextFromBlocks(blocks));
         
-        return messageDiv;
+        return turnDiv;
     }
     
     // Render individual block based on type
@@ -195,7 +213,7 @@ class ChatRenderer {
     }
     
     // Add debug panel to message
-    addDebugPanel(messageDiv, messageId, debugData) {
+    addDebugPanel(messageDiv, messageId, debugData, turnNumber = null) {
         const settings = loadSettings();
         messageDiv.classList.add('has-debug');
         
@@ -222,12 +240,12 @@ class ChatRenderer {
         
         messageDiv.appendChild(debugToggle);
         
-        const debugPanel = createDebugPanel(messageId, debugData);
+        const debugPanel = createDebugPanel(messageId, debugData, turnNumber);
         messageDiv.appendChild(debugPanel);
     }
     
     // Handle message metadata (preview, title generation)
-    handleMessageMeta(role, content) {
+    handleTurnMeta(role, content) {
         if (role === 'user' || role === 'assistant') {
             updateChatPreview(currentChatId, content);
             
@@ -260,9 +278,9 @@ let chatRenderer = null;
 
 // Initialize renderer when DOM is ready
 function initializeChatRenderer() {
-    const messagesContainer = document.getElementById('messages');
-    if (messagesContainer) {
-        chatRenderer = new ChatRenderer(messagesContainer);
+    const turnsContainer = document.getElementById('messages');
+    if (turnsContainer) {
+        chatRenderer = new ChatRenderer(turnsContainer);
         logger.info('[RENDERER] ChatRenderer initialized');
     }
 }
@@ -275,14 +293,56 @@ if (document.readyState === 'loading') {
 }
 
 // Create debug panel DOM element using sequential debug system
-function createDebugPanel(messageId, debugData) {
+function createDebugPanel(messageId, debugData, turnNumber = null) {
     const debugPanel = document.createElement('div');
     debugPanel.className = 'debug-panel-container';
     debugPanel.dataset.messageId = messageId;
     debugPanel.style.display = 'none'; // Initially hidden
+    debugPanel.style.width = '100%';
+    debugPanel.style.boxSizing = 'border-box';
+    
+    // Inject correct turn number from frontend since backend no longer provides it
+    if (turnNumber !== null && debugData) {
+        debugData.currentTurnNumber = turnNumber;
+        // Note: currentTurnMessages will still be null from backend
+        // but we show complete history instead
+    }
     
     // Use the new sequential debug panel
     debugPanel.innerHTML = createDebugPanelContent(debugData);
+    
+    // Force width on all debug dropdowns
+    setTimeout(() => {
+        const dropdowns = debugPanel.querySelectorAll('.debug-dropdown');
+        dropdowns.forEach(dropdown => {
+            dropdown.style.width = '100%';
+            dropdown.style.boxSizing = 'border-box';
+            
+            const content = dropdown.querySelector('.debug-dropdown-content');
+            if (content) {
+                content.style.width = '100%';
+                content.style.boxSizing = 'border-box';
+                
+                const pre = content.querySelector('pre');
+                if (pre) {
+                    pre.style.width = '100%';
+                    pre.style.boxSizing = 'border-box';
+                }
+            }
+        });
+    }, 0);
+    
+    // Load turn messages if turn number is available
+    // Check for turn number after we've potentially updated debugData.currentTurnNumber
+    const finalTurnNumber = (debugData && debugData.currentTurnNumber) || turnNumber;
+    if (finalTurnNumber !== null && finalTurnNumber !== undefined) {
+        console.log(`[DEBUG-PANEL] Scheduling turn message loading for turn ${finalTurnNumber}, chatId: ${currentChatId}`);
+        setTimeout(() => {
+            populateTurnMessages(debugPanel, finalTurnNumber, currentChatId);
+        }, 100); // Small delay to ensure DOM is ready
+    } else {
+        console.log(`[DEBUG-PANEL] Not loading turn messages - finalTurnNumber: ${finalTurnNumber}, turnNumber: ${turnNumber}, debugData.currentTurnNumber: ${debugData ? debugData.currentTurnNumber : 'N/A'}`);
+    }
     
     return debugPanel;
 }

@@ -9,8 +9,10 @@ async function handleNewChat() {
         // Create chat in database
         await createNewChatInDatabase(currentChatId, 'New Chat');
         
-        // Clear messages
-        messagesContainer.innerHTML = '';
+        // Clear turns
+        turnsContainer.innerHTML = '';        
+        // Reset turn tracking for new chat
+        resetTurnTracking();
         
         // Update UI
         updateChatTitle('New Chat');
@@ -190,10 +192,12 @@ async function loadChatHistory(chatId) {
     try {
         setLoading(true);
         
-        const history = await getChatHistory(chatId);
+        const history = await getChatHistory(chatId);        
+        // Initialize turn tracking for this chat
+        await initializeTurnTrackingForChat(chatId);
         
-        // Clear current messages
-        messagesContainer.innerHTML = '';
+        // Clear current turns
+        turnsContainer.innerHTML = '';
         
         // Reset auto-scroll state when loading new chat
         isUserAtBottom = true;
@@ -204,14 +208,15 @@ async function loadChatHistory(chatId) {
         updateChatTitle(title);
         chatInfo.textContent = `Chat ID: ${chatId} | ${history.messages.length} messages`;
         
-        // Add all messages using ChatRenderer
+        // Add all turns using ChatRenderer
         history.messages.forEach(msg => {
             if (msg.blocks) {
-                chatRenderer.renderMessage({
+                chatRenderer.renderTurn({
                     role: msg.role,
                     blocks: msg.blocks,
-                    debug_data: msg.debug_data
-                }, false); // false = don't scroll for each message
+                    debug_data: msg.debug_data,
+                    turn_number: msg.turn_number
+                }, false); // false = don't scroll for each turn
             }
         });
         

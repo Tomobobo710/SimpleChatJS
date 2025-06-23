@@ -8,7 +8,74 @@ const DEBUG_ADAPTERS = process.env.DEBUG === '1';
 const { getCurrentSettings } = require('./settingsService');
 const { executeMCPTool, getAvailableToolsForChat } = require('./mcpService');
 const { addToolEvent, storeDebugData } = require('./toolEventService');
-// Get chat history in API format
+
+// Update debug data for the most recent message of a specific role in a turn
+async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
+    const { db } = require('../config/database');
+    
+    try {
+        const debugDataJson = debugData ? JSON.stringify(debugData) : null;
+        
+        // Update the most recent message of the specified role in the specified turn
+        const updateStmt = db.prepare(
+            'UPDATE messages SET debug_data = ? WHERE chat_id = ? AND role = ? AND turn_number = ? AND id = (SELECT MAX(id) FROM messages WHERE chat_id = ? AND role = ? AND turn_number = ?)'
+        );
+        const result = updateStmt.run(debugDataJson, chatId, role, turnNumber, chatId, role, turnNumber);
+        
+        if (result.changes > 0) {
+            log(`[CHAT-UPDATE] Updated debug data for ${role} message in turn ${turnNumber}`);
+        } else {
+            log(`[CHAT-UPDATE] No message found to update for ${role} in turn ${turnNumber}`);
+        }
+        
+    } catch (err) {
+        log('[CHAT-UPDATE] Error updating message debug data:', err);
+        throw err;
+    }
+}
+
+// Get current turn number for a chat
+function getCurrentTurnNumber(chat_id) {
+    if (!chat_id) {
+        return 0; // Default to turn 0
+    }
+    
+    const { db } = require('../config/database');
+    
+    try {
+        const stmt = db.prepare('SELECT turn_number FROM chats WHERE id = ?');
+        const result = stmt.get(chat_id);
+        const currentTurn = result ? (result.turn_number || 0) : 0;
+        log(`[CURRENT-TURN] Chat ${chat_id}: current turn = ${currentTurn}`);
+        return currentTurn;
+    } catch (err) {
+        log('[CHAT-TURN] Error getting current turn:', err);
+        return 0; // Default to turn 0 on error
+    }
+}
+
+function incrementTurnNumber(chat_id) {
+    if (!chat_id) {
+        return;
+    }
+    
+    const { db } = require('../config/database');
+    
+    try {
+        const stmt = db.prepare('UPDATE chats SET turn_number = turn_number + 1 WHERE id = ?');
+        const result = stmt.run(chat_id);
+        
+        if (result.changes > 0) {
+            const newTurn = getCurrentTurnNumber(chat_id);
+            log(`[INCREMENT-TURN] Chat ${chat_id}: incremented to turn ${newTurn}`);
+        } else {
+            log(`[INCREMENT-TURN] Chat ${chat_id}: no chat found to increment`);
+        }
+    } catch (err) {
+        log('[INCREMENT-TURN] Error incrementing turn:', err);
+    }
+}
+
 function getChatHistoryForAPI(chat_id) {
     if (!chat_id) {
         return [];
@@ -19,7 +86,7 @@ function getChatHistoryForAPI(chat_id) {
     
     try {
         // Get complete message structure from database - prefer message_data when available
-        const stmt = db.prepare('SELECT role, content, message_data FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+        const stmt = db.prepare('SELECT role, content, message_data, turn_number FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
         const historyRows = stmt.all(chat_id);
         
         // Add history to messages - require complete structure
@@ -30,6 +97,8 @@ function getChatHistoryForAPI(chat_id) {
             
             try {
                 const completeMessage = JSON.parse(row.message_data);
+                // Add turn number to the message object
+                completeMessage.turn_number = row.turn_number;
                 messages.push(completeMessage);
                 log(`[CHAT-HISTORY] Added complete message structure: ${completeMessage.role}`);
             } catch (parseError) {
@@ -46,7 +115,7 @@ function getChatHistoryForAPI(chat_id) {
     }
 }
 // Save complete message structure to database
-async function saveCompleteMessageToDatabase(chatId, messageData, debugData = null, blocks = null) {
+async function saveCompleteMessageToDatabase(chatId, messageData, debugData = null, blocks = null, turnNumber = null) {
     const { db } = require('../config/database');
     
     try {
@@ -59,9 +128,13 @@ async function saveCompleteMessageToDatabase(chatId, messageData, debugData = nu
         // Begin transaction
         db.prepare('BEGIN TRANSACTION').run();
         
-        // Insert message with complete structure including blocks and debug data
-        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, message_data, debug_data, blocks) VALUES (?, ?, ?, ?, ?, ?)');
-        insertStmt.run(chatId, messageData.role, content, messageDataJson, debugDataJson, blocksJson);
+        // Frontend determines turn numbers - backend just stores what it's told
+        let assignedTurnNumber = turnNumber || 0;
+        log(`[CHAT-SAVE] Storing message with turn ${assignedTurnNumber} (role: ${messageData.role}) in chat ${chatId}`);
+
+        // Insert message with complete structure including blocks, debug data, and turn number
+        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, message_data, debug_data, blocks, turn_number) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        insertStmt.run(chatId, messageData.role, content, messageDataJson, debugDataJson, blocksJson, assignedTurnNumber);
         
         // Update chat timestamp
         const updateStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
@@ -70,7 +143,8 @@ async function saveCompleteMessageToDatabase(chatId, messageData, debugData = nu
         // Commit transaction
         db.prepare('COMMIT').run();
         
-        log(`[CHAT-SAVE] Saved complete message: ${messageData.role} with ${blocks ? blocks.length : 0} blocks`);
+        log(`[CHAT-SAVE] Saved complete message: ${messageData.role} in turn ${assignedTurnNumber} with ${blocks ? blocks.length : 0} blocks`);
+        return assignedTurnNumber; // Return the assigned turn number
         
     } catch (error) {
         // Rollback on error
@@ -125,13 +199,31 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         res.writeHead(200, headers);
     }
     
-    // Initialize debug data
+    // Initialize debug data and turn number
     let collectedDebugData = existingDebugData;
+    
+    // Calculate the turn number ONCE for this entire conversation (to prevent turn increment on recursive calls)
+    let currentTurn;
+    if (collectedDebugData && collectedDebugData.currentTurn) {
+        // Reuse existing turn from recursive calls
+        currentTurn = collectedDebugData.currentTurn;
+    } else {
+        // Get current turn (will be incremented when conversation is complete)
+        currentTurn = chatId ? getCurrentTurnNumber(chatId) + 1 : 1;
+    }
+    
+    // Calculate next sequence step from existing debug data to maintain sequential order across recursive calls
     let sequenceStep = 1;
+    if (collectedDebugData) {
+        const sequenceCount = (collectedDebugData.sequence && Array.isArray(collectedDebugData.sequence)) ? collectedDebugData.sequence.length : 0;
+        const httpSequenceCount = (collectedDebugData.httpSequence && Array.isArray(collectedDebugData.httpSequence)) ? collectedDebugData.httpSequence.length : 0;
+        sequenceStep = sequenceCount + httpSequenceCount + 1;
+    }
     
     if (debugData && requestId && !collectedDebugData) {
         collectedDebugData = {
             requestId: requestId,
+            currentTurn: currentTurn,
             sequence: [],
             metadata: {
                 endpoint: adapter.getEndpointUrl(currentSettings),
@@ -149,8 +241,9 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 errors: []
             }
         };
-        
-        // Real sequential debug will be added here
+    } else if (collectedDebugData && !collectedDebugData.currentTurn) {
+        // Store turn number in existing debug data if not already set
+        collectedDebugData.currentTurn = currentTurn;
     }
     
     // Get provider-specific URL and headers
@@ -295,7 +388,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 
                 collectedDebugData.httpSequence.push({
                     type: 'http_response',
-                    sequence: collectedDebugData.httpSequence.length,
+                    sequence: sequenceStep++,
                     timestamp: new Date().toISOString(),
                     content: unifiedResponse.content || '',
                     toolCalls: unifiedResponse.toolCalls || [],
@@ -335,14 +428,20 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 // No tool calls, finish response
                 res.end();
                 
-                // Save final assistant response to database BEFORE storing debug data
+                // Increment turn number now that conversation is complete
+                if (chatId) {
+                    incrementTurnNumber(chatId);
+                }
+                
+                // Save final assistant response to history before ending
                 if (chatId && unifiedResponse.content) {
                     const finalAssistantMessage = {
                         role: 'assistant',
                         content: unifiedResponse.content
                     };
                     try {
-                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, null, null);
+                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, null, null, currentTurn);
+                        log(`[CHAT-SAVE] Saved final assistant response to history`);
                     } catch (error) {
                         log(`[CHAT-SAVE] Error saving final assistant response: ${error.message}`);
                     }
@@ -353,9 +452,17 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                     // Add complete chat history to debug data
                     if (chatId) {
                         try {
+                            // Get the complete history
                             collectedDebugData.completeMessageHistory = getChatHistoryForAPI(chatId);
+                            
+                            // Get the current turn number for debug panel consistency
+                            // This ensures "Messages In This Turn" works when reloading saved chats
+                            collectedDebugData.currentTurnNumber = getCurrentTurnNumber(chatId);
+                            collectedDebugData.currentTurnMessages = null; // Will be fetched by frontend as needed
                         } catch (error) {
                             collectedDebugData.completeMessageHistory = { error: error.message };
+                            collectedDebugData.currentTurnMessages = { error: error.message };
+                            collectedDebugData.currentTurnNumber = null;
                         }
                     }
                     
@@ -384,17 +491,23 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             collectedDebugData.httpSequence = [];
         }
         
-        const requestSequenceNumber = collectedDebugData.httpSequence.length + 1;
-        
-        collectedDebugData.httpSequence.push({
-            type: 'http_request',
-            sequence: requestSequenceNumber,
-            timestamp: new Date().toISOString(),
-            payload: JSON.parse(actualRequestPayload),  // Store as object for debug panel
-            rawPayload: actualRequestPayload            // Store as string for exact representation
-        });
-        
-        log(`[SEQUENTIAL-DEBUG] Captured HTTP request #${requestSequenceNumber} with ${JSON.parse(actualRequestPayload).messages.length} messages`);
+        // Only add HTTP request to debug data if it's not the first request
+        // The first request is initiated in the user bubble phase and already logged there
+        if (collectedDebugData.httpSequence.length > 0 || responseCounter > 1) {
+            const requestSequenceNumber = sequenceStep++;
+            
+            collectedDebugData.httpSequence.push({
+                type: 'http_request',
+                sequence: requestSequenceNumber,
+                timestamp: new Date().toISOString(),
+                payload: JSON.parse(actualRequestPayload),  // Store as object for debug panel
+                rawPayload: actualRequestPayload            // Store as string for exact representation
+            });
+            
+            log(`[SEQUENTIAL-DEBUG] Captured HTTP request #${requestSequenceNumber} with ${JSON.parse(actualRequestPayload).messages.length} messages`);
+        } else {
+            log(`[SEQUENTIAL-DEBUG] Skipping first HTTP request debug - already captured in user phase`);
+        }
     }
     
     apiReq.write(actualRequestPayload);
@@ -403,6 +516,9 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
 
 // Execute tool calls and continue conversation
 async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, conductorPhase, blockRecursiveToolResponse) {
+    // Get the turn number from debug data (calculated once at conversation start)
+    const currentTurn = debugData && debugData.currentTurn ? debugData.currentTurn : 1;
+    
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
         role: 'assistant',
@@ -413,7 +529,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     
     // Save assistant message with tool calls to database
     if (chatId) {
-        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, null, null);
+        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, null, null, currentTurn);
         log(`[CHAT-SAVE] Saved assistant message with ${toolCalls.length} tool calls`);
     }
     
@@ -446,7 +562,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, toolMessage, null, null);
+                await saveCompleteMessageToDatabase(chatId, toolMessage, null, null, currentTurn);
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
             
@@ -464,9 +580,14 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Add tool result to debug sequence
             if (debugData && debugData.sequence) {
+                // Calculate next sequence step from existing debug data
+                const sequenceCount = debugData.sequence.length;
+                const httpSequenceCount = debugData.httpSequence ? debugData.httpSequence.length : 0;
+                const nextStep = sequenceCount + httpSequenceCount + 1;
+                
                 debugData.sequence.push({
                     type: 'tool_result',
-                    step: debugData.sequence.length + 1,
+                    step: nextStep,
                     timestamp: new Date().toISOString(),
                     data: {
                         tool_name: toolCall.function.name,
@@ -490,7 +611,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool error message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, errorMessage, null, null);
+                await saveCompleteMessageToDatabase(chatId, errorMessage, null, null, currentTurn);
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
             
@@ -508,9 +629,14 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Add tool error to debug sequence
             if (debugData && debugData.sequence) {
+                // Calculate next sequence step from existing debug data
+                const sequenceCount = debugData.sequence.length;
+                const httpSequenceCount = debugData.httpSequence ? debugData.httpSequence.length : 0;
+                const nextStep = sequenceCount + httpSequenceCount + 1;
+                
                 debugData.sequence.push({
                     type: 'tool_result',
-                    step: debugData.sequence.length + 1,
+                    step: nextStep,
                     timestamp: new Date().toISOString(),
                     data: {
                         tool_name: toolCall.function.name,
@@ -523,15 +649,8 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
         }
     }
     
-    // Continue conversation with tool results (unless blocked)
-    if (!blockRecursiveToolResponse) {
-        await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, conductorPhase, false, true);
-    } else {
-        res.end();
-        if (debugData && requestId) {
-            storeDebugData(requestId, debugData);
-        }
-    }
+    // Continue conversation with tool results
+    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, conductorPhase);
 }
 
 // Process chat request (entry point from routes)
@@ -545,25 +664,24 @@ async function processChatRequest(req, res) {
                 
         // Build messages for API - get chat history first
         const messages = getChatHistoryForAPI(chat_id);
+
+        // Log what's in history
+        log(`[CHAT-DEBUG] Current history count: ${messages.length}`);
         
-        // Add the new message if provided
-        if (message) {
+        // Check if the user's message is already in history (it should be)
+        const lastMessage = messages[messages.length - 1];
+        if (!lastMessage || lastMessage.role !== (message_role || 'user') || lastMessage.content !== message) {
+            // Only add if not already there (unlikely with our new architecture, but a safeguard)
+            log(`[CHAT-DEBUG] User message not found in history, adding it now`);
             const role = message_role || 'user';
             const newMessage = { role: role, content: message };
-            
-            // Check if this message is already the last one in history (avoid duplication)
-            const lastMessage = messages[messages.length - 1];
-            const isDuplicate = lastMessage && 
-                               lastMessage.role === newMessage.role && 
-                               lastMessage.content === newMessage.content;
-            
-            if (!isDuplicate) {
-                messages.push(newMessage);
-                log(`[CHAT] Added new message with role: ${role}`);
-            } else {
-                log(`[CHAT] Skipped duplicate message with role: ${role}`);
-            }
-        } else if (messages.length === 0) {
+            messages.push(newMessage);
+        } else {
+            log(`[CHAT-DEBUG] User message already in history, not adding again`);
+        }
+        
+        // Check if we have any messages at all
+        if (messages.length === 0) {
             // No chat_id and no message - this shouldn't happen but handle gracefully
             throw new Error('No message provided and no chat history available');
         }
@@ -609,5 +727,8 @@ module.exports = {
     handleChatWithTools,
     processChatRequest,
     saveCompleteMessageToDatabase,
-    getChatHistoryForAPI
+    updateMessageDebugData,
+    getChatHistoryForAPI,
+    getCurrentTurnNumber,
+    incrementTurnNumber
 };
