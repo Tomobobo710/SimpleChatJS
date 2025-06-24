@@ -557,3 +557,40 @@ async function getTurnMessages(chatId, turnNumber) {
         throw error;
     }
 }
+// Edit message content
+async function editMessage(messageId, newContent) {
+    try {
+        const response = await fetch(`${API_BASE}/api/message/${messageId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content: newContent })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error editing message:', error);
+        throw error;
+    }
+}
+
+// Get message by ID
+async function getMessage(messageId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/message/${messageId}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting message:', error);
+        throw error;
+    }
+}

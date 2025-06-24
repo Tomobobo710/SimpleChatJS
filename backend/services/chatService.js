@@ -154,8 +154,8 @@ function getChatHistoryForAPI(chat_id) {
     const messages = [];
     
     try {
-        // Get message data directly from columns
-        const stmt = db.prepare('SELECT role, content, turn_number FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+        // Get message data directly from columns including tool data
+        const stmt = db.prepare('SELECT role, content, turn_number, tool_calls, tool_call_id, tool_name FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
         const historyRows = stmt.all(chat_id);
         
         // Build messages from direct columns
@@ -165,8 +165,24 @@ function getChatHistoryForAPI(chat_id) {
                 content: row.content,
                 turn_number: row.turn_number
             };
+            
+            // Add tool data if present
+            if (row.tool_calls) {
+                try {
+                    message.tool_calls = JSON.parse(row.tool_calls);
+                } catch (e) {
+                    log(`[CHAT-HISTORY] Error parsing tool_calls: ${e.message}`);
+                }
+            }
+            if (row.tool_call_id) {
+                message.tool_call_id = row.tool_call_id;
+            }
+            if (row.tool_name) {
+                message.tool_name = row.tool_name;
+            }
+            
             messages.push(message);
-            log(`[CHAT-HISTORY] Added message: ${message.role}`);
+            log(`[CHAT-HISTORY] Added message: ${message.role} ${message.tool_calls ? '(with tools)' : ''}`);
         });
         
         log(`[CHAT-HISTORY] Retrieved ${messages.length} messages for chat ${chat_id}`);
@@ -186,6 +202,9 @@ async function saveCompleteMessageToDatabase(chatId, messageData, blocks = null,
         const content = messageData.content || '';
         const role = messageData.role;
         const blocksJson = blocks ? JSON.stringify(blocks) : null;
+        const toolCallsJson = messageData.tool_calls ? JSON.stringify(messageData.tool_calls) : null;
+        const toolCallId = messageData.tool_call_id || null;
+        const toolName = messageData.tool_name || null;
         
         // Begin transaction
         db.prepare('BEGIN TRANSACTION').run();
@@ -194,9 +213,9 @@ async function saveCompleteMessageToDatabase(chatId, messageData, blocks = null,
         let assignedTurnNumber = turnNumber || 0;
         log(`[CHAT-SAVE] Storing message with turn ${assignedTurnNumber} (role: ${role}) in chat ${chatId}`);
 
-        // Insert message with direct columns (no redundant message_data or debug_data)
-        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, blocks, turn_number) VALUES (?, ?, ?, ?, ?)');
-        insertStmt.run(chatId, role, content, blocksJson, assignedTurnNumber);
+        // Insert message with direct columns including tool data
+        const insertStmt = db.prepare('INSERT INTO messages (chat_id, role, content, blocks, turn_number, tool_calls, tool_call_id, tool_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        insertStmt.run(chatId, role, content, blocksJson, assignedTurnNumber, toolCallsJson, toolCallId, toolName);
         
         // Update chat timestamp
         const updateStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
@@ -496,6 +515,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 }
                 
                 // Save final assistant response to history before ending
+                // Save in both conductor mode and simple chat mode
                 if (chatId && unifiedResponse.content) {
                     const finalAssistantMessage = {
                         role: 'assistant',

@@ -61,7 +61,7 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
         // Remove everything before Result: and clean up
         resultContent = resultContent.replace(new RegExp(`^\\[${toolName}\\]:[\s\S]*?(?=Result:|$)`, 'm'), '');
         resultContent = resultContent.replace(/^Result:\s*/m, '');
-        resultContent = resultContent.replace(/\[Executing tools...\]|\[Tools completed\]/g, '').trim();
+        resultContent = resultContent.trim();
     }
     
     if (resultContent) {

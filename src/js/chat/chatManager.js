@@ -187,6 +187,81 @@ async function switchToChat(chatId) {
     messageInput.focus();
 }
 
+// Reconstruct tool content from message relationships
+function reconstructToolContent(messages) {
+    const processedMessages = [];
+    let i = 0;
+    
+    while (i < messages.length) {
+        const msg = messages[i];
+        
+        // Check if this is an assistant message with tool calls
+        if (msg.role === 'assistant' && hasToolCalls(msg)) {
+            // Find all subsequent tool messages that belong to this assistant message
+            const toolResults = [];
+            let j = i + 1;
+            
+            // Collect all tool messages that follow this assistant message
+            while (j < messages.length && messages[j].role === 'tool') {
+                toolResults.push(messages[j]);
+                j++;
+            }
+            
+            // Keep original content clean - no injection of fake markers
+            let reconstructedContent = msg.content || '';
+            
+            // Add the message with tool data for SSE simulation
+            processedMessages.push({
+                ...msg,
+                content: reconstructedContent,
+                tool_results: toolResults  // Add tool results for SSE simulation
+            });
+            
+            // Skip the tool messages since we've absorbed them
+            i = j;
+        } else {
+            // Regular message, add as-is
+            processedMessages.push(msg);
+            i++;
+        }
+    }
+    
+    return processedMessages;
+}
+
+// Group messages by turn_number for proper turn-based rendering
+function groupMessagesByTurn(messages) {
+    const turnGroups = new Map();
+    
+    messages.forEach(msg => {
+        const turnNumber = msg.turn_number || 0;
+        if (!turnGroups.has(turnNumber)) {
+            turnGroups.set(turnNumber, []);
+        }
+        turnGroups.get(turnNumber).push(msg);
+    });
+    
+    // Convert to array and sort by turn number
+    return Array.from(turnGroups.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([turnNumber, turnMessages]) => ({ turnNumber, messages: turnMessages }));
+}
+
+// Check if a message has tool calls
+function hasToolCalls(msg) {
+    // Check if tool_calls field exists
+    if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+        return true;
+    }
+    
+    // Check if content mentions tool calls (legacy format)
+    if (msg.content && msg.content.includes('tool_calls')) {
+        return true;
+    }
+    
+    return false;
+}
+
 // Load chat history for a specific chat
 async function loadChatHistory(chatId) {
     try {
@@ -208,14 +283,131 @@ async function loadChatHistory(chatId) {
         updateChatTitle(title);
         chatInfo.textContent = `Chat ID: ${chatId} | ${history.messages.length} messages`;
         
-        // Add all turns using ChatRenderer
-        history.messages.forEach(msg => {
-            if (msg.blocks) {
+        // Using proper SSE simulation without content injection
+        logger.info('[UNIFIED-RENDERING] Processing chat history through SSE simulation');
+        
+        // Prepare messages with tool data for SSE simulation
+        const processedMessages = reconstructToolContent(history.messages);
+        
+        // Group messages by turn_number for proper turn-based rendering
+        const turnGroups = groupMessagesByTurn(processedMessages);
+        
+        // Process each turn using the exact same pipeline as live rendering
+        turnGroups.forEach(({ turnNumber, messages: turnMessages }) => {
+            // Separate user and assistant messages (like live rendering does)
+            const userMessages = turnMessages.filter(msg => msg.role === 'user');
+            const assistantMessages = turnMessages.filter(msg => msg.role === 'assistant');
+            
+            // Render user messages directly (exactly like live rendering)
+            userMessages.forEach(userMsg => {
                 chatRenderer.renderTurn({
-                    role: msg.role,
-                    blocks: msg.blocks,
-                    debug_data: msg.debug_data,
-                    turn_number: msg.turn_number
+                    id: userMsg.id,
+                    role: 'user',
+                    content: userMsg.content,
+                    turn_number: turnNumber,
+                    edit_count: userMsg.edit_count,
+                    edited_at: userMsg.edited_at
+                }, false);
+            });
+            
+            // Process assistant messages separately (exactly like live rendering)
+            if (assistantMessages.length > 0) {
+                // Create a processor only for assistant content
+                const processor = new StreamingMessageProcessor();
+                
+                // Create a temp container for use with updateLiveRendering (required by handleToolEvent)
+                const tempContainer = document.createElement('div');
+                const liveRenderer = new ChatRenderer(tempContainer);
+                
+                let turnDebugData = null;
+                let primaryAssistantMessage = null;
+                
+                assistantMessages.forEach(msg => {
+                    // Track the primary assistant message
+                    if (msg.content) {
+                        primaryAssistantMessage = msg;
+                        turnDebugData = msg.debug_data;
+                    }
+                    
+                    // Handle only assistant content - this properly processes <think> tags and normal text
+                    if (msg.content) {
+                        processor.addChunk(msg.content);
+                    }
+                    
+                    // Simulate SSE tool events using the same structured data
+                    if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+                        msg.tool_calls.forEach(toolCall => {
+                            const toolName = toolCall.function?.name || 'unknown_tool';
+                            let args;
+                            try {
+                                args = JSON.parse(toolCall.function?.arguments || '{}');
+                            } catch (e) {
+                                args = { raw: toolCall.function?.arguments || '{}' };
+                            }
+                            
+                            // Find corresponding tool result
+                            const toolResult = msg.tool_results?.find(tr => tr.tool_call_id === toolCall.id);
+                            
+                            // Simulate the exact same tool event sequence that live rendering receives
+                            // 1. Tool call detected
+                            handleToolEvent({
+                                type: 'tool_call_detected',
+                                data: {
+                                    id: toolCall.id,
+                                    name: toolName
+                                }
+                            }, processor, liveRenderer, tempContainer);
+                            
+                            // 2. Tool execution started
+                            handleToolEvent({
+                                type: 'tool_execution_start',
+                                data: {
+                                    id: toolCall.id,
+                                    name: toolName,
+                                    arguments: args
+                                }
+                            }, processor, liveRenderer, tempContainer);
+                            
+                            // 3. Tool execution completed
+                            let resultContent = { content: 'No result available' };
+                            if (toolResult) {
+                                try {
+                                    resultContent = JSON.parse(toolResult.content);
+                                } catch (e) {
+                                    resultContent = { content: toolResult.content };
+                                }
+                            }
+                            
+                            handleToolEvent({
+                                type: 'tool_execution_complete',
+                                data: {
+                                    id: toolCall.id,
+                                    name: toolName,
+                                    status: 'success',
+                                    result: resultContent,
+                                    execution_time_ms: 0
+                                }
+                            }, processor, liveRenderer, tempContainer);
+                        });
+                    }
+                });
+                
+                // Finalize the processor after processing all assistant messages
+                processor.finalize();
+                
+                // Get the blocks that were created through the exact same pipeline as live rendering
+                const blocks = processor.getBlocks();
+                
+                // Render assistant turn with all blocks
+                chatRenderer.renderTurn({
+                    id: primaryAssistantMessage?.id,
+                    role: 'assistant',
+                    blocks: blocks,
+                    content: processor.getRawContent() || '',
+                    debug_data: turnDebugData,
+                    turn_number: turnNumber,
+                    edit_count: primaryAssistantMessage?.edit_count,
+                    edited_at: primaryAssistantMessage?.edited_at
                 }, false); // false = don't scroll for each turn
             }
         });

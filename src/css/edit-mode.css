@@ -1,0 +1,443 @@
+/* Edit Mode Styles - 90s Aesthetic */
+
+/* Edit container */
+.edit-container {
+    width: 100%;
+    background: #2a2a2a;
+    border: 1px inset #666;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+/* Edit textarea */
+.edit-textarea {
+    width: 100%;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    border: 1px inset #333;
+    padding: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 60px;
+    box-sizing: border-box;
+}
+
+.edit-textarea:focus {
+    outline: none;
+    border-color: #4a90e2;
+    background: #111;
+}
+
+/* Edit controls container */
+.edit-controls {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+/* Edit control buttons */
+.edit-btn-save,
+.edit-btn-cancel {
+    padding: 4px 12px;
+    font-size: 10px;
+    font-weight: bold;
+    border: 1px outset #666;
+    cursor: pointer;
+    background: #444;
+    color: #e0e0e0;
+}
+
+.edit-btn-save {
+    background: #2a5a2a;
+    border-color: #4a8a4a;
+}
+
+.edit-btn-save:hover {
+    background: #3a7a3a;
+    border: 1px inset #4a8a4a;
+}
+
+.edit-btn-save:disabled {
+    background: #333;
+    color: #999;
+    cursor: not-allowed;
+    border: 1px inset #555;
+}
+
+.edit-btn-cancel {
+    background: #5a2a2a;
+    border-color: #8a4a4a;
+}
+
+.edit-btn-cancel:hover {
+    background: #7a3a3a;
+    border: 1px inset #8a4a4a;
+}
+
+/* Edit indicator */
+.edit-indicator {
+    font-size: 9px;
+    color: #aaa;
+    font-style: italic;
+    margin-left: 8px;
+    opacity: 0.7;
+}
+
+/* Turn in editing state */
+.turn.editing {
+    background: rgba(74, 144, 226, 0.1);
+    border-left: 3px solid #4a90e2;
+}
+
+/* Hide actions while editing */
+.turn.editing .message-actions {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+/* Edit mode feedback */
+.turn.editing .turn-content::before {
+    content: 'EDITING MODE';
+    display: block;
+    font-size: 9px;
+    color: #4a90e2;
+    font-weight: bold;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Keyboard shortcuts hint */
+.edit-container::after {
+    content: 'Ctrl+Enter to save • Escape to cancel';
+    display: block;
+    font-size: 8px;
+    color: #666;
+    margin-top: 4px;
+    text-align: right;
+    font-style: italic;
+}
+
+/* Turn Edit Mode Styles - 90s Aesthetic */
+
+/* Turn edit container */
+.turn-edit-container {
+    width: 100%;
+    background: #2a2a2a;
+    border: 2px inset #666;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+/* Turn edit header */
+.turn-edit-header {
+    background: #1a1a1a;
+    border: 1px inset #333;
+    padding: 8px;
+    margin-bottom: 12px;
+}
+
+.turn-edit-header h3 {
+    margin: 0 0 4px 0;
+    color: #4a90e2;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.turn-edit-note {
+    font-size: 10px;
+    color: #aaa;
+    font-style: italic;
+}
+
+/* Messages list */
+.turn-messages-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px inset #333;
+    background: #1a1a1a;
+    padding: 8px;
+    margin-bottom: 12px;
+}
+
+/* Individual message item */
+.editable-message-item {
+    background: #333;
+    border: 1px outset #555;
+    margin-bottom: 8px;
+    padding: 8px;
+}
+
+.editable-message-item:last-child {
+    margin-bottom: 0;
+}
+
+/* Message item header */
+.message-item-header {
+    background: #2a2a2a;
+    border: 1px inset #444;
+    padding: 4px 6px;
+    margin-bottom: 6px;
+    font-size: 10px;
+}
+
+.message-info {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.message-role {
+    color: #4a90e2;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.message-type {
+    color: #ffc107;
+    font-family: monospace;
+}
+
+.message-id {
+    color: #666;
+    font-family: monospace;
+    font-size: 9px;
+}
+
+.edit-indicator {
+    color: #28a745;
+    font-style: italic;
+    font-size: 9px;
+}
+
+/* Message content area */
+.message-content-area {
+    margin-bottom: 6px;
+}
+
+.message-edit-textarea {
+    width: 100%;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    border: 1px inset #333;
+    padding: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 40px;
+    box-sizing: border-box;
+}
+
+.message-edit-textarea:focus {
+    outline: none;
+    border-color: #4a90e2;
+    background: #111;
+}
+
+/* Message item controls */
+.message-item-controls {
+    text-align: right;
+}
+
+.message-save-btn {
+    padding: 3px 8px;
+    font-size: 9px;
+    font-weight: bold;
+    border: 1px outset #666;
+    cursor: pointer;
+    background: #2a5a2a;
+    color: #e0e0e0;
+}
+
+.message-save-btn:hover {
+    background: #3a7a3a;
+    border: 1px inset #666;
+}
+
+.message-save-btn:disabled {
+    background: #333;
+    color: #999;
+    cursor: not-allowed;
+    border: 1px inset #555;
+}
+
+/* Turn edit controls */
+.turn-edit-controls {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    padding: 8px;
+    background: #1a1a1a;
+    border: 1px inset #333;
+}
+
+.turn-edit-btn-save,
+.turn-edit-btn-cancel {
+    padding: 6px 16px;
+    font-size: 11px;
+    font-weight: bold;
+    border: 1px outset #666;
+    cursor: pointer;
+    background: #444;
+    color: #e0e0e0;
+}
+
+.turn-edit-btn-save {
+    background: #2a5a2a;
+    border-color: #4a8a4a;
+}
+
+.turn-edit-btn-save:hover {
+    background: #3a7a3a;
+    border: 1px inset #4a8a4a;
+}
+
+.turn-edit-btn-save:disabled {
+    background: #333;
+    color: #999;
+    cursor: not-allowed;
+    border: 1px inset #555;
+}
+
+.turn-edit-btn-cancel {
+    background: #5a2a2a;
+    border-color: #8a4a4a;
+}
+
+.turn-edit-btn-cancel:hover {
+    background: #7a3a3a;
+    border: 1px inset #8a4a4a;
+}
+
+/* Turn editing state */
+.turn.editing {
+    background: rgba(74, 144, 226, 0.1);
+    border-left: 4px solid #4a90e2;
+    padding: 8px;
+}
+
+/* Turn edit mode feedback */
+.turn.editing::before {
+    content: 'TURN EDIT MODE';
+    display: block;
+    font-size: 10px;
+    color: #4a90e2;
+    font-weight: bold;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    background: rgba(74, 144, 226, 0.2);
+    padding: 4px;
+    border: 1px solid #4a90e2;
+}
+
+/* Scrollbar styling for message list */
+.turn-messages-list::-webkit-scrollbar {
+    width: 12px;
+}
+
+.turn-messages-list::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border: 1px inset #333;
+}
+
+.turn-messages-list::-webkit-scrollbar-thumb {
+    background: #555;
+    border: 1px outset #666;
+}
+
+.turn-messages-list::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+/* Message edit mode styles */
+.message-edit-container {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 10px 0;
+}
+
+.edit-header h3 {
+    margin: 0 0 20px 0;
+    color: #fff;
+    font-size: 18px;
+}
+
+.edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.editable-message {
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.message-header {
+    color: #ccc;
+    font-size: 14px;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #555;
+}
+
+.message-content-textarea {
+    width: 100%;
+    min-height: 100px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #666;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.edit-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    justify-content: flex-end;
+}
+
+.edit-btn-save,
+.edit-btn-cancel {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.edit-btn-save {
+    background: #4CAF50;
+    color: white;
+}
+
+.edit-btn-save:hover {
+    background: #45a049;
+}
+
+.edit-btn-save:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+
+.edit-btn-cancel {
+    background: #f44336;
+    color: white;
+}
+
+.edit-btn-cancel:hover {
+    background: #da190b;
+}

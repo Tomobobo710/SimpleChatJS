@@ -171,19 +171,17 @@ async function handleConductorChat(message, conversationHistory) {
     const userTurnNumber = getNextTurnNumber();
     
     // Add user message to UI using unified renderer
-    const userBlocks = [{ type: 'chat', content: message, metadata: {} }];
     chatRenderer.renderTurn({
         role: 'user',
-        blocks: userBlocks,
-        debug_data: userDebugData,
         content: message,
+        debug_data: userDebugData,
         turn_number: userTurnNumber
     }, true);
     
     // Save user message and debug data separately (turn-based approach)
     try {
         // Save user message without debug data
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userBlocks, userTurnNumber);
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, null, userTurnNumber);
         
         // Save debug data to turn-based storage
         if (userDebugData) {
@@ -216,7 +214,7 @@ async function handleConductorChat(message, conversationHistory) {
         // Prepare final content BEFORE removing temp elements (seamless transition)
         const finalMessageData = {
             role: 'assistant',
-            blocks: result.blocks || [],
+            content: result.content || '',
             debug_data: result.debugData,
             dropdownStates: result.dropdownStates || {},
             isPartial: result.wasAborted,
@@ -245,7 +243,7 @@ async function handleConductorChat(message, conversationHistory) {
             // Save whatever content the AI actually generated (even if empty)
             try {
                 // Save assistant message without debug data (turn-based approach)
-                await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content || '' }, result.blocks || [], assistantTurnNumber);
+                await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content || '' }, null, assistantTurnNumber);
                 
                 // Save debug data to turn-based storage
                 if (result.debugData) {
@@ -266,7 +264,7 @@ async function handleConductorChat(message, conversationHistory) {
         // Save assistant message and debug data separately (turn-based approach)
         try {
             // Save assistant message without debug data
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content }, result.blocks || [], assistantTurnNumber);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: result.content }, null, assistantTurnNumber);
             
             // Save debug data to turn-based storage
             if (result.debugData) {
@@ -292,18 +290,14 @@ async function handleConductorChat(message, conversationHistory) {
         
         chatRenderer.renderTurn({
             role: 'assistant',
-            blocks: [{
-                type: 'chat',
-                content: `[ERROR] Conductor failed: ${error.message}`,
-                metadata: {}
-            }],
+            content: `[ERROR] Conductor failed: ${error.message}`,
             debug_data: null,
             turn_number: errorTurnNumber
         }, true);
         
         try {
             // User message was already saved above, just save the error assistant message
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: `Error: ${error.message}` }, [], errorTurnNumber);
+            await saveCompleteMessage(currentChatId, { role: 'assistant', content: `Error: ${error.message}` }, null, errorTurnNumber);
         } catch (saveError) {
             logger.error('[CONDUCTOR] Failed to save error message:', saveError);
         }

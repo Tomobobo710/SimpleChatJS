@@ -81,6 +81,61 @@ function initializeDatabase() {
                     log('[DB] Error adding turn_number to chats:', err.message);
                 }
             }
+            // Add edit tracking columns for Direct History Editing
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN edited_at DATETIME`);
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding edited_at column:', err.message);
+                }
+            }
+            
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN edit_count INTEGER DEFAULT 0`);
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding edit_count column:', err.message);
+                }
+            }
+            
+            // Add tool_calls column for proper tool reconstruction
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN tool_calls TEXT`);
+                log('[DB] Added tool_calls column successfully');
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding tool_calls column:', err.message);
+                }
+            }
+            
+            // Add other tool-related columns
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN tool_call_id TEXT`);
+            } catch (err) {
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding tool_call_id column:', err.message);
+                }
+            }
+            
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN tool_name TEXT`);
+            } catch (err) {
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding tool_name column:', err.message);
+                }
+            }
+            
+            try {
+                db.exec(`ALTER TABLE messages ADD COLUMN original_content TEXT`);
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding original_content column:', err.message);
+                }
+            }
             
             // Create turn_debug_data table for turn-based debug storage
             db.exec(`CREATE TABLE IF NOT EXISTS turn_debug_data (

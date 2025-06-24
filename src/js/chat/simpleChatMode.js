@@ -17,10 +17,8 @@ async function handleSimpleChat(message, conversationHistory) {
     const userTurnNumber = getNextTurnNumber();
     
     // Add user message to UI using global chatRenderer (same as saved chats)
-    const userBlocks = [{ type: 'chat', content: message, metadata: {} }];
     chatRenderer.renderTurn({
         role: 'user',
-        blocks: userBlocks,
         content: message,
         turn_number: userTurnNumber
     }, true);
@@ -28,7 +26,7 @@ async function handleSimpleChat(message, conversationHistory) {
     // Save user message to database
     console.log(`[FRONTEND] Saving user message to chat ${currentChatId}`);
     try {
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, userBlocks, userTurnNumber);
+        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, null, userTurnNumber);
         console.log(`[FRONTEND] Successfully saved user message to chat ${currentChatId}`);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
@@ -72,6 +70,7 @@ async function handleSimpleChat(message, conversationHistory) {
     
     // Use same field names as assistant debug data for consistency
     userDebugData.completeMessageHistory = conversationHistory || [];
+    userDebugData.conversationHistory = conversationHistory || [];  // Keep for debug panel compatibility
     userDebugData.currentTurnNumber = userTurnNumber;
     
     // INITIATE the API request here (but don't await the response)
@@ -230,7 +229,7 @@ async function handleSimpleChat(message, conversationHistory) {
         }
         
         // Finalize the processor to handle any remaining content
-        const finalBlocks = processor.finalize();
+        processor.finalize();
         
         // Capture dropdown states before removing temp container
         const dropdownStates = {};
@@ -255,24 +254,23 @@ async function handleSimpleChat(message, conversationHistory) {
             }
         });
         
-        // Clean up temp container tracking before removal
-        delete tempContainer._renderedBlocks;
-        delete tempContainer._blockElements;
-        
-        // Replace temp container with final rendered content
+        // Remove temp content and re-render using the SAME method as live renderer
         tempContainer.remove();
         assistantTurnDiv.remove();
         
-        // Get turn number and inject it into debug data BEFORE rendering
         const assistantTurnNumber = getNextTurnNumber();
         if (debugData) {
             debugData.currentTurnNumber = assistantTurnNumber;
         }
         
-        // Use global chatRenderer (same as saved chats) for final assistant message
+        // Get the blocks that were created during live rendering - these have tool structure
+        const finalBlocks = processor.getBlocks();
+        
+        // Re-render the SAME WAY as live renderer - pass blocks AND content
         const renderedTurn = chatRenderer.renderTurn({
             role: 'assistant',
-            blocks: finalBlocks,
+            blocks: finalBlocks,  // Use blocks like live renderer  
+            content: processor.getRawContent() || '', // Also pass content for saving
             debug_data: debugData,
             dropdownStates: dropdownStates,
             turn_number: assistantTurnNumber
@@ -280,10 +278,11 @@ async function handleSimpleChat(message, conversationHistory) {
         
         // Save assistant message and debug data separately
         try {
-            const cleanContent = processor.getDisplayContent() || '';
+            const fullContent = processor.getRawContent() || '';
             
-            // Save assistant message without debug data (turn-based approach)
-            await saveCompleteMessage(currentChatId, { role: 'assistant', content: cleanContent }, finalBlocks, assistantTurnNumber);
+            // For now, skip frontend saving entirely - let backend handle everything during tool execution
+            // TODO: Determine if frontend should save non-tool messages
+            logger.info(`[FRONTEND] Message rendered, backend handles saving`);
             
             // Save debug data to turn-based storage
             if (debugData) {
@@ -291,7 +290,7 @@ async function handleSimpleChat(message, conversationHistory) {
                 logger.info(`[TURN-DEBUG] Saved assistant debug data for turn ${assistantTurnNumber}`);
             }
             
-            updateChatPreview(currentChatId, cleanContent);
+            updateChatPreview(currentChatId, processor.getDisplayContent()); // Use display content for preview
         } catch (error) {
             logger.error('Failed to save assistant message or debug data:', error);
         }
@@ -334,13 +333,13 @@ async function handleSimpleChat(message, conversationHistory) {
                 }
             };
             
-            // Get blocks and render with debug panel using global chatRenderer
-            const partialBlocks = processor.finalize();
+            // Finalize processor and render with debug panel using global chatRenderer
+            processor.finalize();
             
             // Render the partial message using global chatRenderer
             chatRenderer.renderTurn({
                 role: 'assistant',
-                blocks: partialBlocks,
+                content: processor.getRawContent() || '',
                 debug_data: stoppedDebugData,
                 dropdownStates: {},
                 isPartial: true
@@ -355,10 +354,10 @@ async function handleSimpleChat(message, conversationHistory) {
                     stoppedDebugData.currentTurnNumber = assistantTurnNumber;
                 }
                 
-                const partialContent = processor.getDisplayContent() || '';
+                const partialContent = processor.getRawContent() || '';
                 
-                // Save stopped message without debug data (turn-based approach)
-                await saveCompleteMessage(currentChatId, { role: 'assistant', content: partialContent }, partialBlocks, assistantTurnNumber);
+                // For stopped messages, let backend handle saving
+                logger.info(`[FRONTEND] Stopped message rendered, backend handles saving`);
                 
                 // Save debug data to turn-based storage
                 if (stoppedDebugData) {
@@ -366,7 +365,7 @@ async function handleSimpleChat(message, conversationHistory) {
                     logger.info(`[TURN-DEBUG] Saved stopped debug data for turn ${assistantTurnNumber}`);
                 }
                 
-                updateChatPreview(currentChatId, partialContent);
+                updateChatPreview(currentChatId, processor.getDisplayContent()); // Use display content for preview
             } catch (saveError) {
                 logger.warn('Failed to save stopped message:', saveError);
             }
@@ -381,9 +380,8 @@ async function handleSimpleChat(message, conversationHistory) {
         // Show error using global chatRenderer
         chatRenderer.renderTurn({
             role: 'assistant',
-            blocks: [{ type: 'chat', content: `[ERROR] ${error.message}`, metadata: {} }],
-            debug_data: debugData,
-            content: `[ERROR] ${error.message}`
+            content: `[ERROR] ${error.message}`,
+            debug_data: debugData
         }, true);
     }
 }

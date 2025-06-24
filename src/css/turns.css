@@ -38,6 +38,11 @@
     padding-right: 40px;
 }
 
+/* Additional spacing for turns with both actions and debug */
+.turn.has-debug .message-actions {
+    margin-right: 40px; /* Make room for debug toggle */
+}
+
 /* Status turns */
 .message.status {
     width: auto;

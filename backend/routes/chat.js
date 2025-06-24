@@ -68,8 +68,8 @@ router.get('/chat/:id/history', (req, res) => {
     const chatId = req.params.id;
     
     try {
-        // Get message data directly from columns
-        const stmt = db.prepare('SELECT role, content, timestamp, blocks, turn_number FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
+        // Get message data directly from columns (including ID for editing and tool data)
+        const stmt = db.prepare('SELECT id, role, content, timestamp, blocks, turn_number, edit_count, edited_at, tool_calls, tool_call_id, tool_name FROM messages WHERE chat_id = ? ORDER BY timestamp ASC');
         const rows = stmt.all(chatId);
         
         // Get all turn data for this chat
@@ -80,14 +80,34 @@ router.get('/chat/:id/history', (req, res) => {
             const turnData = row.turn_number ? turnDataMap[row.turn_number] : null;
             
             // Build message object from direct columns
-            return {
+            const message = {
+                id: row.id,
                 role: row.role,
                 content: row.content,
                 timestamp: row.timestamp,
                 turn_number: row.turn_number,
+                edit_count: row.edit_count || 0,
+                edited_at: row.edited_at,
                 debug_data: turnData, // Now comes from turn-based storage
                 blocks: row.blocks ? JSON.parse(row.blocks) : null
             };
+            
+            // Add tool data if present
+            if (row.tool_calls) {
+                try {
+                    message.tool_calls = JSON.parse(row.tool_calls);
+                } catch (e) {
+                    log(`[HISTORY] Error parsing tool_calls: ${e.message}`);
+                }
+            }
+            if (row.tool_call_id) {
+                message.tool_call_id = row.tool_call_id;
+            }
+            if (row.tool_name) {
+                message.tool_name = row.tool_name;
+            }
+            
+            return message;
         });
         res.json({ messages });
     } catch (err) {
@@ -286,6 +306,41 @@ router.get('/chat/:id/turns/:turnNumber', (req, res) => {
     }
 });
 
+// Get messages for a specific turn
+router.get('/chat/:id/turn/:turnNumber', (req, res) => {
+    try {
+        const { id: chatId, turnNumber } = req.params;
+        const turnNum = parseInt(turnNumber, 10);
+        
+        if (isNaN(turnNum)) {
+            return res.status(400).json({ error: 'Invalid turn number' });
+        }
+        
+        // Get all messages for this turn
+        const stmt = db.prepare(`
+            SELECT id, role, content, timestamp, blocks, turn_number, 
+                   edit_count, edited_at, original_content 
+            FROM messages 
+            WHERE chat_id = ? AND turn_number = ? 
+            ORDER BY timestamp ASC
+        `);
+        const messages = stmt.all(chatId, turnNum);
+        
+        // Parse blocks for each message
+        const processedMessages = messages.map(msg => ({
+            ...msg,
+            blocks: msg.blocks ? JSON.parse(msg.blocks) : null,
+            edit_count: msg.edit_count || 0
+        }));
+        
+        res.json({ messages: processedMessages });
+        
+    } catch (error) {
+        log('[TURN-MESSAGES] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get all turn data for a chat
 router.get('/chat/:id/turns', (req, res) => {
     try {
@@ -303,4 +358,89 @@ router.get('/chat/:id/turns', (req, res) => {
 // Main chat endpoint that frontend expects
 router.post('/chat', processChatRequest);
 
+
 module.exports = router;
+// Edit message content
+router.patch('/message/:id', async (req, res) => {
+    try {
+        const messageId = parseInt(req.params.id, 10);
+        const { content } = req.body;
+        
+        if (isNaN(messageId)) {
+            return res.status(400).json({ error: 'Invalid message ID' });
+        }
+        
+        if (!content || content.trim() === '') {
+            return res.status(400).json({ error: 'Content is required' });
+        }
+        
+        // Get the current message to preserve original content
+        const getCurrentStmt = db.prepare('SELECT content, original_content, edit_count FROM messages WHERE id = ?');
+        const currentMessage = getCurrentStmt.get(messageId);
+        
+        if (!currentMessage) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+        
+        // Preserve original content on first edit
+        const originalContent = currentMessage.original_content || currentMessage.content;
+        const newEditCount = (currentMessage.edit_count || 0) + 1;
+        
+        // Update the message content only - blocks will be generated dynamically
+        const updateStmt = db.prepare(`
+            UPDATE messages 
+            SET content = ?, 
+                original_content = ?, 
+                edit_count = ?, 
+                edited_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        `);
+        
+        const result = updateStmt.run(content, originalContent, newEditCount, messageId);
+        
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+        
+        log(`[EDIT] Updated message ${messageId}, edit count: ${newEditCount}`);
+        
+        res.json({ 
+            success: true, 
+            message_id: messageId, 
+            edit_count: newEditCount,
+            edited_at: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        log('[EDIT] Error updating message:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get message by ID for editing
+router.get('/message/:id', (req, res) => {
+    try {
+        const messageId = parseInt(req.params.id, 10);
+        
+        if (isNaN(messageId)) {
+            return res.status(400).json({ error: 'Invalid message ID' });
+        }
+        
+        const stmt = db.prepare(`
+            SELECT id, chat_id, role, content, original_content, 
+                   edit_count, edited_at, timestamp, turn_number 
+            FROM messages WHERE id = ?
+        `);
+        const message = stmt.get(messageId);
+        
+        if (!message) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+        
+        res.json(message);
+        
+    } catch (error) {
+        log('[GET-MESSAGE] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});

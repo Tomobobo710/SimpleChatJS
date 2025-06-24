@@ -3,16 +3,17 @@
 class StreamingMessageProcessor {
     constructor() {
         this.buffer = '';
-        this.state = 'normal'; // 'normal', 'thinking', 'tool'
+        this.state = 'normal'; // 'normal', 'thinking'
         this.blocks = [];
         this.currentThinkingBlock = null;
-        this.currentToolContent = ''; // Accumulate tool content across chunks
+        this.originalResponse = ''; // Track the actual streamed response for saving
     }
     
     // Add chunk of streaming content
     addChunk(chunk) {
+        this.originalResponse += chunk; // Track original streamed response
         this.buffer += chunk;
-        this.processBuffer();
+        this.processBuffer(); // Still process for blocks/UI
     }
     
     // Process buffer to identify block boundaries
@@ -25,11 +26,9 @@ class StreamingMessageProcessor {
     
     processNextPattern() {
         if (this.state === 'normal') {
-            return this.checkForThinkingStart() || this.checkForToolStart();
+            return this.checkForThinkingStart();
         } else if (this.state === 'thinking') {
             return this.checkForThinkingEnd();
-        } else if (this.state === 'tool') {
-            return this.checkForToolEnd();
         }
         return false;
     }
@@ -94,50 +93,6 @@ class StreamingMessageProcessor {
         return false;
     }
     
-    checkForToolStart() {
-        const toolStartIndex = this.buffer.indexOf('[Executing tools...]');
-        if (toolStartIndex !== -1) {
-            // Create chat block for any content before tool marker
-            if (toolStartIndex > 0) {
-                const contentBefore = this.buffer.slice(0, toolStartIndex).trim();
-                if (contentBefore) {
-                    this.createChatBlock(contentBefore);
-                }
-            }
-            
-            // Switch to tool state and reset tool accumulator
-            this.currentToolContent = '';
-            this.buffer = this.buffer.slice(toolStartIndex + 20); // Remove '[Executing tools...]'
-            this.state = 'tool';
-            return true;
-        }
-        return false;
-    }
-    
-    checkForToolEnd() {
-        const toolEndIndex = this.buffer.indexOf('[Tools completed]');
-        if (toolEndIndex !== -1) {
-            // Add final chunk to accumulated tool content
-            const finalChunk = this.buffer.slice(0, toolEndIndex);
-            this.currentToolContent += finalChunk;
-            
-            // Create tool block with all accumulated content
-            if (this.currentToolContent.trim()) {
-                this.createToolBlock(this.currentToolContent.trim());
-            }
-            
-            // Continue with normal content
-            this.buffer = this.buffer.slice(toolEndIndex + 17); // Remove '[Tools completed]'
-            this.state = 'normal';
-            return true;
-        } else {
-            // Still in tool section, accumulate content and clear buffer
-            this.currentToolContent += this.buffer;
-            this.buffer = '';
-        }
-        return false;
-    }
-    
     // Create a chat block immediately
     createChatBlock(content) {
         if (content.trim()) {
@@ -151,33 +106,6 @@ class StreamingMessageProcessor {
         }
     }
     
-    // Create a tool block immediately
-    createToolBlock(content) {
-        if (content.trim()) {
-            const block = {
-                type: 'tool',
-                content: content.trim(),
-                metadata: this.extractMetadata(content, 'tool')
-            };
-            this.blocks.push(block);
-            logger.debug(`[PROCESSOR] Created tool block: ${content.length} chars`);
-        }
-    }
-    
-    extractMetadata(content, type) {
-        const metadata = {};
-        
-        if (type === 'tool') {
-            // Try to extract tool name from content
-            const toolMatch = content.match(/\[([^\]]+)\]/);
-            if (toolMatch) {
-                metadata.toolName = toolMatch[1];
-            }
-        }
-        
-        return metadata;
-    }
-    
     finalize() {
         logger.debug(`[PROCESSOR] Finalizing in state: ${this.state}, blocks: ${this.blocks.length}`);
         
@@ -189,12 +117,6 @@ class StreamingMessageProcessor {
                 this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
                 this.currentThinkingBlock.metadata.isStreaming = false;
                 logger.debug(`[PROCESSOR] Finalized existing thinking block`);
-            }
-        } else if (this.state === 'tool') {
-            // Add any remaining buffer to tool content and create block
-            this.currentToolContent += this.buffer;
-            if (this.currentToolContent.trim()) {
-                this.createToolBlock(this.currentToolContent.trim());
             }
         } else if (this.state === 'normal') {
             // Create chat block for any remaining normal content
@@ -214,15 +136,7 @@ class StreamingMessageProcessor {
     
     // Get raw content for saving (original API response)
     getRawContent() {
-        return this.blocks.map(block => {
-            if (block.type === 'thinking') {
-                return `<think>${block.content}</think>`;
-            } else if (block.type === 'tool') {
-                return `[Executing tools...]${block.content}[Tools completed]`;
-            } else {
-                return block.content;
-            }
-        }).join('\n\n');
+        return this.originalResponse; // Return the actual streamed response, not reconstructed from blocks
     }
     
     // Get display content (clean text for preview)

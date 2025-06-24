@@ -1,0 +1,154 @@
+/* Message Actions Bar - Edit, Retry, and Version Navigation */
+
+/* Container for the action bar */
+.message-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding: 6px 8px;
+    background: #333;
+    border: 1px inset #666;
+    opacity: 1;
+    visibility: visible;
+    gap: 12px;
+}
+
+/* Actions always visible - no hover effects */
+
+/* Action buttons container */
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Individual action button styling */
+.action-btn {
+    display: inline-block;
+    padding: 4px 8px;
+    background: #444;
+    border: 1px outset #666;
+    color: #e0e0e0;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+
+    white-space: nowrap;
+}
+
+.action-btn:hover {
+    background: #555;
+    border: 1px inset #666;
+
+}
+
+.action-btn:active {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Simple text-only buttons - 90s style */
+
+/* Specific button colors - 90s style */
+.edit-btn:hover {
+    background: #4a90e2;
+    color: white;
+}
+
+.edit-retry-btn:hover {
+    background: #ffc107;
+    color: black;
+}
+
+.retry-btn:hover {
+    background: #28a745;
+    color: white;
+}
+
+/* Version navigation container */
+.version-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #aaa;
+}
+
+/* Navigation buttons */
+.nav-btn {
+    width: 20px;
+    height: 20px;
+    background: #444;
+    border: 1px outset #666;
+    color: #e0e0e0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+
+}
+
+.nav-btn:hover {
+    background: #555;
+    border: 1px inset #666;
+}
+
+.nav-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #333;
+}
+
+.nav-btn:disabled:hover {
+    background: #333;
+    border: 1px outset #666;
+}
+
+/* Version indicator */
+.version-indicator {
+    font-size: 10px;
+    color: #aaa;
+    font-weight: 500;
+    min-width: 30px;
+    text-align: center;
+}
+
+/* Simple 90s-style layout - no fancy responsive stuff */
+
+/* Special styling for user vs assistant turns - 90s style */
+.user-turn .message-actions {
+    background: #2a4a7a;
+    border: 1px inset #4a6a9a;
+}
+
+.assistant-turn .message-actions {
+    background: #4a4a4a;
+    border: 1px inset #6a6a6a;
+}
+
+/* Loading state for buttons - simple 90s style */
+.action-btn.loading {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Ensure actions don't interfere with debug toggle */
+.turn.has-debug .message-actions {
+    margin-right: 40px; /* Leave space for debug toggle */
+}
+
+/* Primary button styling - 90s style */
+.message-actions .action-btn.primary {
+    background: #4a90e2;
+    border: 1px outset #6ab0ff;
+    color: white;
+}
+
+.message-actions .action-btn.primary:hover {
+    background: #3070c2;
+    border: 1px inset #6ab0ff;
+}
+
+/* No animations - clean 90s style */

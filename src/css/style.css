@@ -4,6 +4,8 @@
 @import "base.css";
 @import "layout.css";
 @import "turns.css";
+@import "message-actions.css";
+@import "edit-mode.css";
 @import "forms.css";
 @import "modals.css";
 @import "debug.css";
