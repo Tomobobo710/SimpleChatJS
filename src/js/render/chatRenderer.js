@@ -579,8 +579,9 @@ class ChatRenderer {
     enterMessageEditMode(turnDiv, messages, turnNumber) {
         turnDiv.classList.add('editing');
         
-        // Store original content
-        const originalHtml = turnDiv.innerHTML;
+        // Store original child elements
+        const originalElements = Array.from(turnDiv.children);
+        turnDiv._originalElements = originalElements;
         
         // Create edit container
         const editContainer = document.createElement('div');
@@ -627,27 +628,27 @@ class ChatRenderer {
         saveBtn.className = 'edit-btn-save';
         saveBtn.textContent = 'Save All Messages';
         saveBtn.addEventListener('click', () => {
-            this.saveAllMessages(turnDiv, editContainer, turnNumber, originalHtml);
+            this.saveAllMessages(turnDiv, editContainer, turnNumber);
         });
         
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'edit-btn-cancel';
         cancelBtn.textContent = 'Cancel';
         cancelBtn.addEventListener('click', () => {
-            this.cancelMessageEdit(turnDiv, originalHtml);
+            this.cancelMessageEdit(turnDiv);
         });
         
         buttonContainer.appendChild(saveBtn);
         buttonContainer.appendChild(cancelBtn);
         editContainer.appendChild(buttonContainer);
         
-        // Replace turn content with edit interface
+        // Clear and add edit interface
         turnDiv.innerHTML = '';
         turnDiv.appendChild(editContainer);
     }
     
     // Save all edited messages
-    async saveAllMessages(turnDiv, editContainer, turnNumber, originalHtml) {
+    async saveAllMessages(turnDiv, editContainer, turnNumber) {
         const messageContainers = editContainer.querySelectorAll('.editable-message');
         const saveBtn = editContainer.querySelector('.edit-btn-save');
         
@@ -683,8 +684,15 @@ class ChatRenderer {
     }
     
     // Cancel message editing
-    cancelMessageEdit(turnDiv, originalHtml) {
-        turnDiv.innerHTML = originalHtml;
+    cancelMessageEdit(turnDiv) {
+        // Restore original elements
+        turnDiv.innerHTML = '';
+        if (turnDiv._originalElements) {
+            turnDiv._originalElements.forEach(element => {
+                turnDiv.appendChild(element);
+            });
+            delete turnDiv._originalElements;
+        }
         turnDiv.classList.remove('editing');
     }
     

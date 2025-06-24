@@ -586,7 +586,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 rawPayload: actualRequestPayload            // Store as string for exact representation
             });
             
-            log(`[SEQUENTIAL-DEBUG] Captured HTTP request #${requestSequenceNumber} with ${JSON.parse(actualRequestPayload).messages.length} messages`);
+
         } else {
             log(`[SEQUENTIAL-DEBUG] Skipping first HTTP request debug - already captured in user phase`);
         }
