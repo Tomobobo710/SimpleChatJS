@@ -65,13 +65,24 @@
     color: white;
 }
 
-/* Version navigation container */
+/* Branch navigation container */
+.branch-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #aaa;
+    margin-left: auto; /* Push to right side */
+}
+
+/* Version navigation container (legacy) */
 .version-nav {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 10px;
     color: #aaa;
+    margin-left: auto; /* Push to right side */
 }
 
 /* Navigation buttons */
@@ -106,7 +117,16 @@
     border: 1px outset #666;
 }
 
-/* Version indicator */
+/* Branch indicator */
+.branch-indicator {
+    font-size: 10px;
+    color: #aaa;
+    font-weight: 500;
+    min-width: 30px;
+    text-align: center;
+}
+
+/* Version indicator (legacy) */
 .version-indicator {
     font-size: 10px;
     color: #aaa;

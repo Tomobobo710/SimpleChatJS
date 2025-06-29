@@ -594,3 +594,100 @@ async function getMessage(messageId) {
         throw error;
     }
 }
+
+// ===== CHAT BRANCHING API =====
+
+// Retry a turn (create new version)
+async function retryTurn(chatId, turnNumber) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}/retry`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error retrying turn:', error);
+        throw error;
+    }
+}
+
+// Get all versions for a turn
+async function getTurnVersions(chatId, turnNumber) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}/versions`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting turn versions:', error);
+        throw error;
+    }
+}
+
+// Activate a specific version
+async function activateTurnVersion(chatId, turnNumber, versionNumber) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}/version/${versionNumber}/activate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error activating turn version:', error);
+        throw error;
+    }
+}
+
+// Get all branches for a chat
+async function getChatBranches(chatId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/branches`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting chat branches:', error);
+        throw error;
+    }
+}
+
+// Switch to a specific branch
+async function activateChatBranch(chatId, branchId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/branch/${branchId}/activate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error activating branch:', error);
+        throw error;
+    }
+}

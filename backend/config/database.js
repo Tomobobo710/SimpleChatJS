@@ -29,48 +29,11 @@ function initializeDatabase() {
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`);
             
-            db.exec(`CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (chat_id) REFERENCES chats (id)
-            )`);
-            
+            // Settings table for application configuration
             db.exec(`CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )`);
-            
-            // Add columns if they don't exist
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN debug_data TEXT`);
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding debug_data column:', err.message);
-                }
-            }
-            
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN blocks TEXT`);
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding blocks column:', err.message);
-                }
-            }
-            
-            // Add turn_number column for grouping messages into turns
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN turn_number INTEGER`);
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding turn_number column:', err.message);
-                }
-            }
             
             // Add turn_number to chats table for proper turn tracking
             try {
@@ -81,72 +44,166 @@ function initializeDatabase() {
                     log('[DB] Error adding turn_number to chats:', err.message);
                 }
             }
-            // Add edit tracking columns for Direct History Editing
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN edited_at DATETIME`);
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding edited_at column:', err.message);
-                }
-            }
             
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN edit_count INTEGER DEFAULT 0`);
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding edit_count column:', err.message);
-                }
-            }
-            
-            // Add tool_calls column for proper tool reconstruction
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN tool_calls TEXT`);
-                log('[DB] Added tool_calls column successfully');
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding tool_calls column:', err.message);
-                }
-            }
-            
-            // Add other tool-related columns
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN tool_call_id TEXT`);
-            } catch (err) {
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding tool_call_id column:', err.message);
-                }
-            }
-            
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN tool_name TEXT`);
-            } catch (err) {
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding tool_name column:', err.message);
-                }
-            }
-            
-            try {
-                db.exec(`ALTER TABLE messages ADD COLUMN original_content TEXT`);
-            } catch (err) {
-                // Column likely already exists
-                if (!err.message.includes('duplicate column name')) {
-                    log('[DB] Error adding original_content column:', err.message);
-                }
-            }
-            
-            // Create turn_debug_data table for turn-based debug storage
-            db.exec(`CREATE TABLE IF NOT EXISTS turn_debug_data (
+            // Everything-is-a-branch system: Every chat gets a main branch from creation
+            db.exec(`CREATE TABLE IF NOT EXISTS chat_branches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id TEXT NOT NULL,
-                turn_number INTEGER NOT NULL,
-                debug_data TEXT NOT NULL,
+                branch_name TEXT NOT NULL,
+                parent_branch_id INTEGER,
+                branch_point_turn INTEGER,
+                is_active BOOLEAN DEFAULT FALSE,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(chat_id, turn_number),
-                FOREIGN KEY (chat_id) REFERENCES chats (id)
+                UNIQUE(chat_id, branch_name),
+                FOREIGN KEY (chat_id) REFERENCES chats (id),
+                FOREIGN KEY (parent_branch_id) REFERENCES chat_branches (id)
             )`);
+            
+            // This is now the ONLY message table - everything goes through branches
+            db.exec(`CREATE TABLE IF NOT EXISTS branch_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                branch_id INTEGER NOT NULL,
+                original_message_id INTEGER,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                turn_number INTEGER NOT NULL,
+                tool_calls TEXT,
+                tool_call_id TEXT,
+                tool_name TEXT,
+                blocks TEXT,
+                debug_data TEXT,
+                edit_count INTEGER DEFAULT 0,
+                edited_at DATETIME,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (branch_id) REFERENCES chat_branches (id)
+            )`);
+            
+            // FULL MIGRATION: Move everything to branch-based system and drop old tables
+            try {
+                log('[DB] Starting FULL migration to everything-is-a-branch system...');
+                
+                // Step 1: Migrate any remaining data from old messages table
+                const oldTableExists = db.prepare(`
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name='messages'
+                `).get();
+                
+                if (oldTableExists) {
+                    log('[DB] Found old messages table, migrating data...');
+                    
+                    // Get all chats that have messages but no main branch
+                    const chatsWithoutBranchStmt = db.prepare(`
+                        SELECT DISTINCT m.chat_id
+                        FROM messages m
+                        LEFT JOIN chat_branches cb ON m.chat_id = cb.chat_id AND cb.branch_name = 'main'
+                        WHERE cb.id IS NULL
+                        ORDER BY m.chat_id
+                    `);
+                    const chatsWithoutBranch = chatsWithoutBranchStmt.all();
+                    
+                    for (const chat of chatsWithoutBranch) {
+                        // Create main branch for this chat
+                        const insertBranchStmt = db.prepare(`
+                            INSERT INTO chat_branches (chat_id, branch_name, parent_branch_id, branch_point_turn, is_active)
+                            VALUES (?, 'main', NULL, NULL, TRUE)
+                        `);
+                        const branchResult = insertBranchStmt.run(chat.chat_id);
+                        const branchId = branchResult.lastInsertRowid;
+                        
+                        // Get all messages for this chat
+                        const messagesStmt = db.prepare(`
+                            SELECT id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp
+                            FROM messages 
+                            WHERE chat_id = ?
+                            ORDER BY timestamp ASC
+                        `);
+                        const messages = messagesStmt.all(chat.chat_id);
+                        
+                        // Copy all messages to main branch
+                        const insertMessageStmt = db.prepare(`
+                            INSERT INTO branch_messages 
+                            (branch_id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `);
+                        
+                        for (const msg of messages) {
+                            insertMessageStmt.run(
+                                branchId, msg.id, msg.role, msg.content, msg.turn_number || 1,
+                                msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.blocks, msg.debug_data,
+                                msg.edit_count || 0, msg.edited_at, msg.timestamp
+                            );
+                        }
+                        
+                        log(`[DB] Migrated chat ${chat.chat_id} to main branch with ${messages.length} messages`);
+                    }
+                    
+                    // Step 2: Migrate debug data from turn_debug_data to branch_messages
+                    log('[DB] Migrating debug data to branch messages...');
+                    const debugDataExists = db.prepare(`
+                        SELECT name FROM sqlite_master 
+                        WHERE type='table' AND name='turn_debug_data'
+                    `).get();
+                    
+                    if (debugDataExists) {
+                        // Get all debug data
+                        const debugDataStmt = db.prepare(`
+                            SELECT chat_id, turn_number, debug_data
+                            FROM turn_debug_data
+                        `);
+                        const debugDataRows = debugDataStmt.all();
+                        
+                        // Update branch_messages with debug data
+                        const updateDebugStmt = db.prepare(`
+                            UPDATE branch_messages 
+                            SET debug_data = ?
+                            WHERE branch_id IN (
+                                SELECT cb.id FROM chat_branches cb 
+                                WHERE cb.chat_id = ? AND cb.branch_name = 'main'
+                            )
+                            AND turn_number = ?
+                            AND debug_data IS NULL
+                        `);
+                        
+                        for (const debugRow of debugDataRows) {
+                            updateDebugStmt.run(debugRow.debug_data, debugRow.chat_id, debugRow.turn_number);
+                        }
+                        
+                        log(`[DB] Migrated ${debugDataRows.length} debug data entries to branch messages`);
+                    }
+                    
+                    // Step 3: Drop old tables after successful migration
+                    log('[DB] Dropping old tables...');
+                    db.exec('DROP TABLE IF EXISTS messages');
+                    db.exec('DROP TABLE IF EXISTS turn_debug_data');
+                    log('[DB] Successfully dropped old tables: messages, turn_debug_data');
+                }
+                
+                // Step 4: Ensure ALL existing chats have main branches
+                const chatsWithoutMainBranchStmt = db.prepare(`
+                    SELECT c.id 
+                    FROM chats c
+                    LEFT JOIN chat_branches cb ON c.id = cb.chat_id AND cb.branch_name = 'main'
+                    WHERE cb.id IS NULL
+                `);
+                const chatsWithoutMainBranch = chatsWithoutMainBranchStmt.all();
+                
+                const createMainBranchStmt = db.prepare(`
+                    INSERT INTO chat_branches (chat_id, branch_name, parent_branch_id, branch_point_turn, is_active)
+                    VALUES (?, 'main', NULL, NULL, TRUE)
+                `);
+                
+                for (const chat of chatsWithoutMainBranch) {
+                    createMainBranchStmt.run(chat.id);
+                    log(`[DB] Created main branch for existing chat ${chat.id}`);
+                }
+                
+                log(`[DB] FULL migration to everything-is-a-branch completed!`);
+                
+            } catch (migrationError) {
+                log('[DB] Error during full migration:', migrationError.message);
+                // Don't fail initialization if migration fails, but log it clearly
+                log('[DB] MIGRATION FAILED - system may have inconsistent state');
+            }
             
             log('[DB] Database initialized successfully');
             resolve();

@@ -241,6 +241,21 @@ function groupMessagesByTurn(messages) {
         turnGroups.get(turnNumber).push(msg);
     });
     
+    // Check for duplicate turn numbers in the groups  
+    const turnNumbers = Array.from(turnGroups.keys());
+    const duplicateTurns = turnNumbers.filter((turn, index) => turnNumbers.indexOf(turn) !== index);
+    
+    if (duplicateTurns.length > 0) {
+        console.error(`[GROUP-MESSAGES] DUPLICATE TURN NUMBERS DETECTED: ${duplicateTurns}`);
+    }
+    
+    turnGroups.forEach((msgs, turnNum) => {
+        const assistantCount = msgs.filter(m => m.role === 'assistant').length;
+        if (assistantCount > 1) {
+            console.warn(`[GROUP-MESSAGES] Turn ${turnNum} has ${assistantCount} assistant messages!`);
+        }
+    });
+    
     // Convert to array and sort by turn number
     return Array.from(turnGroups.entries())
         .sort(([a], [b]) => a - b)
@@ -262,12 +277,23 @@ function hasToolCalls(msg) {
     return false;
 }
 
+// Track if we're already loading to prevent concurrent calls
+let isLoadingHistory = false;
+
 // Load chat history for a specific chat
 async function loadChatHistory(chatId) {
+    if (isLoadingHistory) {
+        console.warn(`[LOAD-GUARD] Already loading history, ignoring duplicate call for chatId: ${chatId}`);
+        return;
+    }
+    
+    isLoadingHistory = true;
+    
     try {
         setLoading(true);
         
-        const history = await getChatHistory(chatId);        
+        const history = await getChatHistory(chatId);
+        
         // Initialize turn tracking for this chat
         await initializeTurnTrackingForChat(chatId);
         
@@ -293,10 +319,18 @@ async function loadChatHistory(chatId) {
         const turnGroups = groupMessagesByTurn(processedMessages);
         
         // Process each turn using the exact same pipeline as live rendering
-        turnGroups.forEach(({ turnNumber, messages: turnMessages }) => {
+        turnGroups.forEach((group, groupIndex) => {
+            const { turnNumber, messages: turnMessages } = group;
+            
             // Separate user and assistant messages (like live rendering does)
             const userMessages = turnMessages.filter(msg => msg.role === 'user');
             const assistantMessages = turnMessages.filter(msg => msg.role === 'assistant');
+            
+            // Check for duplicate assistant messages in the same turn
+            if (assistantMessages.length > 1) {
+                console.warn(`[LOAD-HISTORY] WARNING: Turn ${turnNumber} has ${assistantMessages.length} assistant messages!`);
+                console.warn(`[LOAD-HISTORY] Assistant message IDs:`, assistantMessages.map(m => ({id: m.id, content: m.content?.substring(0, 50)})));
+            }
             
             // Render user messages directly (exactly like live rendering)
             userMessages.forEach(userMsg => {
@@ -306,12 +340,14 @@ async function loadChatHistory(chatId) {
                     content: userMsg.content,
                     turn_number: turnNumber,
                     edit_count: userMsg.edit_count,
-                    edited_at: userMsg.edited_at
+                    edited_at: userMsg.edited_at,
+                    debug_data: userMsg.debug_data  // Include debug data for user messages
                 }, false);
             });
             
             // Process assistant messages separately (exactly like live rendering)
             if (assistantMessages.length > 0) {
+                
                 // Create a processor only for assistant content
                 const processor = new StreamingMessageProcessor();
                 
@@ -322,9 +358,12 @@ async function loadChatHistory(chatId) {
                 let turnDebugData = null;
                 let primaryAssistantMessage = null;
                 
-                assistantMessages.forEach(msg => {
+                assistantMessages.forEach((msg, msgIndex) => {
                     // Track the primary assistant message
                     if (msg.content) {
+                        if (primaryAssistantMessage) {
+                            console.warn(`[LOAD-HISTORY] Multiple assistant messages with content! Previous: ${primaryAssistantMessage.id}, Current: ${msg.id}`);
+                        }
                         primaryAssistantMessage = msg;
                         turnDebugData = msg.debug_data;
                     }
@@ -336,7 +375,7 @@ async function loadChatHistory(chatId) {
                     
                     // Simulate SSE tool events using the same structured data
                     if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-                        msg.tool_calls.forEach(toolCall => {
+                        msg.tool_calls.forEach((toolCall, toolIdx) => {
                             const toolName = toolCall.function?.name || 'unknown_tool';
                             let args;
                             try {
@@ -420,6 +459,7 @@ async function loadChatHistory(chatId) {
         showError(`Failed to load chat history: ${error.message}`);
     } finally {
         setLoading(false);
+        isLoadingHistory = false;
     }
 }
 
@@ -481,3 +521,6 @@ async function getChatHistory(chatId) {
         throw error;
     }
 }
+
+// Make functions globally available for UI
+window.handleNewChat = handleNewChat;

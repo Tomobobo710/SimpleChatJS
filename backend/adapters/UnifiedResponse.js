@@ -8,7 +8,7 @@
 class UnifiedResponse {
     constructor() {
         this.provider = null;           // 'openai', 'google', etc
-        this.content = '';              // Text content
+        this.content = '';              // Text content for CURRENT response phase only
         this.toolCalls = [];            // Array of tool calls
         this.isComplete = false;        // Whether response is finished
         this.debugData = {};            // Debug information

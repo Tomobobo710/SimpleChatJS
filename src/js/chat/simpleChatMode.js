@@ -24,10 +24,8 @@ async function handleSimpleChat(message, conversationHistory) {
     }, true);
     
     // Save user message to database
-    console.log(`[FRONTEND] Saving user message to chat ${currentChatId}`);
     try {
         await saveCompleteMessage(currentChatId, { role: 'user', content: message }, null, userTurnNumber);
-        console.log(`[FRONTEND] Successfully saved user message to chat ${currentChatId}`);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
     }
