@@ -1,0 +1,420 @@
+{
+  "architecture": {
+    "type": "Full-stack web application",
+    "backend": {
+      "entryPoint": "backend/server.js",
+      "framework": "Express"
+    },
+    "frontend": {
+      "entryPoint": "index.html",
+      "mainScript": "src/js/app/main.js"
+    }
+  },
+  "files": [
+    {
+      "path": "index.html",
+      "purpose": "Main HTML entry point for the frontend UI",
+      "dependsOn": ["src/css/style.css","src/js/app/logger.js","src/js/app/utils.js","src/js/app/api.js","src/js/render/streamingDropdowns.js","src/js/render/streamingMessageProcessor.js","src/js/render/chatRenderer.js","src/js/render/liveRenderer.js","src/js/tools/mcp.js","src/js/tools/toolHandler.js","src/js/ui/debugPanel.js","src/js/ui/settings.js","src/js/ui/ui.js","src/js/chat/conductorDebugData.js","src/js/chat/conductor.js","src/js/chat/simpleChatMode.js","src/js/chat/chatManager.js","src/js/app/main.js"],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "README.md",
+      "purpose": "Project overview and setup instructions",
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "package.json",
+      "purpose": "Node project manifest with dependencies and scripts",
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "backend",
+      "purpose": "Server-side application code",
+      "contains": ["server.js", "adapters", "config", "routes", "services", "utils"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/server.js",
+      "purpose": "Express server initialization and route mounting",
+      "dependsOn": ["express","path","open","./utils/logger","./config/database","./services/settingsService","./services/mcpService","./routes/chat","./routes/mcp","./routes/settings","./routes/debug"],
+      "usedBy": [],
+      "keyExports": ["startServer"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/adapters",
+      "purpose": "Implements response adapters for different services",
+      "contains": ["BaseResponseAdapter.js","GoogleAdapter.js","OpenAIAdapter.js","ResponseAdapterFactory.js","UnifiedResponse.js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/adapters/BaseResponseAdapter.js",
+      "purpose": "Defines the base adapter interface for formatting responses",
+      "dependsOn": [],
+      "usedBy": ["backend/adapters/ResponseAdapterFactory.js","backend/adapters/GoogleAdapter.js","backend/adapters/OpenAIAdapter.js"],
+      "keyExports": ["BaseResponseAdapter"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/adapters/GoogleAdapter.js",
+      "purpose": "Adapter for Google API responses",
+      "dependsOn": ["./BaseResponseAdapter","../adapters/UnifiedResponse"],
+      "usedBy": ["backend/services/chatService.js"],
+      "keyExports": ["GoogleAdapter"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/adapters/OpenAIAdapter.js",
+      "purpose": "Adapter for OpenAI API responses",
+      "dependsOn": ["./BaseResponseAdapter","../adapters/UnifiedResponse"],
+      "usedBy": ["backend/services/chatService.js"],
+      "keyExports": ["OpenAIAdapter"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/adapters/ResponseAdapterFactory.js",
+      "purpose": "Factory to select appropriate response adapter",
+      "dependsOn": ["./GoogleAdapter","./OpenAIAdapter"],
+      "usedBy": ["backend/services/chatService.js"],
+      "keyExports": ["ResponseAdapterFactory"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/adapters/UnifiedResponse.js",
+      "purpose": "Defines a unified response format for adapters",
+      "dependsOn": [],
+      "usedBy": ["backend/adapters/GoogleAdapter.js","backend/adapters/OpenAIAdapter.js"],
+      "keyExports": ["UnifiedResponse"],
+      "keyTypes": ["UnifiedResponse"]
+    },
+    {
+      "path": "backend/config",
+      "purpose": "Configuration files for the backend",
+      "contains": ["database.js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/config/database.js",
+      "purpose": "Database configuration and setup with migrations",
+      "dependsOn": ["better-sqlite3","path","fs","../utils/logger"],
+      "usedBy": ["backend/server.js","backend/services/chatService.js","backend/routes/chat.js"],
+      "keyExports": ["db","initializeDatabase","closeDatabase"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/routes",
+      "purpose": "Express route handlers",
+      "contains": ["chat.js","debug.js","mcp.js","settings.js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/routes/chat.js",
+      "purpose": "Express chat routes handling chat operations, branching, history, messages, and editing",
+      "dependsOn": ["express","../config/database","../services/chatService","../utils/logger"],
+      "usedBy": ["backend/server.js"],
+      "keyExports": ["router"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/routes/debug.js",
+      "purpose": "Debug routes for retrieving debug data and streaming tool events",
+      "dependsOn": ["express","../services/toolEventService","../utils/logger"],
+      "usedBy": ["backend/server.js"],
+      "keyExports": ["router"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/routes/mcp.js",
+      "purpose": "MCP routes for Model Context Protocol operations",
+      "dependsOn": ["express","../services/mcpService"],
+      "usedBy": ["backend/server.js"],
+      "keyExports": ["router"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/routes/settings.js",
+      "purpose": "Handles application settings",
+      "dependsOn": ["express","https","http","../services/settingsService","../utils/logger"],
+      "usedBy": ["backend/server.js"],
+      "keyExports": ["router"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/services",
+      "purpose": "Business logic and service layer",
+      "contains": ["chatService.js","mcpService.js","settingsService.js","toolEventService.js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/services/chatService.js",
+      "purpose": "Processes chat requests and integrates with adapters",
+      "dependsOn": ["../config/database","../utils/logger","../adapters/ResponseAdapterFactory","../adapters/UnifiedResponse","./settingsService","./mcpService","./toolEventService"],
+      "usedBy": ["backend/routes/chat.js"],
+      "keyExports": ["handleChatWithTools","processChatRequest","saveCompleteMessageToDatabase","updateMessageDebugData","getChatHistoryForAPI","getCurrentTurnNumber","incrementTurnNumber","saveTurnDebugData","getTurnDebugData","getAllTurnDebugData","createChatBranch","getChatBranches","getActiveChatBranch","setActiveChatBranch"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/services/mcpService.js",
+      "purpose": "Manages MCP server interactions",
+      "dependsOn": ["fs","path","../utils/logger","@modelcontextprotocol/sdk/client/index.js","@modelcontextprotocol/sdk/client/stdio.js"],
+      "usedBy": ["backend/routes/mcp.js"],
+      "keyExports": ["initMCP","getMcpStatus","connectMcp","disconnectMcp","executeMCPTool","executeToolViaApi","loadMcpConfig","saveMcpConfig","loadEnabledTools","saveEnabledTools","getAvailableToolsForChat","shutdownMcp"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/services/settingsService.js",
+      "purpose": "Handles user settings persistence",
+      "dependsOn": ["fs","path","../utils/logger"],
+      "usedBy": ["backend/routes/settings.js"],
+      "keyExports": ["loadSettings","saveSettings","getDefaultSettings","getCurrentSettings","loadSettingsOnStartup","loadProfiles","saveProfiles","getActiveProfileSettings","switchProfile","saveAsProfile","deleteProfile","updateActiveProfile"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/services/toolEventService.js",
+      "purpose": "Logs and retrieves tool execution events",
+      "dependsOn": ["../utils/logger"],
+      "usedBy": ["backend/routes/debug.js","backend/services/chatService.js","backend/services/mcpService.js"],
+      "keyExports": ["generateRequestId","initializeToolEvents","addToolEvent","handleToolEventsStream","storeDebugData","getDebugData","handleDebugDataRequest"],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/utils",
+      "purpose": "Utility modules for backend",
+      "contains": ["logger.js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "backend/utils/logger.js",
+      "purpose": "Configures application logging",
+      "dependsOn": ["winston"],
+      "usedBy": ["backend/services/toolEventService.js"],
+      "keyExports": ["logger"],
+      "keyTypes": []
+    },
+    {
+      "path": "src",
+      "purpose": "Client-side application code",
+      "contains": ["css","js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "src/css",
+      "purpose": "Stylesheets for the frontend UI",
+      "contains": ["base.css","conductor.css","debug.css","edit-mode.css","forms.css","layout.css","mcp.css","message-actions.css","modals.css","style.css","turns.css"],
+      "dependsOn": [],
+      "usedBy": ["index.html"],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/app/api.js",
+      "purpose": "Frontend API wrappers for server endpoints",
+      "dependsOn": ["src/js/app/utils.js","src/js/app/logger.js"],
+      "usedBy": ["src/js/app/main.js","src/js/chat/chatManager.js","src/js/chat/conductor.js","src/js/chat/simpleChatMode.js"],
+      "keyExports": ["sendMessage","updateMessageDebugData","saveTurnData","getTurnData","initiateMessageRequest","sendMessageWithTools","loadEnabledTools","loadEnabledToolsFromBackend","saveEnabledTools","isToolEnabled","setToolEnabled","getEnabledToolsForServer","streamResponse","getChatHistory","getMCPStatus","connectToMCPServers","disconnectFromMCPServers","saveSettingsToBackend","loadSettingsFromBackend","createNewChat","updateChatTitleInDatabase","createNewChatInDatabase","saveCompleteMessage"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/app/logger.js",
+      "purpose": "Client-side logging utility",
+      "dependsOn": [],
+      "usedBy": ["src/js/app/main.js"],
+      "keyExports": ["log"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/app/main.js",
+      "purpose": "Initializer and orchestrator for the frontend app",
+      "dependsOn": ["src/js/app/api.js","src/js/app/logger.js","src/js/app/utils.js","src/js/chat/conductor.js","src/js/chat/simpleChatMode.js","src/js/ui/ui.js"],
+      "usedBy": ["index.html"],
+      "keyExports": ["getEnabledToolDefinitions","getNextTurnNumber","resetTurnTracking","initializeTurnTrackingForChat","handleSendMessage","handleConductorChat"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/app/utils.js",
+      "purpose": "Generic utility functions for the frontend",
+      "dependsOn": [],
+      "usedBy": ["src/js/app/main.js","src/js/chat/chatManager.js","src/js/chat/simpleChatMode.js"],
+      "keyExports": ["generateId","loadSettings","saveSettings","escapeHtml","formatMessage","initSmartScroll","smartScrollToBottom","smartScrollToBottomImmediate","scrollToBottom","setLoading","stopStream","stopGeneration","showNotification","showError","showSuccess","showWarning","getCleanConversationHistory"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/chat/chatManager.js",
+      "purpose": "Manages chat state and user interactions",
+      "dependsOn": ["src/js/app/utils.js","src/js/app/api.js","src/js/render/chatRenderer.js"],
+      "usedBy": ["src/js/app/main.js"],
+      "keyExports": ["handleNewChat","loadChatList","switchToChat","selectChat","handleDeleteChat","loadChatHistory","updateChatTitle","updateChatPreview"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/chat/conductor.js",
+      "purpose": "Coordinates between chatManager and UI",
+      "dependsOn": ["src/js/chat/chatManager.js","src/js/app/api.js","src/js/app/utils.js","src/js/chat/conductorDebugData.js","src/js/render/chatRenderer.js","src/js/render/liveRenderer.js","src/js/render/streamingMessageProcessor.js"],
+      "usedBy": ["src/js/app/main.js"],
+      "keyExports": ["Conductor"],
+      "keyTypes": ["Conductor"]
+    },
+    {
+      "path": "src/js/chat/conductorDebugData.js",
+      "purpose": "Handles debug data flow in conductor",
+      "dependsOn": ["src/js/chat/conductor.js"],
+      "usedBy": ["src/js/chat/conductor.js","src/js/ui/debugPanel.js"],
+      "keyExports": ["ConductorDebugData"],
+      "keyTypes": ["ConductorDebugData"]
+    },
+    {
+      "path": "src/js/chat/simpleChatMode.js",
+      "purpose": "Defines a simple chat mode for UI interactions",
+      "dependsOn": ["src/js/app/api.js","src/js/app/utils.js","src/js/render/chatRenderer.js","src/js/chat/chatManager.js"],
+      "usedBy": ["src/js/app/main.js"],
+      "keyExports": ["handleSimpleChat"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/render/chatRenderer.js",
+      "purpose": "Renders chat messages in the UI",
+      "dependsOn": ["src/js/render/streamingDropdowns.js","src/js/render/streamingMessageProcessor.js","src/js/app/utils.js","src/js/ui/debugPanel.js"],
+      "usedBy": ["src/js/chat/chatManager.js","src/js/chat/conductor.js","src/js/chat/simpleChatMode.js"],
+      "keyExports": ["ChatRenderer","initializeChatRenderer","createDebugPanel"],
+      "keyTypes": ["ChatRenderer"]
+    },
+    {
+      "path": "src/js/render/liveRenderer.js",
+      "purpose": "Handles live updates and streaming rendering",
+      "dependsOn": [],
+      "usedBy": ["src/js/chat/conductor.js"],
+      "keyExports": ["updateLiveRendering"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/render/streamingDropdowns.js",
+      "purpose": "Renders streaming dropdown components",
+      "dependsOn": [],
+      "usedBy": ["index.html","src/js/render/chatRenderer.js","src/js/render/liveRenderer.js"],
+      "keyExports": ["formatToolContent","StreamingDropdown"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/render/streamingMessageProcessor.js",
+      "purpose": "Processes streaming messages for rendering",
+      "dependsOn": [],
+      "usedBy": ["src/js/render/liveRenderer.js"],
+      "keyExports": ["StreamingMessageProcessor"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/tools",
+      "purpose": "Frontend tool integrations",
+      "contains": ["mcp.js","toolHandler.js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/tools/mcp.js",
+      "purpose": "Handles communication with MCP backends",
+      "dependsOn": ["src/js/app/api.js"],
+      "usedBy": ["src/js/app/main.js","src/js/ui/settings.js","src/js/ui/ui.js"],
+      "keyExports": ["loadMCPConfigIntoModal","handleSaveMCPConfig","handleTestMCPConfig","autoConnectMCP","handleRefreshMCP","updateMCPStatus","addMCPCheckboxListeners"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/tools/toolHandler.js",
+      "purpose": "Dispatches tool actions based on user input",
+      "dependsOn": ["src/js/tools/mcp.js"],
+      "usedBy": ["src/js/render/chatRenderer.js"],
+      "keyExports": ["createToolBlocksFromDebugData","handleToolEvent"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/ui",
+      "purpose": "User interface components",
+      "contains": ["debugPanel.js","settings.js","ui.js"],
+      "dependsOn": [],
+      "usedBy": [],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/ui/debugPanel.js",
+      "purpose": "Displays debug information in the UI",
+      "dependsOn": [],
+      "usedBy": ["src/js/render/chatRenderer.js"],
+      "keyExports": ["createDebugPanelContent","toggleDebugDropdown"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/ui/settings.js",
+      "purpose": "Renders and manages settings UI",
+      "dependsOn": ["src/js/app/api.js"],
+      "usedBy": ["src/js/ui/ui.js"],
+      "keyExports": ["loadInitialSettings","loadSettingsIntoModal","handleSaveSettings","handleTestConnection","fetchAvailableModels","populateModelDropdown","handleRefreshModels","loadProfiles","switchToProfile","handleSaveAsProfile","handleDeleteProfile","showCustomConfirm"],
+      "keyTypes": []
+    },
+    {
+      "path": "src/js/ui/ui.js",
+      "purpose": "Core UI utilities and render functions",
+      "dependsOn": [],
+      "usedBy": ["src/js/app/main.js"],
+      "keyExports": ["initializeElements","setupEventListeners","switchTab"],
+      "keyTypes": []
+    },
+    {
+      "path": "userdata",
+      "purpose": "User-specific configuration data",
+      "contains": ["mcp_config.json"],
+      "dependsOn": [],
+      "usedBy": ["src/js/app/main.js"],
+      "keyExports": [],
+      "keyTypes": []
+    },
+    {
+      "path": "userdata/mcp_config.json",
+      "purpose": "Configuration for MCP integrations",
+      "dependsOn": [],
+      "usedBy": ["src/js/tools/mcp.js"],
+      "keyExports": [],
+      "keyTypes": []
+    }
+  ],
+  "dataFlows": [
+    "User opens index.html -> main.js initializes application -> ui.js sets up UI components",
+    "User sends message via chat UI -> chatManager captures input -> api.sendChat posts to /chat",
+    "server.js receives /chat request -> chatService processes request -> ResponseAdapterFactory selects adapter",
+    "Adapter (OpenAIAdapter or GoogleAdapter) calls external API -> UnifiedResponse created -> chatService returns response",
+    "Express sends response back -> api.js receives response -> chatRenderer renders message in UI",
+    "Debug data flow: user triggers debug -> api.getDebugData posts to /debug -> toolEventService retrieves events -> debugPanel displays",
+    "Settings flow: user updates settings -> api.updateSettings posts to /settings -> settingsService updates database -> getSettings retrieves new config",
+    "MCP flow: user invokes tool -> toolHandler or mcp.js sends to /mcp -> mcpService processes using database -> returns tool output -> ui updates"
+  ]
+}
