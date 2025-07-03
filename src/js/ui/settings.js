@@ -1,8 +1,14 @@
-// Settings Management
+// Settings Management with Profiles Support
+
+// Profile management variables
+let currentProfilesData = null;
 
 // Load initial settings
 async function loadInitialSettings() {
     try {
+        // Load profiles first
+        await loadProfiles();
+        
         // Load settings from file storage
         const response = await fetch(`${window.location.origin}/api/settings`);
         const settings = await response.json();
@@ -342,4 +348,188 @@ async function handleRefreshModels() {
             refreshModelsBtn.innerHTML = '🔄';
         }, 2000);
     }
+}
+
+// PROFILE MANAGEMENT FUNCTIONS
+
+// Load profiles from backend
+async function loadProfiles() {
+    try {
+        const response = await fetch(`${window.location.origin}/api/profiles`);
+        const profilesData = await response.json();
+        currentProfilesData = profilesData;
+        
+        // Populate profile dropdown
+        const profileSelect = document.getElementById('profileSelect');
+        profileSelect.innerHTML = '';
+        
+        Object.keys(profilesData.profiles).forEach(profileName => {
+            const option = document.createElement('option');
+            option.value = profileName;
+            option.textContent = profileName;
+            if (profileName === profilesData.activeProfile) {
+                option.selected = true;
+            }
+            profileSelect.appendChild(option);
+        });
+        
+        logger.info('Profiles loaded:', Object.keys(profilesData.profiles));
+        return profilesData;
+    } catch (error) {
+        logger.error('Failed to load profiles:', error);
+        showError('Failed to load profiles');
+        return null;
+    }
+}
+
+// Switch to selected profile (auto-triggered on dropdown change)
+async function switchToProfile(selectedProfile) {
+    if (!selectedProfile) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${window.location.origin}/api/profiles/switch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileName: selectedProfile })
+        });
+        
+        if (response.ok) {
+            logger.info(`Switched to profile: ${selectedProfile}`);
+            
+            // Reload settings into form
+            loadSettingsIntoModal();
+            
+            // Update cached settings
+            const profilesData = currentProfilesData;
+            if (profilesData && profilesData.profiles[selectedProfile]) {
+                window.setCachedSettings(profilesData.profiles[selectedProfile]);
+            }
+        } else {
+            const error = await response.json();
+            showError(`Failed to switch profile: ${error.error}`);
+        }
+    } catch (error) {
+        logger.error('Switch profile error:', error);
+        showError('Failed to switch profile');
+    }
+}
+
+// Save current settings as new profile
+async function handleSaveAsProfile() {
+    const newProfileNameInput = document.getElementById('newProfileName');
+    const profileName = newProfileNameInput.value.trim();
+    
+    if (!profileName) {
+        showError('Please enter a profile name');
+        return;
+    }
+    
+    // Get current settings from form
+    const settings = {
+        apiUrl: apiUrlInput.value.trim(),
+        apiKey: apiKeyInput.value.trim(),
+        modelName: modelNameInput.value.trim(),
+        debugPanels: debugPanelsInput.checked,
+        showPhaseMarkers: showPhaseMarkersInput.checked
+    };
+    
+    try {
+        const response = await fetch(`${window.location.origin}/api/profiles/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileName, settings })
+        });
+        
+        if (response.ok) {
+            showSuccess(`Profile saved: ${profileName}`);
+            newProfileNameInput.value = ''; // Clear input
+            
+            // Reload profiles to update dropdown
+            await loadProfiles();
+        } else {
+            const error = await response.json();
+            showError(`Failed to save profile: ${error.error}`);
+        }
+    } catch (error) {
+        logger.error('Save profile error:', error);
+        showError('Failed to save profile');
+    }
+}
+
+// Show custom confirm dialog
+function showCustomConfirm(message, onConfirm) {
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    
+    // Create confirm dialog
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.innerHTML = `
+        <div class="confirm-message">${message}</div>
+        <div class="confirm-buttons">
+            <button class="confirm-btn confirm-yes">Delete</button>
+            <button class="confirm-btn confirm-no">Cancel</button>
+        </div>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    // Handle button clicks
+    const yesBtn = dialog.querySelector('.confirm-yes');
+    const noBtn = dialog.querySelector('.confirm-no');
+    
+    const cleanup = () => {
+        document.body.removeChild(overlay);
+    };
+    
+    yesBtn.addEventListener('click', () => {
+        cleanup();
+        onConfirm();
+    });
+    
+    noBtn.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) cleanup();
+    });
+}
+
+// Delete selected profile
+async function handleDeleteProfile() {
+    const profileSelect = document.getElementById('profileSelect');
+    const selectedProfile = profileSelect.value;
+    
+    if (!selectedProfile) {
+        showError('Please select a profile to delete');
+        return;
+    }
+    
+    // Custom confirm dialog
+    showCustomConfirm(
+        `Delete profile "${selectedProfile}"?`,
+        async () => {
+            try {
+                const response = await fetch(`${window.location.origin}/api/profiles/${selectedProfile}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showSuccess(`Profile deleted: ${selectedProfile}`);
+                    
+                    // Reload profiles to update dropdown and switch to new active profile
+                    await loadProfiles();
+                    loadSettingsIntoModal();
+                } else {
+                    const error = await response.json();
+                    showError(`Failed to delete profile: ${error.error}`);
+                }
+            } catch (error) {
+                logger.error('Delete profile error:', error);
+                showError('Failed to delete profile');
+            }
+        }
+    );
 }

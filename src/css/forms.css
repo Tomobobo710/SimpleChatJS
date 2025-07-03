@@ -369,3 +369,173 @@ input[type="checkbox"]:disabled {
     align-self: flex-end;
     margin-bottom: 10px;
 }
+
+/* Profile Management Styles */
+.profile-selector-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.profile-selector-container label {
+    min-width: fit-content;
+}
+
+.profile-dropdown {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px inset #555;
+    padding: 4px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    color: #e0e0e0;
+    cursor: pointer;
+    min-width: 120px;
+}
+
+.profile-dropdown:focus {
+    outline: none;
+    border: 1px inset #4a6a9a;
+    background: #2a2a2a;
+}
+
+.profile-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.profile-name-input {
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px inset #555;
+    padding: 4px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    color: #e0e0e0;
+    min-width: 120px;
+    margin-bottom: 0 !important;
+}
+
+.profile-name-input:focus {
+    outline: none;
+    border: 1px inset #4a6a9a;
+    background: #2a2a2a;
+}
+
+.profile-btn {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+    border: 1px outset #555;
+    padding: 4px 8px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 10px;
+    cursor: pointer;
+    color: #e0e0e0;
+    white-space: nowrap;
+}
+
+.profile-btn:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
+}
+
+.profile-btn:active {
+    border: 1px inset #555;
+    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
+}
+
+.profile-btn:disabled {
+    background: #2a2a2a;
+    color: #666;
+    cursor: not-allowed;
+    border: 1px outset #444;
+}
+
+.profile-btn-danger {
+    background: linear-gradient(to bottom, #5a2d2d, #3d1a1a);
+    border: 1px outset #755;
+}
+
+.profile-btn-danger:hover {
+    background: linear-gradient(to bottom, #6a3d3d, #4d2a2a);
+}
+
+.profile-btn-danger:active {
+    border: 1px inset #555;
+    background: linear-gradient(to bottom, #3d1a1a, #5a2d2d);
+}
+
+/* Custom Confirm Dialog */
+.confirm-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+}
+
+.confirm-dialog {
+    background: linear-gradient(135deg, #3a3a3a, #2a2a2a);
+    border: 2px outset #555;
+    padding: 20px;
+    min-width: 300px;
+    max-width: 400px;
+    font-family: Tahoma, Arial, sans-serif;
+    color: #e0e0e0;
+    box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-message {
+    font-size: 12px;
+    margin-bottom: 16px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.confirm-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.confirm-btn {
+    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
+    border: 1px outset #555;
+    padding: 6px 16px;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+    color: #e0e0e0;
+    min-width: 70px;
+}
+
+.confirm-btn:hover {
+    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
+}
+
+.confirm-btn:active {
+    border: 1px inset #555;
+    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
+}
+
+.confirm-yes {
+    background: linear-gradient(to bottom, #5a2d2d, #3d1a1a);
+    border: 1px outset #755;
+}
+
+.confirm-yes:hover {
+    background: linear-gradient(to bottom, #6a3d3d, #4d2a2a);
+}
+
+.confirm-yes:active {
+    border: 1px inset #555;
+    background: linear-gradient(to bottom, #3d1a1a, #5a2d2d);
+}

@@ -81,6 +81,17 @@
                 
                 <!-- General Tab -->
                 <div id="generalTab" class="tab-content active">
+                    <!-- Profile Management Section -->
+                    <div class="settings-section">
+                        <h3>Profiles</h3>
+                        <div class="profile-selector-container">
+                            <label for="profileSelect">Active Profile:</label>
+                            <select id="profileSelect" class="profile-dropdown">
+                                <option value="Default">Default</option>
+                            </select>
+                        </div>
+                    </div>
+                    
                     <div class="settings-section">
                         <h3>API Configuration</h3>
                         <label for="apiUrl">API URL (required):</label>
@@ -96,6 +107,12 @@
                             </select>
                             <input type="text" id="modelName" placeholder="Or enter custom model name" class="model-input">
                             <button type="button" id="refreshModelsBtn" class="refresh-models-btn" title="Refresh model list">🔄</button>
+                        </div>
+                        
+                        <div class="profile-actions">
+                            <input type="text" id="newProfileName" placeholder="New profile name" class="profile-name-input">
+                            <button type="button" id="saveAsProfileBtn" class="profile-btn">Save As New Profile</button>
+                            <button type="button" id="deleteProfileBtn" class="profile-btn profile-btn-danger">Delete Profile</button>
                         </div>
                         
                         <div class="api-config-actions">

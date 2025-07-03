@@ -1,4 +1,4 @@
-// Settings service - Manage application settings
+// Settings service - Manage application settings with profiles support
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
@@ -15,53 +15,207 @@ function getSettingsPath() {
     return path.join(__dirname, '..', '..', 'userdata', 'settings.json');
 }
 
-// Load settings from file
-function loadSettings() {
-    try {
-        const settingsPath = getSettingsPath();
-        if (fs.existsSync(settingsPath)) {
-            const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-            Object.assign(currentSettings, settings);
-            log('[SETTINGS] Loaded from file');
-            return settings;
-        } else {
-            log('[SETTINGS] No settings file found, using defaults');
-            return getDefaultSettings();
-        }
-    } catch (error) {
-        log('[SETTINGS] Load error:', error);
-        return getDefaultSettings();
-    }
+// Get profiles path
+function getProfilesPath() {
+    return path.join(__dirname, '..', '..', 'userdata', 'profiles.json');
 }
 
-// Save settings to file
-function saveSettings(settings) {
-    try {
-        const settingsPath = getSettingsPath();
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
-        
-        // Update server's in-memory settings immediately
-        Object.assign(currentSettings, settings);
-        
-        return { success: true };
-    } catch (error) {
-        log('[SETTINGS] Save error:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-// Get default settings
-function getDefaultSettings() {
+// Get default profile settings
+function getDefaultProfileSettings() {
     return {
         apiUrl: 'http://localhost:11434/v1',
         apiKey: '',
         modelName: '',
         debugPanels: true,
+        showPhaseMarkers: false,
         logLevel: 'INFO'
     };
 }
 
-// Get current settings
+// Get default profiles structure
+function getDefaultProfiles() {
+    return {
+        profiles: {
+            'Default': {
+                ...getDefaultProfileSettings(),
+                apiUrl: 'http://localhost:11434/v1',
+                modelName: ''
+            }
+        },
+        activeProfile: 'Default'
+    };
+}
+
+// Load profiles from file
+function loadProfiles() {
+    try {
+        const profilesPath = getProfilesPath();
+        if (fs.existsSync(profilesPath)) {
+            const profiles = JSON.parse(fs.readFileSync(profilesPath, 'utf8'));
+            log('[PROFILES] Loaded from file');
+            return profiles;
+        } else {
+            log('[PROFILES] No profiles file found, creating defaults');
+            const defaultProfiles = getDefaultProfiles();
+            saveProfiles(defaultProfiles);
+            return defaultProfiles;
+        }
+    } catch (error) {
+        log('[PROFILES] Load error:', error);
+        const defaultProfiles = getDefaultProfiles();
+        saveProfiles(defaultProfiles);
+        return defaultProfiles;
+    }
+}
+
+// Save profiles to file
+function saveProfiles(profilesData) {
+    try {
+        const profilesPath = getProfilesPath();
+        fs.writeFileSync(profilesPath, JSON.stringify(profilesData, null, 2), 'utf8');
+        log('[PROFILES] Saved to file');
+        return { success: true };
+    } catch (error) {
+        log('[PROFILES] Save error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Get active profile settings
+function getActiveProfileSettings() {
+    const profilesData = loadProfiles();
+    const activeProfileName = profilesData.activeProfile;
+    const activeProfile = profilesData.profiles[activeProfileName];
+    
+    if (activeProfile) {
+        return activeProfile;
+    } else {
+        log('[PROFILES] Active profile not found, using Default');
+        return profilesData.profiles['Default'] || getDefaultProfileSettings();
+    }
+}
+
+// Switch to a different profile
+function switchProfile(profileName) {
+    try {
+        const profilesData = loadProfiles();
+        
+        if (!profilesData.profiles[profileName]) {
+            return { success: false, error: 'Profile not found' };
+        }
+        
+        profilesData.activeProfile = profileName;
+        const result = saveProfiles(profilesData);
+        
+        if (result.success) {
+            // Update current settings in memory
+            Object.assign(currentSettings, profilesData.profiles[profileName]);
+            log(`[PROFILES] Switched to profile: ${profileName}`);
+        }
+        
+        return result;
+    } catch (error) {
+        log('[PROFILES] Switch error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Save current settings as a new profile
+function saveAsProfile(profileName, settings) {
+    try {
+        const profilesData = loadProfiles();
+        
+        // Create new profile with provided settings
+        profilesData.profiles[profileName] = { ...settings };
+        
+        const result = saveProfiles(profilesData);
+        
+        if (result.success) {
+            log(`[PROFILES] Saved new profile: ${profileName}`);
+        }
+        
+        return result;
+    } catch (error) {
+        log('[PROFILES] Save as profile error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Delete a profile
+function deleteProfile(profileName) {
+    try {
+        const profilesData = loadProfiles();
+        
+        // Can't delete the last profile
+        if (Object.keys(profilesData.profiles).length <= 1) {
+            return { success: false, error: 'Cannot delete the last profile' };
+        }
+        
+        if (!profilesData.profiles[profileName]) {
+            return { success: false, error: 'Profile not found' };
+        }
+        
+        // If deleting the active profile, switch to the first remaining profile
+        if (profilesData.activeProfile === profileName) {
+            const remainingProfiles = Object.keys(profilesData.profiles).filter(name => name !== profileName);
+            if (remainingProfiles.length > 0) {
+                profilesData.activeProfile = remainingProfiles[0];
+                log(`[PROFILES] Switched active profile to: ${remainingProfiles[0]}`);
+            }
+        }
+        
+        delete profilesData.profiles[profileName];
+        
+        const result = saveProfiles(profilesData);
+        
+        if (result.success) {
+            log(`[PROFILES] Deleted profile: ${profileName}`);
+        }
+        
+        return result;
+    } catch (error) {
+        log('[PROFILES] Delete error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Update active profile settings
+function updateActiveProfile(settings) {
+    try {
+        const profilesData = loadProfiles();
+        const activeProfileName = profilesData.activeProfile;
+        
+        // Update the active profile
+        profilesData.profiles[activeProfileName] = { ...settings };
+        
+        const result = saveProfiles(profilesData);
+        
+        if (result.success) {
+            // Update current settings in memory
+            Object.assign(currentSettings, settings);
+            log(`[PROFILES] Updated active profile: ${activeProfileName}`);
+        }
+        
+        return result;
+    } catch (error) {
+        log('[PROFILES] Update error:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Legacy functions for backward compatibility
+function loadSettings() {
+    return getActiveProfileSettings();
+}
+
+function saveSettings(settings) {
+    return updateActiveProfile(settings);
+}
+
+function getDefaultSettings() {
+    return getDefaultProfileSettings();
+}
+
 function getCurrentSettings() {
     return currentSettings;
 }
@@ -69,23 +223,29 @@ function getCurrentSettings() {
 // Load settings on startup
 async function loadSettingsOnStartup() {
     try {
-        const settingsPath = getSettingsPath();
-        if (fs.existsSync(settingsPath)) {
-            const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-            Object.assign(currentSettings, settings);
-            log('[SETTINGS] Loaded from file');
-        } else {
-            log('[SETTINGS] No settings file found, using defaults');
-        }
+        // Load active profile settings into memory
+        const activeSettings = getActiveProfileSettings();
+        Object.assign(currentSettings, activeSettings);
+        log('[SETTINGS] Loaded active profile settings on startup');
     } catch (error) {
         log('[SETTINGS] Load error:', error);
     }
 }
 
 module.exports = {
+    // Legacy API (backward compatibility)
     loadSettings,
     saveSettings,
     getDefaultSettings,
     getCurrentSettings,
-    loadSettingsOnStartup
+    loadSettingsOnStartup,
+    
+    // New profiles API
+    loadProfiles,
+    saveProfiles,
+    getActiveProfileSettings,
+    switchProfile,
+    saveAsProfile,
+    deleteProfile,
+    updateActiveProfile
 };

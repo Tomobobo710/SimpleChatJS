@@ -31,6 +31,12 @@ function initializeElements() {
     showPhaseMarkersInput = document.getElementById('showPhaseMarkers');
     testConnectionBtn = document.getElementById('testConnectionBtn');
     
+    // Profile management elements
+    profileSelect = document.getElementById('profileSelect');
+    newProfileNameInput = document.getElementById('newProfileName');
+    saveAsProfileBtn = document.getElementById('saveAsProfileBtn');
+    deleteProfileBtn = document.getElementById('deleteProfileBtn');
+    
     mcpServersDiv = document.getElementById('mcpServers');
     
     mcpConfigModal = document.getElementById('mcpConfigModal');
@@ -76,12 +82,7 @@ function setupEventListeners() {
         settingsModal.classList.add('hidden');
     });
     
-    // Click outside modal to close
-    settingsModal.addEventListener('click', (e) => {
-        if (e.target === settingsModal) {
-            settingsModal.classList.add('hidden');
-        }
-    });
+    // Modal only closes via X button - no outside click closing
     
     // Save settings
     saveSettingsBtn.addEventListener('click', handleSaveSettings);
@@ -168,6 +169,13 @@ function setupEventListeners() {
     // Refresh models button
     refreshModelsBtn.addEventListener('click', handleRefreshModels);
     
+    // Profile management event listeners
+    profileSelect.addEventListener('change', () => {
+        switchToProfile(profileSelect.value);
+    });
+    saveAsProfileBtn.addEventListener('click', handleSaveAsProfile);
+    deleteProfileBtn.addEventListener('click', handleDeleteProfile);
+    
     // New chat
     newChatBtn.addEventListener('click', handleNewChat);
     
@@ -181,12 +189,7 @@ function setupEventListeners() {
         mcpConfigModal.classList.add('hidden');
     });
     
-    // Click outside MCP modal to close
-    mcpConfigModal.addEventListener('click', (e) => {
-        if (e.target === mcpConfigModal) {
-            mcpConfigModal.classList.add('hidden');
-        }
-    });
+    // MCP modal only closes via X button - no outside click closing
     
     // Save MCP config
     saveMcpConfigBtn.addEventListener('click', handleSaveMCPConfig);

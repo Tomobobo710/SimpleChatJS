@@ -8,10 +8,13 @@
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    justify-content: center;
-    align-items: center;
     z-index: 1000;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start; /* Align to top, not center */
+    justify-content: center;
+    padding-top: 5vh; /* Always start 5% from top */
+    box-sizing: border-box;
 }
 
 .aim-modal.hidden {
@@ -23,13 +26,13 @@
     border: 2px outset #555;
     max-width: 600px;
     width: 90%;
-    max-height: 85vh;
+    height: 550px; /* Fixed height to prevent tab switching jumps */
+    max-height: calc(90vh - 10vh); /* Limit height so X button always visible */
     font-family: Tahoma, Arial, sans-serif;
     font-size: 11px;
-    overflow-y: auto; /* Add scroll if content overflows */
-    overflow-x: hidden; /* Prevent horizontal scrolling */
+    overflow: hidden;
     display: flex;
-    flex-direction: column; /* Stack header, tabs, content */
+    flex-direction: column;
 }
 
 .aim-modal-header {
@@ -173,10 +176,10 @@
 /* Tab Content */
 .tab-content {
     display: none;
-    min-height: 350px;
     padding: 5px 0;
-    overflow-y: visible; /* Let content extend naturally */
-    flex: 1; /* Take up available space */
+    overflow-y: auto; /* Scroll if content overflows */
+    flex: 1; /* Take up remaining space */
+    min-height: 0; /* Allow content to scroll */
 }
 
 .tab-content.active {

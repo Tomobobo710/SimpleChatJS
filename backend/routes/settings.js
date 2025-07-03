@@ -2,7 +2,15 @@
 const express = require('express');
 const https = require('https');
 const http = require('http');
-const { loadSettings, saveSettings, getDefaultSettings } = require('../services/settingsService');
+const { 
+    loadSettings, 
+    saveSettings, 
+    getDefaultSettings, 
+    loadProfiles, 
+    switchProfile, 
+    saveAsProfile, 
+    deleteProfile 
+} = require('../services/settingsService');
 const { log } = require('../utils/logger');
 
 const router = express.Router();
@@ -208,6 +216,81 @@ router.post('/test-connection', async (req, res) => {
         
     } catch (error) {
         log('Test connection endpoint error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PROFILES API ENDPOINTS
+
+// Get all profiles and active profile
+router.get('/profiles', (req, res) => {
+    try {
+        const profilesData = loadProfiles();
+        res.json(profilesData);
+    } catch (error) {
+        log('[PROFILES] Get profiles error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Switch to a different profile
+router.post('/profiles/switch', (req, res) => {
+    try {
+        const { profileName } = req.body;
+        
+        if (!profileName) {
+            return res.status(400).json({ error: 'Profile name is required' });
+        }
+        
+        const result = switchProfile(profileName);
+        
+        if (result.success) {
+            res.json({ success: true, message: `Switched to profile: ${profileName}` });
+        } else {
+            res.status(400).json({ error: result.error });
+        }
+    } catch (error) {
+        log('[PROFILES] Switch profile error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Save current settings as a new profile
+router.post('/profiles/save', (req, res) => {
+    try {
+        const { profileName, settings } = req.body;
+        
+        if (!profileName || !settings) {
+            return res.status(400).json({ error: 'Profile name and settings are required' });
+        }
+        
+        const result = saveAsProfile(profileName, settings);
+        
+        if (result.success) {
+            res.json({ success: true, message: `Profile saved: ${profileName}` });
+        } else {
+            res.status(400).json({ error: result.error });
+        }
+    } catch (error) {
+        log('[PROFILES] Save profile error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete a profile
+router.delete('/profiles/:profileName', (req, res) => {
+    try {
+        const { profileName } = req.params;
+        
+        const result = deleteProfile(profileName);
+        
+        if (result.success) {
+            res.json({ success: true, message: `Profile deleted: ${profileName}` });
+        } else {
+            res.status(400).json({ error: result.error });
+        }
+    } catch (error) {
+        log('[PROFILES] Delete profile error:', error);
         res.status(500).json({ error: error.message });
     }
 });
