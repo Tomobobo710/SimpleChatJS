@@ -5,6 +5,24 @@ echo Chat will be available at: http://localhost:50505
 echo Browser will open automatically.
 echo.
 
+REM Check if Node.js is installed
+echo Checking for Node.js installation...
+where node >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Node.js is not installed!
+    echo.
+    echo Please download and install Node.js from:
+    echo https://nodejs.org
+    echo.
+    echo After installing, restart this script.
+    pause
+    exit /b 1
+)
+
+echo Node.js found!
+echo.
+
 REM Install dependencies if node_modules doesn't exist or is incomplete
 if not exist "node_modules" (
     echo Installing dependencies...

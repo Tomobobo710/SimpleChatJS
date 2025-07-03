@@ -5,6 +5,22 @@ echo "Chat will be available at: http://localhost:50505"
 echo "Browser will open automatically."
 echo ""
 
+# Check if Node.js is installed
+echo "Checking for Node.js installation..."
+if ! command -v node >/dev/null 2>&1; then
+    echo ""
+    echo "[ERROR] Node.js is not installed!"
+    echo ""
+    echo "Please download and install Node.js from:"
+    echo "https://nodejs.org"
+    echo ""
+    echo "After installing, restart this script."
+    exit 1
+fi
+
+echo "Node.js found!"
+echo ""
+
 # Install dependencies if node_modules doesn't exist or is incomplete
 if [ ! -d "node_modules" ]; then
     echo "Installing dependencies..."
