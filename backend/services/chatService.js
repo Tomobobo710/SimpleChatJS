@@ -424,7 +424,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     const httpModule = url.protocol === 'https:' ? https : http;
     const apiReq = httpModule.request(options, (apiRes) => {
         // Capture debug data
-        if (collectedDebugData) {
+        if (collectedDebugData && collectedDebugData.rawData) {
             collectedDebugData.rawData.httpResponse = {
                 statusCode: apiRes.statusCode,
                 statusMessage: apiRes.statusMessage,
@@ -440,8 +440,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             apiRes.on('end', () => {
                 log(`[${adapter.providerName.toUpperCase()}-ERROR] Status:`, apiRes.statusCode);
                 log(`[${adapter.providerName.toUpperCase()}-ERROR] Response:`, errorData);
-                if (collectedDebugData) {
-                    collectedDebugData.errors.push({ type: 'http_error', message: errorData });
+                if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
+                    collectedDebugData.rawData.errors.push({ type: 'http_error', message: errorData });
                 }
             });
             res.write(`API error: ${apiRes.statusCode} ${apiRes.statusMessage}`);
@@ -503,7 +503,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 
             } catch (error) {
                 console.error(`[${adapter.providerName.toUpperCase()}-ADAPTER] Error processing chunk:`, error);
-                if (collectedDebugData) {
+                if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
                     collectedDebugData.rawData.errors.push({ type: 'processing_error', message: error.message });
                 }
             }
@@ -513,7 +513,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             log(`[${adapter.providerName.toUpperCase()}-ADAPTER] Stream ended`);
             
             // Add response step to debug sequence
-            if (collectedDebugData) {
+            if (collectedDebugData && collectedDebugData.sequence) {
                 const responseStep = {
                     type: 'response',
                     step: sequenceStep++,
@@ -554,7 +554,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 log(`[ADAPTER] Processing ${unifiedResponse.toolCalls.length} tool calls`);
                 
                 // Add tool execution steps to debug sequence
-                if (collectedDebugData) {
+                if (collectedDebugData && collectedDebugData.sequence) {
                     for (const toolCall of unifiedResponse.toolCalls) {
                         collectedDebugData.sequence.push({
                             type: 'tool_execution',
@@ -634,7 +634,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     
     apiReq.on('error', (error) => {
         log(`[${adapter.providerName.toUpperCase()}] Request error:`, error);
-        if (collectedDebugData) {
+        if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
             collectedDebugData.rawData.errors.push({ type: 'request_error', message: error.message });
         }
         res.write(`Connection error: ${error.message}`);

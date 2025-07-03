@@ -65,38 +65,53 @@ async function loadInitialSettings() {
     }
 }
 
+
+
 // Load settings into modal
-function loadSettingsIntoModal() {
-    const settings = loadSettings();
-    logger.info('Loading settings into modal:', settings);
-    
-    // If no API URL is set, use the default Ollama URL
-    apiUrlInput.value = settings.apiUrl || 'http://localhost:11434/v1';
-    apiKeyInput.value = settings.apiKey || '';
-    modelNameInput.value = settings.modelName || '';
-    debugPanelsInput.checked = settings.debugPanels !== undefined ? settings.debugPanels : true;
-    showPhaseMarkersInput.checked = settings.showPhaseMarkers || false;
-    
-    // Also update main model dropdown if it exists
-    if (mainModelSelect && settings.modelName) {
-        mainModelSelect.value = settings.modelName;
-    }
-    
-    // If API URL is set, try to fetch models automatically
-    if (settings.apiUrl) {
-        fetchAvailableModels(settings.apiUrl, settings.apiKey || '').catch(() => {
-            // Silently fail - just means models couldn't be fetched
-            logger.info('Could not auto-fetch models for existing API URL');
+async function loadSettingsIntoModal() {
+    try {
+        // Get fresh settings from backend (not cached)
+        const response = await fetch(`${window.location.origin}/api/settings`);
+        const settings = await response.json();
+        logger.info('Loading fresh settings into modal:', settings);
+        
+        // If no API URL is set, use the default Ollama URL
+        apiUrlInput.value = settings.apiUrl || 'http://localhost:11434/v1';
+        apiKeyInput.value = settings.apiKey || '';
+        modelNameInput.value = settings.modelName || '';
+        debugPanelsInput.checked = settings.debugPanels !== undefined ? settings.debugPanels : true;
+        showPhaseMarkersInput.checked = settings.showPhaseMarkers || false;
+        
+        // Also update main model dropdown if it exists
+        if (mainModelSelect && settings.modelName) {
+            mainModelSelect.value = settings.modelName;
+        }
+        
+        // If API URL is set, try to fetch models automatically
+        if (settings.apiUrl) {
+            fetchAvailableModels(settings.apiUrl, settings.apiKey || '').catch(() => {
+                // Silently fail - just means models couldn't be fetched
+                logger.info('Could not auto-fetch models for existing API URL');
+            });
+        }
+        
+        logger.info('Form values after loading:', {
+            apiUrl: apiUrlInput.value,
+            apiKey: apiKeyInput.value.length > 0 ? '[SET]' : '[EMPTY]',
+            modelName: modelNameInput.value,
+            debugPanels: debugPanelsInput.checked,
+            showPhaseMarkers: showPhaseMarkersInput.checked
         });
+        
+    } catch (error) {
+        logger.error('Failed to load settings into modal:', error);
+        // Fallback to defaults if backend fails
+        apiUrlInput.value = 'http://localhost:11434/v1';
+        apiKeyInput.value = '';
+        modelNameInput.value = '';
+        debugPanelsInput.checked = true;
+        showPhaseMarkersInput.checked = false;
     }
-    
-    logger.info('Form values after loading:', {
-        apiUrl: apiUrlInput.value,
-        apiKey: apiKeyInput.value.length > 0 ? '[SET]' : '[EMPTY]',
-        modelName: modelNameInput.value,
-        debugPanels: debugPanelsInput.checked,
-        showPhaseMarkers: showPhaseMarkersInput.checked
-    });
 }
 
 // Handle save settings
@@ -359,6 +374,12 @@ async function loadProfiles() {
         const profilesData = await response.json();
         currentProfilesData = profilesData;
         
+        logger.info('[PROFILES] Loaded profiles data:', {
+            activeProfile: profilesData.activeProfile,
+            availableProfiles: Object.keys(profilesData.profiles),
+            profileContents: profilesData.profiles
+        });
+        
         // Populate profile dropdown
         const profileSelect = document.getElementById('profileSelect');
         profileSelect.innerHTML = '';
@@ -369,14 +390,15 @@ async function loadProfiles() {
             option.textContent = profileName;
             if (profileName === profilesData.activeProfile) {
                 option.selected = true;
+                logger.info(`[PROFILES] Set ${profileName} as selected in dropdown`);
             }
             profileSelect.appendChild(option);
         });
         
-        logger.info('Profiles loaded:', Object.keys(profilesData.profiles));
+        logger.info(`[PROFILES] Dropdown populated with ${Object.keys(profilesData.profiles).length} profiles`);
         return profilesData;
     } catch (error) {
-        logger.error('Failed to load profiles:', error);
+        logger.error('[PROFILES] Failed to load profiles:', error);
         showError('Failed to load profiles');
         return null;
     }
@@ -388,6 +410,8 @@ async function switchToProfile(selectedProfile) {
         return;
     }
     
+    logger.info(`[PROFILE-SWITCH] Attempting to switch to: ${selectedProfile}`);
+    
     try {
         const response = await fetch(`${window.location.origin}/api/profiles/switch`, {
             method: 'POST',
@@ -396,22 +420,24 @@ async function switchToProfile(selectedProfile) {
         });
         
         if (response.ok) {
-            logger.info(`Switched to profile: ${selectedProfile}`);
+            logger.info(`[PROFILE-SWITCH] Successfully switched to profile: ${selectedProfile}`);
             
             // Reload settings into form
-            loadSettingsIntoModal();
+            await loadSettingsIntoModal();
             
             // Update cached settings
             const profilesData = currentProfilesData;
             if (profilesData && profilesData.profiles[selectedProfile]) {
                 window.setCachedSettings(profilesData.profiles[selectedProfile]);
+                logger.info(`[PROFILE-SWITCH] Updated cached settings for: ${selectedProfile}`);
             }
         } else {
             const error = await response.json();
+            logger.error(`[PROFILE-SWITCH] Failed to switch profile: ${error.error}`);
             showError(`Failed to switch profile: ${error.error}`);
         }
     } catch (error) {
-        logger.error('Switch profile error:', error);
+        logger.error('[PROFILE-SWITCH] Switch profile error:', error);
         showError('Failed to switch profile');
     }
 }
@@ -435,6 +461,8 @@ async function handleSaveAsProfile() {
         showPhaseMarkers: showPhaseMarkersInput.checked
     };
     
+    logger.info(`[SAVE-PROFILE] Saving profile "${profileName}" with settings:`, settings);
+    
     try {
         const response = await fetch(`${window.location.origin}/api/profiles/save`, {
             method: 'POST',
@@ -443,11 +471,15 @@ async function handleSaveAsProfile() {
         });
         
         if (response.ok) {
+            logger.info(`[SAVE-PROFILE] Successfully saved and switched to profile: ${profileName}`);
             showSuccess(`Profile saved: ${profileName}`);
             newProfileNameInput.value = ''; // Clear input
             
-            // Reload profiles to update dropdown
+            // Reload profiles to update dropdown and switch to new profile
             await loadProfiles();
+            
+            // Update the form to show we're now on the new profile
+            await loadSettingsIntoModal();
         } else {
             const error = await response.json();
             showError(`Failed to save profile: ${error.error}`);
@@ -521,7 +553,7 @@ async function handleDeleteProfile() {
                     
                     // Reload profiles to update dropdown and switch to new active profile
                     await loadProfiles();
-                    loadSettingsIntoModal();
+                    await loadSettingsIntoModal();
                 } else {
                     const error = await response.json();
                     showError(`Failed to delete profile: ${error.error}`);

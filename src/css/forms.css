@@ -468,6 +468,10 @@ input[type="checkbox"]:disabled {
     background: linear-gradient(to bottom, #3d1a1a, #5a2d2d);
 }
 
+
+
+
+
 /* Custom Confirm Dialog */
 .confirm-overlay {
     position: fixed;

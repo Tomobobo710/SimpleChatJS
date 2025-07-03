@@ -73,8 +73,8 @@ function setupEventListeners() {
     });
     
     // Settings modal
-    settingsBtn.addEventListener('click', () => {
-        loadSettingsIntoModal();
+    settingsBtn.addEventListener('click', async () => {
+        await loadSettingsIntoModal();
         settingsModal.classList.remove('hidden');
     });
     

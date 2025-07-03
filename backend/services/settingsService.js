@@ -125,13 +125,23 @@ function saveAsProfile(profileName, settings) {
     try {
         const profilesData = loadProfiles();
         
+        // Don't allow overwriting Default profile
+        if (profileName === 'Default') {
+            return { success: false, error: 'Cannot overwrite the Default profile. Please use a different name.' };
+        }
+        
         // Create new profile with provided settings
         profilesData.profiles[profileName] = { ...settings };
+        
+        // Switch to the new profile
+        profilesData.activeProfile = profileName;
         
         const result = saveProfiles(profilesData);
         
         if (result.success) {
-            log(`[PROFILES] Saved new profile: ${profileName}`);
+            // Update current settings in memory
+            Object.assign(currentSettings, settings);
+            log(`[PROFILES] Saved new profile: ${profileName} and switched to it`);
         }
         
         return result;
@@ -151,17 +161,19 @@ function deleteProfile(profileName) {
             return { success: false, error: 'Cannot delete the last profile' };
         }
         
+        // Don't allow deleting Default profile
+        if (profileName === 'Default') {
+            return { success: false, error: 'Cannot delete the Default profile' };
+        }
+        
         if (!profilesData.profiles[profileName]) {
             return { success: false, error: 'Profile not found' };
         }
         
-        // If deleting the active profile, switch to the first remaining profile
+        // If deleting the active profile, switch to Default (since we protect it)
         if (profilesData.activeProfile === profileName) {
-            const remainingProfiles = Object.keys(profilesData.profiles).filter(name => name !== profileName);
-            if (remainingProfiles.length > 0) {
-                profilesData.activeProfile = remainingProfiles[0];
-                log(`[PROFILES] Switched active profile to: ${remainingProfiles[0]}`);
-            }
+            profilesData.activeProfile = 'Default';
+            log('[PROFILES] Switched active profile to Default after deletion');
         }
         
         delete profilesData.profiles[profileName];
@@ -203,13 +215,18 @@ function updateActiveProfile(settings) {
     }
 }
 
+
+
 // Legacy functions for backward compatibility
 function loadSettings() {
     return getActiveProfileSettings();
 }
 
 function saveSettings(settings) {
-    return updateActiveProfile(settings);
+    // Just update in-memory settings for this session, don't overwrite profiles
+    Object.assign(currentSettings, settings);
+    log('[SETTINGS] Updated session settings (profile not modified)');
+    return { success: true };
 }
 
 function getDefaultSettings() {
