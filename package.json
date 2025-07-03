@@ -1,12 +1,11 @@
 {
   "name": "simple-chat-js",
   "version": "1.0.0",
-  "description": "Simple chat with conductor mode and MCP support - Pure 1998-style JavaScript!",
+  "description": "Simple chat with MCP support",
   "main": "backend/server.js",
   "scripts": {
     "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js",
-    "pure": "echo Pure 1998 JavaScript - no build tools needed! && node backend/server.js"
+    "dev": "node backend/server.js",
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -14,7 +13,5 @@
     "better-sqlite3": "^9.3.0",
     "open": "^8.4.2"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
-  }
+  "devDependencies": {}
 }

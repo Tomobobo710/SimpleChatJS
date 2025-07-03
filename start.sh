@@ -5,10 +5,29 @@ echo "Chat will be available at: http://localhost:50505"
 echo "Browser will open automatically."
 echo ""
 
-# Install dependencies if needed
-if [ ! -d "node_modules" ] || [ ! -d "node_modules/open" ] || [ ! -d "node_modules/better-sqlite3" ]; then
+# Install dependencies if node_modules doesn't exist or is incomplete
+if [ ! -d "node_modules" ]; then
     echo "Installing dependencies..."
     npm install
+    if [ $? -ne 0 ]; then
+        echo "Failed to install dependencies!"
+        exit 1
+    fi
+    echo "Dependencies installed successfully!"
+else
+    echo "Checking if all dependencies are installed..."
+    npm ls --depth=0 >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Missing dependencies detected, installing..."
+        npm install
+        if [ $? -ne 0 ]; then
+            echo "Failed to install dependencies!"
+            exit 1
+        fi
+        echo "Dependencies installed successfully!"
+    else
+        echo "All dependencies are present."
+    fi
 fi
 
 # Kill any existing server on port 50505

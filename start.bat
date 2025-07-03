@@ -5,8 +5,8 @@ echo Chat will be available at: http://localhost:50505
 echo Browser will open automatically.
 echo.
 
-REM Install dependencies if needed
-if not exist "node_modules\express" if not exist "node_modules\open" if not exist "node_modules\better-sqlite3" (
+REM Install dependencies if node_modules doesn't exist or is incomplete
+if not exist "node_modules" (
     echo Installing dependencies...
     call npm install
     if errorlevel 1 (
@@ -16,6 +16,22 @@ if not exist "node_modules\express" if not exist "node_modules\open" if not exis
     )
     echo Dependencies installed successfully!
     echo.
+) else (
+    echo Checking if all dependencies are installed...
+    call npm ls --depth=0 >nul 2>&1
+    if errorlevel 1 (
+        echo Missing dependencies detected, installing...
+        call npm install
+        if errorlevel 1 (
+            echo Failed to install dependencies!
+            pause
+            exit /b 1
+        )
+        echo Dependencies installed successfully!
+        echo.
+    ) else (
+        echo All dependencies are present.
+    )
 )
 
 REM Kill any existing server on port 50505
