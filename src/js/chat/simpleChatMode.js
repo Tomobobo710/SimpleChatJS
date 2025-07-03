@@ -144,7 +144,7 @@ async function handleSimpleChat(message, conversationHistory) {
         lastUserMessage.appendChild(debugToggle);
         
         // Create debug panel
-        const debugPanel = createDebugPanel(messageId, userDebugData, userTurnNumber);
+        const debugPanel = createDebugPanel(lastUserMessage, messageId, userDebugData, userTurnNumber);
         lastUserMessage.appendChild(debugPanel);
     }
     
