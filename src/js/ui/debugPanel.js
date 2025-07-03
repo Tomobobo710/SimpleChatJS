@@ -312,7 +312,7 @@ class SequentialDebugPanel {
         }
         
         return messages.map((msg, index) => {
-            const hasThinkTags = msg.content && msg.content.includes('<think>');
+            const hasThinkTags = msg.content && (msg.content.includes('<think>') || msg.content.includes('<thinking>'));
             const thinkWarning = hasThinkTags ? ' HAS THINK TAGS' : '';
             return `Message ${index + 1} (${msg.role})${thinkWarning}:\n${msg.content || 'No content'}\n`;
         }).join('\n---\n');

@@ -368,7 +368,7 @@ async function loadChatHistory(chatId) {
                         turnDebugData = msg.debug_data;
                     }
                     
-                    // Handle only assistant content - this properly processes <think> tags and normal text
+                    // Handle only assistant content - this properly processes <think> and <thinking> tags and normal text
                     if (msg.content) {
                         processor.addChunk(msg.content);
                     }

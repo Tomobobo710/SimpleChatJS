@@ -18,6 +18,20 @@ class StreamingMessageProcessor {
     
     // Process buffer to identify block boundaries
     processBuffer() {
+        // Check if buffer ends with a potential partial tag - if so, wait for next chunk
+        const partialTags = [
+            // Opening tag partials
+            '<', '<t', '<th', '<thi', '<thin', '<think', '<thinki', '<thinkin', '<thinking',
+            // Closing tag partials  
+            '</', '</t', '</th', '</thi', '</thin', '</think', '</thinki', '</thinkin', '</thinking'
+        ];
+        const endsWithPartial = partialTags.some(partial => this.buffer.endsWith(partial));
+        
+        if (endsWithPartial) {
+            // Don't process yet, wait for next chunk to complete the tag
+            return;
+        }
+        
         let foundPattern = true;
         while (foundPattern) {
             foundPattern = this.processNextPattern();
@@ -34,11 +48,29 @@ class StreamingMessageProcessor {
     }
     
     checkForThinkingStart() {
+        // Check for both <think> and <thinking> tags
         const thinkStartIndex = this.buffer.indexOf('<think>');
-        if (thinkStartIndex !== -1) {
-            // Create chat block for any content before <think>
-            if (thinkStartIndex > 0) {
-                const contentBefore = this.buffer.slice(0, thinkStartIndex).trim();
+        const thinkingStartIndex = this.buffer.indexOf('<thinking>');
+        
+        let startIndex = -1;
+        let tagLength = 0;
+        let tagType = '';
+        
+        // Find the earliest tag
+        if (thinkStartIndex !== -1 && (thinkingStartIndex === -1 || thinkStartIndex < thinkingStartIndex)) {
+            startIndex = thinkStartIndex;
+            tagLength = 7; // '<think>'.length
+            tagType = '<think>';
+        } else if (thinkingStartIndex !== -1) {
+            startIndex = thinkingStartIndex;
+            tagLength = 10; // '<thinking>'.length
+            tagType = '<thinking>';
+        }
+        
+        if (startIndex !== -1) {
+            // Create chat block for any content before thinking tag
+            if (startIndex > 0) {
+                const contentBefore = this.buffer.slice(0, startIndex).trim();
                 if (contentBefore) {
                     this.createChatBlock(contentBefore);
                 }
@@ -48,37 +80,67 @@ class StreamingMessageProcessor {
             const thinkingBlock = {
                 type: 'thinking',
                 content: '',
-                metadata: { id: `thinking_${Date.now()}`, isStreaming: true }
+                metadata: { 
+                    id: `thinking_${Date.now()}`, 
+                    isStreaming: true,
+                    tagType: tagType // Track which tag type we're using
+                }
             };
             this.blocks.push(thinkingBlock);
             this.currentThinkingBlock = thinkingBlock;
             
             // Switch to thinking state
-            this.buffer = this.buffer.slice(thinkStartIndex + 7); // Remove '<think>'
+            this.buffer = this.buffer.slice(startIndex + tagLength);
             this.state = 'thinking';
-            logger.debug(`[PROCESSOR] THINKING BLOCK CREATED IMMEDIATELY! Total blocks: ${this.blocks.length}`);
+            logger.debug(`[PROCESSOR] THINKING BLOCK CREATED with ${tagType}! Total blocks: ${this.blocks.length}`);
             return true;
         }
         return false;
     }
     
     checkForThinkingEnd() {
+        // Check for both </think> and </thinking> tags
         const thinkEndIndex = this.buffer.indexOf('</think>');
-        if (thinkEndIndex !== -1) {
+        const thinkingEndIndex = this.buffer.indexOf('</thinking>');
+        
+        let endIndex = -1;
+        let tagLength = 0;
+        let tagType = '';
+        
+        // Find the earliest closing tag
+        if (thinkEndIndex !== -1 && (thinkingEndIndex === -1 || thinkEndIndex < thinkingEndIndex)) {
+            endIndex = thinkEndIndex;
+            tagLength = 8; // '</think>'.length
+            tagType = '</think>';
+        } else if (thinkingEndIndex !== -1) {
+            endIndex = thinkingEndIndex;
+            tagLength = 11; // '</thinking>'.length
+            tagType = '</thinking>';
+        }
+        
+        if (endIndex !== -1) {
             // Update the existing thinking block with final content
-            const thinkingContent = this.buffer.slice(0, thinkEndIndex);
+            const thinkingContent = this.buffer.slice(0, endIndex);
             
             if (this.currentThinkingBlock) {
                 this.currentThinkingBlock.content += thinkingContent;
                 this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
                 this.currentThinkingBlock.metadata.isStreaming = false;
-                logger.debug(`[PROCESSOR] Completed thinking block: ${this.currentThinkingBlock.content.length} chars`);
+                logger.debug(`[PROCESSOR] Completed thinking block with ${tagType}: ${this.currentThinkingBlock.content.length} chars`);
             }
             
             // Continue with normal content
-            this.buffer = this.buffer.slice(thinkEndIndex + 8); // Remove '</think>'
+            this.buffer = this.buffer.slice(endIndex + tagLength);
             this.state = 'normal';
             this.currentThinkingBlock = null;
+            
+            // Immediately process any remaining content as a chat block
+            if (this.buffer.trim()) {
+                logger.debug(`[PROCESSOR] Processing remaining content after thinking: "${this.buffer.trim().substring(0, 50)}..."`);
+                // Continue processing the remaining buffer in normal state
+                return true; // This will cause processBuffer to continue and handle the remaining content
+            }
+            
             return true;
         } else {
             // Still in thinking block, accumulate content and update live

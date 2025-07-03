@@ -177,7 +177,7 @@ class Conductor {
         
         // inject_context(rag_retrieve("phase_1_thinking")) + continue_generating()
         const thinkingPrompt = this.getPhasePrompt('phase_1_thinking');
-        const thinkResult = await this.conductorStream(['</think>'], thinkingPrompt);
+        const thinkResult = await this.conductorStream(['</think>', '</thinking>'], thinkingPrompt);
         
         // Content should already be surgically truncated, but ensure it's properly saved
         const scrubbedContent = thinkResult.content;
@@ -209,7 +209,7 @@ class Conductor {
 
         // inject_context(rag_retrieve("phase_3_reflection")) + continue_generating()
         const reflectionPrompt = this.getPhasePrompt('phase_3_reflection');
-        const reflectionResult = await this.conductorStream(['</think>'], reflectionPrompt);
+        const reflectionResult = await this.conductorStream(['</think>', '</thinking>'], reflectionPrompt);
         
         this.debugData.trackContextInjection('phase_3_reflection', reflectionPrompt);
         
@@ -230,7 +230,7 @@ class Conductor {
         
         // inject_context(rag_retrieve("phase_4_decision")) + continue_generating()
         const decisionPrompt = this.getPhasePrompt('phase_4_decision');
-        const result = await this.conductorStream(['</think>'], decisionPrompt);
+        const result = await this.conductorStream(['</think>', '</thinking>'], decisionPrompt);
         this.debugData.trackContextInjection('phase_4_decision', decisionPrompt);
         
         // After thinking, scrub and update database
@@ -305,18 +305,33 @@ class Conductor {
                 if (!shouldStop) {
                     const potentialContent = content + chunk;
                     
-                    // Check for </think> tag
-                    if (stopConditions.includes('</think>') && potentialContent.includes('</think>')) {
-                        logger.info('[CONDUCTOR] DETECTED </think> - stopping generation');
+                    // Check for </think> or </thinking> tags
+                    let foundStopTag = null;
+                    let stopTagLength = 0;
+                    
+                    // Check for both tags and find the first one that appears
+                    const thinkIndex = stopConditions.includes('</think>') ? potentialContent.indexOf('</think>') : -1;
+                    const thinkingIndex = stopConditions.includes('</thinking>') ? potentialContent.indexOf('</thinking>') : -1;
+                    
+                    if (thinkIndex !== -1 && (thinkingIndex === -1 || thinkIndex < thinkingIndex)) {
+                        foundStopTag = '</think>';
+                        stopTagLength = '</think>'.length;
+                    } else if (thinkingIndex !== -1) {
+                        foundStopTag = '</thinking>';
+                        stopTagLength = '</thinking>'.length;
+                    }
+                    
+                    if (foundStopTag) {
+                        logger.info(`[CONDUCTOR] DETECTED ${foundStopTag} - stopping generation`);
                         
-                        // Only add content up to and including </think>
-                        const thinkEndIndex = potentialContent.indexOf('</think>') + '</think>'.length;
-                        const truncatedChunk = potentialContent.substring(content.length, thinkEndIndex);
+                        // Only add content up to and including the stop tag
+                        const stopIndex = potentialContent.indexOf(foundStopTag) + stopTagLength;
+                        const truncatedChunk = potentialContent.substring(content.length, stopIndex);
                         
                         content += truncatedChunk;
                         this.streamingProcessor.addChunk(truncatedChunk);
                         
-                        stoppedOn = '</think>';
+                        stoppedOn = foundStopTag;
                         shouldStop = true;
                         abortController.abort();
                         break;
