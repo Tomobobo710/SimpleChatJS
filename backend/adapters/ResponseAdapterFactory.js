@@ -7,11 +7,13 @@
 
 const OpenAIAdapter = require('./OpenAIAdapter');
 const GoogleAdapter = require('./GoogleAdapter');
+const AnthropicAdapter = require('./AnthropicAdapter');
 
 class ResponseAdapterFactory {
     constructor() {
         // Register available adapters
         this.adapters = [
+            new AnthropicAdapter(),
             new GoogleAdapter(),
             new OpenAIAdapter()  // OpenAI as fallback
         ];

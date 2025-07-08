@@ -13,7 +13,8 @@ class OpenAIAdapter extends BaseResponseAdapter {
     }
 
     canHandle(settings) {
-        return !settings.apiUrl.toLowerCase().includes('google');
+        return !settings.apiUrl.toLowerCase().includes('google') && 
+               !settings.apiUrl.toLowerCase().includes('anthropic.com');
     }
 
     getEndpointUrl(settings) {

@@ -53,8 +53,9 @@ router.post('/models', async (req, res) => {
             return res.status(400).json({ error: 'API URL is required' });
         }
         
-        // Detect if this is a Google/Gemini API endpoint
+        // Detect API provider type
         const isGoogleAPI = apiUrl.toLowerCase().includes('google');
+        const isAnthropicAPI = apiUrl.toLowerCase().includes('anthropic.com');
         
         let targetUrl;
         let headers = { 'Content-Type': 'application/json' };
@@ -62,6 +63,13 @@ router.post('/models', async (req, res) => {
         if (isGoogleAPI && apiKey) {
             // For Google APIs, use query parameter authentication
             targetUrl = `${apiUrl}/models?key=${apiKey}`;
+        } else if (isAnthropicAPI) {
+            // For Anthropic APIs, use x-api-key header and anthropic-version
+            targetUrl = `${apiUrl}/models`;
+            if (apiKey) {
+                headers['x-api-key'] = apiKey;
+                headers['anthropic-version'] = '2023-06-01';
+            }
         } else {
             // For other APIs, use standard Bearer token
             targetUrl = `${apiUrl}/models`;
@@ -134,14 +142,26 @@ router.post('/test-connection', async (req, res) => {
             stream: false
         };
         
-        // Detect if this is a Google/Gemini API endpoint
+        // Detect API provider type
         const isGoogleAPI = apiUrl.toLowerCase().includes('google');
+        const isAnthropicAPI = apiUrl.toLowerCase().includes('anthropic.com');
         
         let targetUrl;
         let requestData;
         let headers = {'Content-Type': 'application/json'};
         
-        if (isGoogleAPI && apiKey) {
+        if (isAnthropicAPI && apiKey) {
+            // For Anthropic APIs, use different format
+            targetUrl = `${apiUrl}/messages`;
+            headers['x-api-key'] = apiKey;
+            headers['anthropic-version'] = '2023-06-01';
+            
+            requestData = {
+                model: modelName,
+                max_tokens: 1,
+                messages: [{ role: 'user', content: 'test' }]
+            };
+        } else if (isGoogleAPI && apiKey) {
             // For Google APIs, use different endpoint and format
             // Strip 'models/' prefix if it exists
             const cleanModelName = modelName.startsWith('models/') ? modelName.substring(7) : modelName;
