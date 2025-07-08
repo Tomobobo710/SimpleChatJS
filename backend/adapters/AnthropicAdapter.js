@@ -111,7 +111,67 @@ class AnthropicAdapter extends BaseResponseAdapter {
             }));
         }
         
+        // Add thinking mode for supported models
+        const modelSupportsThinking = this.supportsThinking(unifiedRequest.model);
+        const thinkingEnabled = this.isThinkingEnabled();
+        const thinkingBudget = this.getThinkingBudget();
+        
+        if (modelSupportsThinking && thinkingEnabled) {
+            request.thinking = {
+                type: 'enabled',
+                budget_tokens: thinkingBudget
+            };
+        }
+        
         return request;
+    }
+
+    /**
+     * Check if a model supports thinking mode
+     */
+    supportsThinking(modelName) {
+        const thinkingModels = [
+            'claude-3-7-sonnet',
+            'claude-3.7-sonnet', 
+            'claude-sonnet-4',
+            'claude-4-sonnet',
+            'claude-opus-4',
+            'claude-4-opus'
+        ];
+        
+        return thinkingModels.some(thinkingModel => 
+            modelName.toLowerCase().includes(thinkingModel.toLowerCase())
+        );
+    }
+
+    /**
+     * Check if thinking mode is enabled in settings
+     */
+    isThinkingEnabled() {
+        try {
+            const { getCurrentSettings } = require('../services/settingsService');
+            const settings = getCurrentSettings();
+            return settings.enableThinking === true;
+        } catch (error) {
+            console.log('[ANTHROPIC-ADAPTER] Could not get thinking settings, defaulting to disabled:', error.message);
+            return false;
+        }
+    }
+
+    /**
+     * Get thinking budget from settings
+     */
+    getThinkingBudget() {
+        try {
+            const { getCurrentSettings } = require('../services/settingsService');
+            const settings = getCurrentSettings();
+            const budget = parseInt(settings.thinkingBudget) || 8192;
+            // Ensure it's within valid range
+            return Math.max(1024, Math.min(32000, budget));
+        } catch (error) {
+            console.log('[ANTHROPIC-ADAPTER] Could not get thinking budget, using default');
+            return 1024; // default to minimum
+        }
     }
 
     processChunk(chunk, response, context) {
@@ -129,9 +189,16 @@ class AnthropicAdapter extends BaseResponseAdapter {
                         
                         // Handle different event types
                         if (data.type === 'content_block_start') {
+                            // Content block started
                             if (data.content_block.type === 'text') {
                                 // Text content block started
                                 context.currentContentBlock = 'text';
+                            } else if (data.content_block.type === 'thinking') {
+                                // Thinking content block started
+                                context.currentContentBlock = 'thinking';
+                                // Send thinking tag to trigger dropdown system
+                                response.addContent('<thinking>');
+                                // Thinking block started
                             } else if (data.content_block.type === 'tool_use') {
                                 // Tool use block started
                                 const toolUse = data.content_block;
@@ -159,6 +226,24 @@ class AnthropicAdapter extends BaseResponseAdapter {
                             if (data.delta.type === 'text_delta') {
                                 // Text content delta
                                 response.addContent(data.delta.text);
+                            } else if (data.delta.type === 'thinking_delta') {
+                                // Thinking content delta - stream to response for dropdown system
+                                if (!context.thinkingContent) {
+                                    context.thinkingContent = '';
+                                }
+                                const thinkingText = data.delta.thinking || '';
+                                context.thinkingContent += thinkingText;
+                                // Stream thinking content so the dropdown system can capture it
+                                response.addContent(thinkingText);
+                            }
+                        } else if (data.type === 'content_block_stop') {
+                            // Content block ended
+                            if (context.currentContentBlock === 'thinking' && context.thinkingContent) {
+                                // Close thinking tag for the dropdown system
+                                response.addContent('</thinking>');
+                                // Thinking block completed - add to response debug data
+                                response.addDebugData('thinkingContent', context.thinkingContent);
+                                // Thinking completed
                             }
                         } else if (data.type === 'message_stop') {
                             response.setComplete(true);

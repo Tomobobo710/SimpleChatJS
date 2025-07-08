@@ -109,6 +109,23 @@
                             <button type="button" id="refreshModelsBtn" class="refresh-models-btn" title="Refresh model list">🔄</button>
                         </div>
                         
+                        <!-- AI Behavior Section -->
+                        <h3>AI Behavior</h3>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableThinking" />
+                            <label for="enableThinking">Enable Thinking Mode (Claude 3.7+, Claude 4 only)</label>
+                        </div>
+                        <p class="setting-description">Shows Claude's step-by-step reasoning process. Only works with Claude 3.7 Sonnet and Claude 4 models.</p>
+                        
+                        <div class="thinking-budget-group" id="thinkingBudgetGroup" style="display: none;">
+                            <label for="thinkingBudget">Thinking Budget (tokens):</label>
+                            <div class="budget-input-container">
+                                <input type="range" id="thinkingBudget" min="1024" max="32000" step="1024" value="8192">
+                                <span id="thinkingBudgetValue">8192</span>
+                            </div>
+                            <p class="setting-description">Higher budgets allow more thorough reasoning but cost more tokens. Minimum: 1024, Maximum: 32000</p>
+                        </div>
+                        
                         <div class="profile-actions">
                             <input type="text" id="newProfileName" placeholder="New profile name" class="profile-name-input">
                             <button type="button" id="saveAsProfileBtn" class="profile-btn">Save As New Profile</button>

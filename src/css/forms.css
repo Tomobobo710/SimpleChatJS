@@ -309,6 +309,33 @@
     margin: 0;
 }
 
+/* Thinking mode controls */
+.thinking-budget-group {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: var(--background-light);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+.budget-input-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.budget-input-container input[type="range"] {
+    flex: 1;
+    min-width: 200px;
+}
+
+.budget-input-container span {
+    min-width: 60px;
+    font-weight: bold;
+    color: var(--text-secondary);
+}
+
 /* Win98 Style Checkboxes */
 input[type="checkbox"] {
     width: 13px;

@@ -28,7 +28,9 @@ function getDefaultProfileSettings() {
         modelName: '',
         debugPanels: true,
         showPhaseMarkers: false,
-        logLevel: 'INFO'
+        logLevel: 'INFO',
+        enableThinking: false,
+        thinkingBudget: 1024
     };
 }
 

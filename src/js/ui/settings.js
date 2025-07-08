@@ -82,10 +82,28 @@ async function loadSettingsIntoModal() {
         debugPanelsInput.checked = settings.debugPanels !== undefined ? settings.debugPanels : true;
         showPhaseMarkersInput.checked = settings.showPhaseMarkers || false;
         
+        // Thinking mode settings
+        const enableThinkingInput = document.getElementById('enableThinking');
+        const thinkingBudgetInput = document.getElementById('thinkingBudget');
+        const thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
+        const thinkingBudgetValue = document.getElementById('thinkingBudgetValue');
+        
+        if (enableThinkingInput && thinkingBudgetInput) {
+            enableThinkingInput.checked = settings.enableThinking || false;
+            thinkingBudgetInput.value = settings.thinkingBudget || 8192;
+            thinkingBudgetValue.textContent = thinkingBudgetInput.value;
+            
+            // Show/hide thinking budget based on checkbox
+            thinkingBudgetGroup.style.display = enableThinkingInput.checked ? 'block' : 'none';
+        }
+        
         // Also update main model dropdown if it exists
         if (mainModelSelect && settings.modelName) {
             mainModelSelect.value = settings.modelName;
         }
+        
+        // Show/hide thinking controls based on provider
+        updateThinkingControlsVisibility(settings.apiUrl || '');
         
         // If API URL is set, try to fetch models automatically
         if (settings.apiUrl) {
@@ -111,17 +129,35 @@ async function loadSettingsIntoModal() {
         modelNameInput.value = '';
         debugPanelsInput.checked = true;
         showPhaseMarkersInput.checked = false;
+        
+        // Thinking mode fallbacks
+        const enableThinkingInput = document.getElementById('enableThinking');
+        const thinkingBudgetInput = document.getElementById('thinkingBudget');
+        const thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
+        const thinkingBudgetValue = document.getElementById('thinkingBudgetValue');
+        
+        if (enableThinkingInput && thinkingBudgetInput) {
+            enableThinkingInput.checked = false;
+            thinkingBudgetInput.value = 8192;
+            thinkingBudgetValue.textContent = '8192';
+            thinkingBudgetGroup.style.display = 'none';
+        }
     }
 }
 
 // Handle save settings
 async function handleSaveSettings() {
+    const enableThinkingInput = document.getElementById('enableThinking');
+    const thinkingBudgetInput = document.getElementById('thinkingBudget');
+    
     const settings = {
         apiUrl: apiUrlInput.value.trim(),
         apiKey: apiKeyInput.value.trim(),
         modelName: modelNameInput.value.trim(),
         debugPanels: debugPanelsInput.checked,
-        showPhaseMarkers: showPhaseMarkersInput.checked
+        showPhaseMarkers: showPhaseMarkersInput.checked,
+        enableThinking: enableThinkingInput ? enableThinkingInput.checked : false,
+        thinkingBudget: thinkingBudgetInput ? parseInt(thinkingBudgetInput.value) : 8192
     };
     
     logger.info('Attempting to save settings:', settings);
@@ -530,6 +566,29 @@ function showCustomConfirm(message, onConfirm) {
 }
 
 // Delete selected profile
+// Show/hide thinking controls based on API provider
+function updateThinkingControlsVisibility(apiUrl) {
+    const thinkingSection = document.querySelector('.thinking-controls-section');
+    if (!thinkingSection) return;
+    
+    const isAnthropic = apiUrl.toLowerCase().includes('anthropic.com');
+    thinkingSection.style.display = isAnthropic ? 'block' : 'none';
+    
+    // Also disable thinking if switching away from Anthropic
+    if (!isAnthropic) {
+        const enableThinkingInput = document.getElementById('enableThinking');
+        const thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
+        if (enableThinkingInput) {
+            enableThinkingInput.checked = false;
+        }
+        if (thinkingBudgetGroup) {
+            thinkingBudgetGroup.style.display = 'none';
+        }
+    }
+    
+    logger.info(`[SETTINGS] Thinking controls ${isAnthropic ? 'shown' : 'hidden'} for provider:`, apiUrl);
+}
+
 async function handleDeleteProfile() {
     const profileSelect = document.getElementById('profileSelect');
     const selectedProfile = profileSelect.value;
