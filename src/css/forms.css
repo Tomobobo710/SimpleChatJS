@@ -570,3 +570,53 @@ input[type="checkbox"]:disabled {
     border: 1px inset #555;
     background: linear-gradient(to bottom, #3d1a1a, #5a2d2d);
 }
+/* Budget presets for Google thinking */
+.budget-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: center;
+}
+
+.budget-preset {
+    padding: 4px 8px;
+    background: var(--surface-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--text-secondary);
+}
+
+.budget-preset:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent-primary);
+}
+
+.budget-preset.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+/* Provider-specific thinking sections */
+.anthropic-thinking-section {
+    border-left: 3px solid #ff6b35;
+    padding-left: 15px;
+}
+
+.google-thinking-section {
+    border-left: 3px solid #4285f4;
+    padding-left: 15px;
+}
+
+/* Provider section headings */
+.anthropic-thinking-section h3 {
+    color: #ff6b35;
+}
+
+.google-thinking-section h3 {
+    color: #4285f4;
+}

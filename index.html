@@ -74,6 +74,7 @@
                 <!-- Tab Navigation -->
                 <div class="tab-navigation">
                     <button class="tab-button active" data-tab="general">General</button>
+                    <button class="tab-button" data-tab="tokens">Tokens</button>
                     <button class="tab-button" data-tab="mcp">MCP</button>
                     <button class="tab-button" data-tab="debug">Debug</button>
                     <button class="tab-button" data-tab="logging">Logging</button>
@@ -109,23 +110,6 @@
                             <button type="button" id="refreshModelsBtn" class="refresh-models-btn" title="Refresh model list">🔄</button>
                         </div>
                         
-                        <!-- AI Behavior Section -->
-                        <h3>AI Behavior</h3>
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="enableThinking" />
-                            <label for="enableThinking">Enable Thinking Mode (Claude 3.7+, Claude 4 only)</label>
-                        </div>
-                        <p class="setting-description">Shows Claude's step-by-step reasoning process. Only works with Claude 3.7 Sonnet and Claude 4 models.</p>
-                        
-                        <div class="thinking-budget-group" id="thinkingBudgetGroup" style="display: none;">
-                            <label for="thinkingBudget">Thinking Budget (tokens):</label>
-                            <div class="budget-input-container">
-                                <input type="range" id="thinkingBudget" min="1024" max="32000" step="1024" value="8192">
-                                <span id="thinkingBudgetValue">8192</span>
-                            </div>
-                            <p class="setting-description">Higher budgets allow more thorough reasoning but cost more tokens. Minimum: 1024, Maximum: 32000</p>
-                        </div>
-                        
                         <div class="profile-actions">
                             <input type="text" id="newProfileName" placeholder="New profile name" class="profile-name-input">
                             <button type="button" id="saveAsProfileBtn" class="profile-btn">Save As New Profile</button>
@@ -138,7 +122,55 @@
                     </div>
                 </div>
                 
-                <!-- MCP Tab -->
+                <!-- MCP Tab -->                <!-- Tokens Tab -->
+                <div id="tokensTab" class="tab-content">
+                    <!-- Anthropic Thinking Section -->
+                    <div class="settings-section anthropic-thinking-section">
+                        <h3>🧠 Anthropic (Claude) Thinking</h3>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableThinkingAnthropic" />
+                            <label for="enableThinkingAnthropic">Enable Thinking Mode</label>
+                        </div>
+                        <p class="setting-description">Shows Claude's step-by-step reasoning process. Works with Claude 3.7 Sonnet and Claude 4 models. Thinking is OFF by default.</p>
+                        
+                        <div class="thinking-budget-group" id="thinkingBudgetGroupAnthropic" style="display: none;">
+                            <label for="thinkingBudgetAnthropic">Thinking Budget (tokens):</label>
+                            <div class="budget-input-container">
+                                <input type="range" id="thinkingBudgetAnthropic" min="1024" max="32000" step="1024" value="8192">
+                                <span id="thinkingBudgetValueAnthropic">8192</span>
+                            </div>
+                            <p class="setting-description">Higher budgets allow more thorough reasoning but cost more tokens. Range: 1024-32000</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Google Thinking Section -->
+                    <div class="settings-section google-thinking-section">
+                        <h3>💎 Google (Gemini) Thinking</h3>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableThinkingGoogle" />
+                            <label for="enableThinkingGoogle">Enable Thinking Mode</label>
+                        </div>
+                        <p class="setting-description">Controls Gemini's internal reasoning process. Works with Gemini 2.5 Pro, Flash, and Flash-Lite models. Thinking is ON by default for 2.5 models.</p>
+                        
+                        <div class="thinking-budget-group" id="thinkingBudgetGroupGoogle" style="display: none;">
+                            <label for="thinkingBudgetGoogle">Thinking Budget (tokens):</label>
+                            <div class="budget-input-container">
+                                <input type="range" id="thinkingBudgetGoogle" min="-1" max="24576" step="512" value="8192">
+                                <span id="thinkingBudgetValueGoogle">8192</span>
+                            </div>
+                            <div class="budget-presets">
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetGoogle" data-value="0">Off (0)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetGoogle" data-value="-1">Auto (-1)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetGoogle" data-value="4096">Light (4K)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetGoogle" data-value="8192">Medium (8K)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetGoogle" data-value="16384">Heavy (16K)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetGoogle" data-value="24576">Max (24K)</button>
+                            </div>
+                            <p class="setting-description">Range: 0-24576. Use 0 to disable, -1 for auto-budget, or set a specific limit.</p>
+                        </div>
+                    </div>
+                </div>
+                
                 <div id="mcpTab" class="tab-content">
                     <div class="settings-section">
                         <div class="mcp-controls">

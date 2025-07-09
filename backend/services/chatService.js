@@ -418,7 +418,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     
     // Create unified response object
     const unifiedResponse = new UnifiedResponse().setProvider(adapter.providerName);
-    const context = adapter.createContext();
+    const context = adapter.createContext(currentSettings.modelName);
     
     // Make HTTP request
     const httpModule = url.protocol === 'https:' ? https : http;

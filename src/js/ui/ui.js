@@ -31,11 +31,7 @@ function initializeElements() {
     showPhaseMarkersInput = document.getElementById('showPhaseMarkers');
     testConnectionBtn = document.getElementById('testConnectionBtn');
     
-    // Thinking mode elements
-    enableThinkingInput = document.getElementById('enableThinking');
-    thinkingBudgetInput = document.getElementById('thinkingBudget');
-    thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
-    thinkingBudgetValue = document.getElementById('thinkingBudgetValue');
+    // Old thinking mode elements (removed - now handled in settings.js)
     
     // Profile management elements
     profileSelect = document.getElementById('profileSelect');
@@ -106,20 +102,7 @@ function setupEventListeners() {
         logger.info(`Debug panels ${show ? 'enabled' : 'disabled'} - ${debugToggles.length} toggles updated`);
     });
     
-    // Thinking mode controls
-    if (enableThinkingInput && thinkingBudgetGroup) {
-        enableThinkingInput.addEventListener('change', () => {
-            const enabled = enableThinkingInput.checked;
-            thinkingBudgetGroup.style.display = enabled ? 'block' : 'none';
-            logger.info(`Thinking mode ${enabled ? 'enabled' : 'disabled'}`);
-        });
-    }
-    
-    if (thinkingBudgetInput && thinkingBudgetValue) {
-        thinkingBudgetInput.addEventListener('input', () => {
-            thinkingBudgetValue.textContent = thinkingBudgetInput.value;
-        });
-    }
+    // Thinking mode controls are now handled in settings.js
     
     // Model selection from dropdown (settings modal)
     modelSelectDropdown.addEventListener('change', () => {

@@ -82,20 +82,8 @@ async function loadSettingsIntoModal() {
         debugPanelsInput.checked = settings.debugPanels !== undefined ? settings.debugPanels : true;
         showPhaseMarkersInput.checked = settings.showPhaseMarkers || false;
         
-        // Thinking mode settings
-        const enableThinkingInput = document.getElementById('enableThinking');
-        const thinkingBudgetInput = document.getElementById('thinkingBudget');
-        const thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
-        const thinkingBudgetValue = document.getElementById('thinkingBudgetValue');
-        
-        if (enableThinkingInput && thinkingBudgetInput) {
-            enableThinkingInput.checked = settings.enableThinking || false;
-            thinkingBudgetInput.value = settings.thinkingBudget || 8192;
-            thinkingBudgetValue.textContent = thinkingBudgetInput.value;
-            
-            // Show/hide thinking budget based on checkbox
-            thinkingBudgetGroup.style.display = enableThinkingInput.checked ? 'block' : 'none';
-        }
+        // Provider-specific thinking mode settings
+        loadProviderThinkingSettings(settings);
         
         // Also update main model dropdown if it exists
         if (mainModelSelect && settings.modelName) {
@@ -104,6 +92,8 @@ async function loadSettingsIntoModal() {
         
         // Show/hide thinking controls based on provider
         updateThinkingControlsVisibility(settings.apiUrl || '');
+        // Setup thinking control event handlers
+        setupThinkingEventHandlers();
         
         // If API URL is set, try to fetch models automatically
         if (settings.apiUrl) {
@@ -130,25 +120,18 @@ async function loadSettingsIntoModal() {
         debugPanelsInput.checked = true;
         showPhaseMarkersInput.checked = false;
         
-        // Thinking mode fallbacks
-        const enableThinkingInput = document.getElementById('enableThinking');
-        const thinkingBudgetInput = document.getElementById('thinkingBudget');
-        const thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
-        const thinkingBudgetValue = document.getElementById('thinkingBudgetValue');
-        
-        if (enableThinkingInput && thinkingBudgetInput) {
-            enableThinkingInput.checked = false;
-            thinkingBudgetInput.value = 8192;
-            thinkingBudgetValue.textContent = '8192';
-            thinkingBudgetGroup.style.display = 'none';
-        }
+        // Provider-specific thinking mode fallbacks
+        loadProviderThinkingSettings({});
     }
 }
 
 // Handle save settings
 async function handleSaveSettings() {
-    const enableThinkingInput = document.getElementById('enableThinking');
-    const thinkingBudgetInput = document.getElementById('thinkingBudget');
+    // Get provider-specific thinking settings
+    const enableThinkingAnthropic = document.getElementById('enableThinkingAnthropic');
+    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
+    const enableThinkingGoogle = document.getElementById('enableThinkingGoogle');
+    const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
     
     const settings = {
         apiUrl: apiUrlInput.value.trim(),
@@ -156,8 +139,14 @@ async function handleSaveSettings() {
         modelName: modelNameInput.value.trim(),
         debugPanels: debugPanelsInput.checked,
         showPhaseMarkers: showPhaseMarkersInput.checked,
-        enableThinking: enableThinkingInput ? enableThinkingInput.checked : false,
-        thinkingBudget: thinkingBudgetInput ? parseInt(thinkingBudgetInput.value) : 8192
+        // Provider-specific thinking settings
+        enableThinkingAnthropic: enableThinkingAnthropic ? enableThinkingAnthropic.checked : false,
+        thinkingBudgetAnthropic: thinkingBudgetAnthropic ? parseInt(thinkingBudgetAnthropic.value) : 8192,
+        enableThinkingGoogle: enableThinkingGoogle ? enableThinkingGoogle.checked : true,
+        thinkingBudgetGoogle: thinkingBudgetGoogle ? parseInt(thinkingBudgetGoogle.value) : 8192,
+        // Backward compatibility with old settings
+        enableThinking: enableThinkingAnthropic ? enableThinkingAnthropic.checked : false,
+        thinkingBudget: thinkingBudgetAnthropic ? parseInt(thinkingBudgetAnthropic.value) : 8192
     };
     
     logger.info('Attempting to save settings:', settings);
@@ -566,27 +555,137 @@ function showCustomConfirm(message, onConfirm) {
 }
 
 // Delete selected profile
-// Show/hide thinking controls based on API provider
-function updateThinkingControlsVisibility(apiUrl) {
-    const thinkingSection = document.querySelector('.thinking-controls-section');
-    if (!thinkingSection) return;
+// Load provider-specific thinking settings
+function loadProviderThinkingSettings(settings) {
+    // Anthropic thinking settings
+    const enableThinkingAnthropic = document.getElementById('enableThinkingAnthropic');
+    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
+    const thinkingBudgetGroupAnthropic = document.getElementById('thinkingBudgetGroupAnthropic');
+    const thinkingBudgetValueAnthropic = document.getElementById('thinkingBudgetValueAnthropic');
     
-    const isAnthropic = apiUrl.toLowerCase().includes('anthropic.com');
-    thinkingSection.style.display = isAnthropic ? 'block' : 'none';
-    
-    // Also disable thinking if switching away from Anthropic
-    if (!isAnthropic) {
-        const enableThinkingInput = document.getElementById('enableThinking');
-        const thinkingBudgetGroup = document.getElementById('thinkingBudgetGroup');
-        if (enableThinkingInput) {
-            enableThinkingInput.checked = false;
-        }
-        if (thinkingBudgetGroup) {
-            thinkingBudgetGroup.style.display = 'none';
-        }
+    if (enableThinkingAnthropic && thinkingBudgetAnthropic) {
+        // Migration: Use new settings if available, otherwise fallback to old settings
+        const anthropicEnabled = settings.enableThinkingAnthropic !== undefined 
+            ? settings.enableThinkingAnthropic 
+            : (settings.enableThinking || false);
+        const anthropicBudget = settings.thinkingBudgetAnthropic !== undefined 
+            ? settings.thinkingBudgetAnthropic 
+            : (settings.thinkingBudget || 8192);
+            
+        enableThinkingAnthropic.checked = anthropicEnabled;
+        thinkingBudgetAnthropic.value = anthropicBudget;
+        thinkingBudgetValueAnthropic.textContent = anthropicBudget;
+        thinkingBudgetGroupAnthropic.style.display = anthropicEnabled ? 'block' : 'none';
     }
     
-    logger.info(`[SETTINGS] Thinking controls ${isAnthropic ? 'shown' : 'hidden'} for provider:`, apiUrl);
+    // Google thinking settings
+    const enableThinkingGoogle = document.getElementById('enableThinkingGoogle');
+    const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
+    const thinkingBudgetGroupGoogle = document.getElementById('thinkingBudgetGroupGoogle');
+    const thinkingBudgetValueGoogle = document.getElementById('thinkingBudgetValueGoogle');
+    
+    if (enableThinkingGoogle && thinkingBudgetGoogle) {
+        enableThinkingGoogle.checked = settings.enableThinkingGoogle !== undefined ? settings.enableThinkingGoogle : true;
+        const budgetValue = settings.thinkingBudgetGoogle !== undefined ? settings.thinkingBudgetGoogle : 8192;
+        thinkingBudgetGoogle.value = budgetValue;
+        thinkingBudgetValueGoogle.textContent = budgetValue === -1 || budgetValue === '-1' ? 'Auto' : budgetValue;
+        thinkingBudgetGroupGoogle.style.display = enableThinkingGoogle.checked ? 'block' : 'none';
+        
+        // Update preset button active state
+        updateGooglePresetButtons(budgetValue);
+    }
+}
+
+// Setup event handlers for thinking controls
+function setupThinkingEventHandlers() {
+    // Anthropic thinking controls
+    const enableThinkingAnthropic = document.getElementById('enableThinkingAnthropic');
+    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
+    const thinkingBudgetGroupAnthropic = document.getElementById('thinkingBudgetGroupAnthropic');
+    const thinkingBudgetValueAnthropic = document.getElementById('thinkingBudgetValueAnthropic');
+    
+    if (enableThinkingAnthropic && thinkingBudgetGroupAnthropic) {
+        enableThinkingAnthropic.addEventListener('change', () => {
+            const enabled = enableThinkingAnthropic.checked;
+            thinkingBudgetGroupAnthropic.style.display = enabled ? 'block' : 'none';
+            logger.info(`Anthropic thinking mode ${enabled ? 'enabled' : 'disabled'}`);
+        });
+    }
+    
+    if (thinkingBudgetAnthropic && thinkingBudgetValueAnthropic) {
+        thinkingBudgetAnthropic.addEventListener('input', () => {
+            thinkingBudgetValueAnthropic.textContent = thinkingBudgetAnthropic.value;
+        });
+    }
+    
+    // Google thinking controls
+    const enableThinkingGoogle = document.getElementById('enableThinkingGoogle');
+    const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
+    const thinkingBudgetGroupGoogle = document.getElementById('thinkingBudgetGroupGoogle');
+    const thinkingBudgetValueGoogle = document.getElementById('thinkingBudgetValueGoogle');
+    
+    if (enableThinkingGoogle && thinkingBudgetGroupGoogle) {
+        enableThinkingGoogle.addEventListener('change', () => {
+            const enabled = enableThinkingGoogle.checked;
+            thinkingBudgetGroupGoogle.style.display = enabled ? 'block' : 'none';
+            logger.info(`Google thinking mode ${enabled ? 'enabled' : 'disabled'}`);
+        });
+    }
+    
+    if (thinkingBudgetGoogle && thinkingBudgetValueGoogle) {
+        thinkingBudgetGoogle.addEventListener('input', () => {
+            const value = thinkingBudgetGoogle.value;
+            thinkingBudgetValueGoogle.textContent = value === '-1' ? 'Auto' : value;
+            updateGooglePresetButtons(value);
+        });
+    }
+    
+    // Google preset buttons
+    const budgetPresets = document.querySelectorAll('.budget-preset');
+    budgetPresets.forEach(button => {
+        button.addEventListener('click', () => {
+            const target = button.dataset.target;
+            const value = parseInt(button.dataset.value);
+            const slider = document.getElementById(target);
+            const valueDisplay = document.getElementById(target.replace('Budget', 'BudgetValue'));
+            
+            if (slider && valueDisplay) {
+                slider.value = value;
+                valueDisplay.textContent = value === -1 ? 'Auto' : value;
+                updateGooglePresetButtons(value);
+            }
+        });
+    });
+}
+
+// Update Google preset button active states
+function updateGooglePresetButtons(currentValue) {
+    const presets = document.querySelectorAll('.budget-preset');
+    presets.forEach(preset => {
+        const presetValue = parseInt(preset.dataset.value);
+        if (presetValue === parseInt(currentValue)) {
+            preset.classList.add('active');
+        } else {
+            preset.classList.remove('active');
+        }
+    });
+}
+
+// Show/hide provider-specific thinking controls based on API provider
+function updateThinkingControlsVisibility(apiUrl) {
+    const anthropicSection = document.querySelector('.anthropic-thinking-section');
+    const googleSection = document.querySelector('.google-thinking-section');
+    
+    if (!anthropicSection || !googleSection) return;
+    
+    const isAnthropic = apiUrl.toLowerCase().includes('anthropic.com');
+    const isGoogle = apiUrl.toLowerCase().includes('google') || apiUrl.toLowerCase().includes('googleapis.com');
+    
+    // Show/hide sections based on provider
+    anthropicSection.style.display = isAnthropic ? 'block' : 'none';
+    googleSection.style.display = isGoogle ? 'block' : 'none';
+    
+    logger.info(`[SETTINGS] Thinking controls - Anthropic: ${isAnthropic ? 'shown' : 'hidden'}, Google: ${isGoogle ? 'shown' : 'hidden'} for provider:`, apiUrl);
 }
 
 async function handleDeleteProfile() {

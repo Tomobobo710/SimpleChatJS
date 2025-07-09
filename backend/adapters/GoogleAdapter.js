@@ -74,10 +74,31 @@ class GoogleAdapter extends BaseResponseAdapter {
             geminiTools = [{ functionDeclarations }];
         }
         
-        return {
+        // Add thinking mode for supported models
+        const modelSupportsThinking = this.supportsThinking(unifiedRequest.model);
+        const thinkingEnabled = this.isThinkingEnabled();
+        const thinkingBudget = this.getThinkingBudget();
+        
+        const request = {
             contents,
             ...(geminiTools.length > 0 ? { tools: geminiTools } : {})
         };
+        
+        // Add thinking configuration for supported models
+        if (modelSupportsThinking && thinkingEnabled && thinkingBudget !== 0) {
+            request.generationConfig = {
+                thinkingConfig: {
+                    includeThoughts: true
+                }
+            };
+            
+            // Only set thinkingBudget if it's not -1 (auto mode)
+            if (thinkingBudget !== -1) {
+                request.generationConfig.thinkingConfig.thinkingBudget = thinkingBudget;
+            }
+        }
+        
+        return request;
     }
 
     processChunk(chunk, response, context) {
@@ -99,33 +120,82 @@ class GoogleAdapter extends BaseResponseAdapter {
                     
                     const parts = candidate.content?.parts || [];
                     
-                    for (const part of parts) {
-                        // Handle text content
-                        if (part.text) {
-                            response.addContent(part.text);
+                    // Handle thinking mode for Google models
+                    const isThinkingModel = this.supportsThinking(context.model || '');
+                    const isThinkingEnabled = this.isThinkingEnabled();
+                    const thinkingBudget = this.getThinkingBudget();
+                    const hasThoughts = parts.some(part => part.thought);
+                    
+                    if (isThinkingModel && isThinkingEnabled && thinkingBudget !== 0 && hasThoughts) {
+                        // Process each part according to Google's format
+                        for (const part of parts) {
+                            if (!part.text) continue;
+                            
+                            // If this part has thought=true, it's thinking content
+                            if (part.thought) {
+                                response.addContent('<thinking>');
+                                response.addContent(part.text);
+                                response.addContent('</thinking>');
+                                response.addDebugData('thinkingContent', part.text);
+                            }
+                            // Otherwise it's the regular response
+                            else {
+                                response.addContent(part.text);
+                            }
+                            
+                            // Handle function calls
+                            if (part.functionCall) {
+                                const toolCall = {
+                                    id: `call_${Date.now()}_${response.toolCalls.length}`,
+                                    type: 'function',
+                                    function: {
+                                        name: part.functionCall.name,
+                                        arguments: JSON.stringify(part.functionCall.args || {})
+                                    }
+                                };
+                                
+                                response.addToolCall(toolCall);
+                                
+                                events.push({
+                                    type: 'tool_call_detected',
+                                    data: {
+                                        toolName: toolCall.function.name,
+                                        toolId: toolCall.id
+                                    }
+                                });
+                            }
                         }
+                    } else {
+                        // Process all parts normally
                         
-                        // Handle function calls
-                        if (part.functionCall) {
-                            const toolCall = {
-                                id: `call_${Date.now()}_${response.toolCalls.length}`,
-                                type: 'function',
-                                function: {
-                                    name: part.functionCall.name,
-                                    arguments: JSON.stringify(part.functionCall.args || {})
-                                }
-                            };
+                        for (const part of parts) {
+                            // Handle text content
+                            if (part.text) {
+                                response.addContent(part.text);
+                            }
                             
-                            response.addToolCall(toolCall);
-                            
-                            // Emit tool call detected event
-                            events.push({
-                                type: 'tool_call_detected',
-                                data: {
-                                    toolName: toolCall.function.name,
-                                    toolId: toolCall.id
-                                }
-                            });
+                            // Handle function calls
+                            if (part.functionCall) {
+                                const toolCall = {
+                                    id: `call_${Date.now()}_${response.toolCalls.length}`,
+                                    type: 'function',
+                                    function: {
+                                        name: part.functionCall.name,
+                                        arguments: JSON.stringify(part.functionCall.args || {})
+                                    }
+                                };
+                                
+                                response.addToolCall(toolCall);
+                                
+                                // Emit tool call detected event
+                                events.push({
+                                    type: 'tool_call_detected',
+                                    data: {
+                                        toolName: toolCall.function.name,
+                                        toolId: toolCall.id
+                                    }
+                                });
+                            }
                         }
                     }
                     
@@ -149,25 +219,25 @@ class GoogleAdapter extends BaseResponseAdapter {
                 
             } catch (parseError) {
                 // Incomplete JSON, keep buffering
-                // Only log if buffer gets too large
+                // Reset buffer if it gets too large to prevent memory issues
                 if (context.buffer.length > 10000) {
-                    console.warn('[GOOGLE-ADAPTER] Buffer getting large, might be malformed JSON');
-                    context.buffer = ''; // Reset to prevent memory issues
+                    context.buffer = '';
                 }
             }
             
         } catch (error) {
-            console.error('[GOOGLE-ADAPTER] Error processing chunk:', error);
+            console.error('[GOOGLE-ADAPTER] Error processing chunk:', error.message);
         }
         
         return { events, context };
     }
 
-    createContext() {
+    createContext(modelName = '') {
         return {
             buffer: '', // Gemini needs buffering for complete JSON parsing
             currentToolCall: null,
-            processingState: 'content'
+            processingState: 'content',
+            model: modelName // Store model name for thinking detection
         };
     }
 
@@ -199,6 +269,47 @@ class GoogleAdapter extends BaseResponseAdapter {
             }
         }
         return cleaned;
+    }
+
+    /**
+     * Check if a model supports thinking mode
+     */
+    supportsThinking(modelName) {
+        return modelName.toLowerCase().includes('2.5');
+    }
+
+    /**
+     * Check if thinking mode is enabled in settings
+     */
+    isThinkingEnabled() {
+        try {
+            const { getCurrentSettings } = require('../services/settingsService');
+            const settings = getCurrentSettings();
+            return settings.enableThinkingGoogle !== false;
+        } catch (error) {
+            return true; // default to enabled for Google
+        }
+    }
+
+    /**
+     * Get thinking budget from settings
+     */
+    getThinkingBudget() {
+        try {
+            const { getCurrentSettings } = require('../services/settingsService');
+            const settings = getCurrentSettings();
+            const rawBudget = settings.thinkingBudgetGoogle;
+            
+            // Handle auto mode
+            if (rawBudget === -1 || rawBudget === '-1') {
+                return -1;
+            }
+            
+            const budget = parseInt(rawBudget) || 8192;
+            return Math.max(0, Math.min(24576, budget));
+        } catch (error) {
+            return 8192;
+        }
     }
 }
 

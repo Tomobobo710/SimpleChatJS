@@ -65,11 +65,12 @@ class BaseResponseAdapter {
      * Initialize context for processing
      * @returns {Object} Initial context state
      */
-    createContext() {
+    createContext(modelName = '') {
         return {
             buffer: '',
             currentToolCall: null,
-            processingState: 'content'
+            processingState: 'content',
+            model: modelName
         };
     }
 
