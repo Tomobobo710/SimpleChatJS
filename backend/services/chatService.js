@@ -844,6 +844,31 @@ async function processChatRequest(req, res) {
             log(`[CHAT-DEBUG] User message already in history, skipping duplicate`);
         }
         
+        // Inject system prompt if this is the first message in the conversation/branch
+        if (messages.length === 1) {
+            const currentSettings = getCurrentSettings();
+            if (currentSettings.enableSystemPrompt && currentSettings.systemPrompt && currentSettings.systemPrompt.trim()) {
+                const systemMessage = {
+                    role: 'system',
+                    content: currentSettings.systemPrompt.trim()
+                };
+                
+                // Prepend system prompt to messages array
+                messages.unshift(systemMessage);
+                log(`[SYSTEM-PROMPT] Added system prompt to first message in conversation`);
+                
+                // Save system prompt to database (it becomes part of chat history)
+                if (chat_id) {
+                    try {
+                        await saveCompleteMessageToDatabase(chat_id, systemMessage);
+                        log(`[SYSTEM-PROMPT] Saved system prompt to chat history`);
+                    } catch (error) {
+                        log(`[SYSTEM-PROMPT] Error saving system prompt to history: ${error.message}`);
+                    }
+                }
+            }
+        }
+        
         // Check if we have any messages at all
         if (messages.length === 0) {
             // No chat_id and no message - this shouldn't happen but handle gracefully

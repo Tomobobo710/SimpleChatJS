@@ -85,6 +85,9 @@ async function loadSettingsIntoModal() {
         // Provider-specific thinking mode settings
         loadProviderThinkingSettings(settings);
         
+        // System prompt settings
+        loadSystemPromptSettings(settings);
+        
         // Also update main model dropdown if it exists
         if (mainModelSelect && settings.modelName) {
             mainModelSelect.value = settings.modelName;
@@ -94,6 +97,8 @@ async function loadSettingsIntoModal() {
         updateThinkingControlsVisibility(settings.apiUrl || '');
         // Setup thinking control event handlers
         setupThinkingEventHandlers();
+        // Setup system prompt event handlers
+        setupSystemPromptEventHandlers();
         
         // If API URL is set, try to fetch models automatically
         if (settings.apiUrl) {
@@ -122,6 +127,9 @@ async function loadSettingsIntoModal() {
         
         // Provider-specific thinking mode fallbacks
         loadProviderThinkingSettings({});
+        
+        // System prompt fallbacks
+        loadSystemPromptSettings({});
     }
 }
 
@@ -143,7 +151,11 @@ async function handleSaveSettings() {
         enableThinkingAnthropic: enableThinkingAnthropic ? enableThinkingAnthropic.checked : true,
         thinkingBudgetAnthropic: thinkingBudgetAnthropic ? parseInt(thinkingBudgetAnthropic.value) : 1024,
         enableThinkingGoogle: enableThinkingGoogle ? enableThinkingGoogle.checked : true,
-        thinkingBudgetGoogle: thinkingBudgetGoogle ? parseInt(thinkingBudgetGoogle.value) : -1
+        thinkingBudgetGoogle: thinkingBudgetGoogle ? parseInt(thinkingBudgetGoogle.value) : -1,
+        
+        // System prompt settings
+        enableSystemPrompt: document.getElementById('enableSystemPrompt') ? document.getElementById('enableSystemPrompt').checked : true,
+        systemPrompt: document.getElementById('systemPrompt') ? document.getElementById('systemPrompt').value.trim() : 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.'
     };
     
     logger.info('Attempting to save settings:', settings);
@@ -658,6 +670,35 @@ function updateGooglePresetButtons(currentValue) {
             preset.classList.remove('active');
         }
     });
+}
+
+// Load system prompt settings
+function loadSystemPromptSettings(settings) {
+    const enableSystemPrompt = document.getElementById('enableSystemPrompt');
+    const systemPrompt = document.getElementById('systemPrompt');
+    const systemPromptGroup = document.getElementById('systemPromptGroup');
+    
+    if (enableSystemPrompt && systemPrompt && systemPromptGroup) {
+        const defaultPrompt = 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.';
+        
+        enableSystemPrompt.checked = settings.enableSystemPrompt !== undefined ? settings.enableSystemPrompt : true;
+        systemPrompt.value = settings.systemPrompt !== undefined ? settings.systemPrompt : defaultPrompt;
+        systemPromptGroup.style.display = enableSystemPrompt.checked ? 'block' : 'none';
+    }
+}
+
+// Setup event handlers for system prompt controls
+function setupSystemPromptEventHandlers() {
+    const enableSystemPrompt = document.getElementById('enableSystemPrompt');
+    const systemPromptGroup = document.getElementById('systemPromptGroup');
+    
+    if (enableSystemPrompt && systemPromptGroup) {
+        enableSystemPrompt.addEventListener('change', () => {
+            const enabled = enableSystemPrompt.checked;
+            systemPromptGroup.style.display = enabled ? 'block' : 'none';
+            logger.info(`System prompt ${enabled ? 'enabled' : 'disabled'}`);
+        });
+    }
 }
 
 // Show/hide provider-specific thinking controls based on API provider

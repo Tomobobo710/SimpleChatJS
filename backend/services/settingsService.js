@@ -32,7 +32,9 @@ function getDefaultProfileSettings() {
         enableThinkingAnthropic: true,
         thinkingBudgetAnthropic: 1024,
         enableThinkingGoogle: true,
-        thinkingBudgetGoogle: -1
+        thinkingBudgetGoogle: -1,
+        enableSystemPrompt: true,
+        systemPrompt: 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.'
     };
 }
 
@@ -43,7 +45,9 @@ function getDefaultProfiles() {
             'Default': {
                 ...getDefaultProfileSettings(),
                 apiUrl: 'http://localhost:11434/v1',
-                modelName: ''
+                modelName: '',
+                enableSystemPrompt: true,
+                systemPrompt: 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.'
             }
         },
         activeProfile: 'Default'
@@ -56,6 +60,35 @@ function loadProfiles() {
         const profilesPath = getProfilesPath();
         if (fs.existsSync(profilesPath)) {
             const profiles = JSON.parse(fs.readFileSync(profilesPath, 'utf8'));
+            
+            // Migrate profiles to ensure they have all default fields
+            const defaults = getDefaultProfileSettings();
+            let needsSaving = false;
+            
+            for (const profileName in profiles.profiles) {
+                const profile = profiles.profiles[profileName];
+                let profileUpdated = false;
+                
+                // Add any missing fields from defaults
+                for (const key in defaults) {
+                    if (!(key in profile)) {
+                        profile[key] = defaults[key];
+                        profileUpdated = true;
+                    }
+                }
+                
+                if (profileUpdated) {
+                    log(`[PROFILES] Migrated profile '${profileName}' with new settings`);
+                    needsSaving = true;
+                }
+            }
+            
+            // Save migrated profiles
+            if (needsSaving) {
+                saveProfiles(profiles);
+                log('[PROFILES] Saved migrated profiles');
+            }
+            
             log('[PROFILES] Loaded from file');
             return profiles;
         } else {
@@ -92,7 +125,10 @@ function getActiveProfileSettings() {
     const activeProfile = profilesData.profiles[activeProfileName];
     
     if (activeProfile) {
-        return activeProfile;
+        // Ensure all required fields exist (for backwards compatibility)
+        const defaults = getDefaultProfileSettings();
+        const merged = { ...defaults, ...activeProfile };
+        return merged;
     } else {
         log('[PROFILES] Active profile not found, using Default');
         return profilesData.profiles['Default'] || getDefaultProfileSettings();

@@ -29,6 +29,11 @@ class GoogleAdapter extends BaseResponseAdapter {
         const contents = [];
         
         for (const msg of unifiedRequest.messages) {
+            // Skip system messages - they're handled via systemInstruction
+            if (msg.role === 'system') {
+                continue;
+            }
+            
             // Check if message is already in Gemini format
             if (msg.parts) {
                 contents.push(msg);
@@ -96,6 +101,14 @@ class GoogleAdapter extends BaseResponseAdapter {
             if (thinkingBudget !== -1) {
                 request.generationConfig.thinkingConfig.thinkingBudget = thinkingBudget;
             }
+        }
+        
+        // Add system instruction if present
+        const systemMessage = unifiedRequest.messages.find(msg => msg.role === 'system');
+        if (systemMessage) {
+            request.systemInstruction = {
+                parts: [{ text: systemMessage.content }]
+            };
         }
         
         return request;

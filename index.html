@@ -120,6 +120,22 @@
                             <button id="testConnectionBtn" class="test-connection-btn">Test Connection</button>
                         </div>
                     </div>
+                    
+                    <!-- System Prompts Section -->
+                    <div class="settings-section system-prompts-section">
+                        <h3>System Prompts</h3>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableSystemPrompt" checked />
+                            <label for="enableSystemPrompt">Enable System Prompt</label>
+                        </div>
+                        <p class="setting-description">Configure system instructions that guide AI behavior across all conversations. Applied automatically to the first message in each conversation.</p>
+                        
+                        <div class="system-prompt-group" id="systemPromptGroup">
+                            <label for="systemPrompt">System Prompt:</label>
+                            <textarea id="systemPrompt" rows="4" placeholder="Enter system instructions..."></textarea>
+                            <p class="setting-description">This prompt will be automatically added to the beginning of new conversations with all AI providers.</p>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- MCP Tab -->                <!-- Tokens Tab -->
