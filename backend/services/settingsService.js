@@ -29,8 +29,10 @@ function getDefaultProfileSettings() {
         debugPanels: true,
         showPhaseMarkers: false,
         logLevel: 'INFO',
-        enableThinking: false,
-        thinkingBudget: 1024
+        enableThinkingAnthropic: true,
+        thinkingBudgetAnthropic: 1024,
+        enableThinkingGoogle: true,
+        thinkingBudgetGoogle: -1
     };
 }
 
@@ -219,22 +221,7 @@ function updateActiveProfile(settings) {
 
 
 
-// Legacy functions for backward compatibility
-function loadSettings() {
-    return getActiveProfileSettings();
-}
-
-function saveSettings(settings) {
-    // Just update in-memory settings for this session, don't overwrite profiles
-    Object.assign(currentSettings, settings);
-    log('[SETTINGS] Updated session settings (profile not modified)');
-    return { success: true };
-}
-
-function getDefaultSettings() {
-    return getDefaultProfileSettings();
-}
-
+// Current settings access
 function getCurrentSettings() {
     return currentSettings;
 }
@@ -252,14 +239,10 @@ async function loadSettingsOnStartup() {
 }
 
 module.exports = {
-    // Legacy API (backward compatibility)
-    loadSettings,
-    saveSettings,
-    getDefaultSettings,
     getCurrentSettings,
     loadSettingsOnStartup,
     
-    // New profiles API
+    // Profiles API
     loadProfiles,
     saveProfiles,
     getActiveProfileSettings,

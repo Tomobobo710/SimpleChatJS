@@ -4,7 +4,7 @@
 let messageInput, sendBtn, turnsContainer, scrollContainer, conductorModeCheckbox;
 let settingsModal, settingsBtn, newChatBtn, closeModalBtn;
 let apiUrlInput, apiKeyInput, modelNameInput, modelSelectDropdown, mainModelSelect, refreshModelsBtn, saveSettingsBtn, debugPanelsInput, testConnectionBtn;
-let enableThinkingInput, thinkingBudgetInput, thinkingBudgetGroup, thinkingBudgetValue;
+// Legacy thinking variables removed
 let mcpServersDiv;
 let mcpConfigModal, mcpConfigBtn, closeMcpModalBtn, mcpConfigText, saveMcpConfigBtn, testMcpConfigBtn;
 let chatList, chatTitle, chatInfo;

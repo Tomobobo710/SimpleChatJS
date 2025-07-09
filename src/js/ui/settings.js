@@ -140,13 +140,10 @@ async function handleSaveSettings() {
         debugPanels: debugPanelsInput.checked,
         showPhaseMarkers: showPhaseMarkersInput.checked,
         // Provider-specific thinking settings
-        enableThinkingAnthropic: enableThinkingAnthropic ? enableThinkingAnthropic.checked : false,
-        thinkingBudgetAnthropic: thinkingBudgetAnthropic ? parseInt(thinkingBudgetAnthropic.value) : 8192,
+        enableThinkingAnthropic: enableThinkingAnthropic ? enableThinkingAnthropic.checked : true,
+        thinkingBudgetAnthropic: thinkingBudgetAnthropic ? parseInt(thinkingBudgetAnthropic.value) : 1024,
         enableThinkingGoogle: enableThinkingGoogle ? enableThinkingGoogle.checked : true,
-        thinkingBudgetGoogle: thinkingBudgetGoogle ? parseInt(thinkingBudgetGoogle.value) : 8192,
-        // Backward compatibility with old settings
-        enableThinking: enableThinkingAnthropic ? enableThinkingAnthropic.checked : false,
-        thinkingBudget: thinkingBudgetAnthropic ? parseInt(thinkingBudgetAnthropic.value) : 8192
+        thinkingBudgetGoogle: thinkingBudgetGoogle ? parseInt(thinkingBudgetGoogle.value) : -1
     };
     
     logger.info('Attempting to save settings:', settings);
@@ -564,18 +561,10 @@ function loadProviderThinkingSettings(settings) {
     const thinkingBudgetValueAnthropic = document.getElementById('thinkingBudgetValueAnthropic');
     
     if (enableThinkingAnthropic && thinkingBudgetAnthropic) {
-        // Migration: Use new settings if available, otherwise fallback to old settings
-        const anthropicEnabled = settings.enableThinkingAnthropic !== undefined 
-            ? settings.enableThinkingAnthropic 
-            : (settings.enableThinking || false);
-        const anthropicBudget = settings.thinkingBudgetAnthropic !== undefined 
-            ? settings.thinkingBudgetAnthropic 
-            : (settings.thinkingBudget || 8192);
-            
-        enableThinkingAnthropic.checked = anthropicEnabled;
-        thinkingBudgetAnthropic.value = anthropicBudget;
-        thinkingBudgetValueAnthropic.textContent = anthropicBudget;
-        thinkingBudgetGroupAnthropic.style.display = anthropicEnabled ? 'block' : 'none';
+        enableThinkingAnthropic.checked = settings.enableThinkingAnthropic !== undefined ? settings.enableThinkingAnthropic : true;
+        thinkingBudgetAnthropic.value = settings.thinkingBudgetAnthropic !== undefined ? settings.thinkingBudgetAnthropic : 1024;
+        thinkingBudgetValueAnthropic.textContent = settings.thinkingBudgetAnthropic !== undefined ? settings.thinkingBudgetAnthropic : 1024;
+        thinkingBudgetGroupAnthropic.style.display = (settings.enableThinkingAnthropic !== undefined ? settings.enableThinkingAnthropic : true) ? 'block' : 'none';
     }
     
     // Google thinking settings
@@ -586,7 +575,7 @@ function loadProviderThinkingSettings(settings) {
     
     if (enableThinkingGoogle && thinkingBudgetGoogle) {
         enableThinkingGoogle.checked = settings.enableThinkingGoogle !== undefined ? settings.enableThinkingGoogle : true;
-        const budgetValue = settings.thinkingBudgetGoogle !== undefined ? settings.thinkingBudgetGoogle : 8192;
+        const budgetValue = settings.thinkingBudgetGoogle !== undefined ? settings.thinkingBudgetGoogle : -1;
         thinkingBudgetGoogle.value = budgetValue;
         thinkingBudgetValueGoogle.textContent = budgetValue === -1 || budgetValue === '-1' ? 'Auto' : budgetValue;
         thinkingBudgetGroupGoogle.style.display = enableThinkingGoogle.checked ? 'block' : 'none';

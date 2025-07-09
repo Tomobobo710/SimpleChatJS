@@ -3,9 +3,8 @@ const express = require('express');
 const https = require('https');
 const http = require('http');
 const { 
-    loadSettings, 
-    saveSettings, 
-    getDefaultSettings, 
+    getActiveProfileSettings,
+    updateActiveProfile,
     loadProfiles, 
     switchProfile, 
     saveAsProfile, 
@@ -18,12 +17,8 @@ const router = express.Router();
 // Get settings
 router.get('/settings', (req, res) => {
     try {
-        const settings = loadSettings();
-        if (settings.error) {
-            res.status(500).json({ error: settings.error });
-        } else {
-            res.json(settings);
-        }
+        const settings = getActiveProfileSettings();
+        res.json(settings);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -32,7 +27,7 @@ router.get('/settings', (req, res) => {
 // Save settings
 router.post('/settings', (req, res) => {
     try {
-        const result = saveSettings(req.body);
+        const result = updateActiveProfile(req.body);
         if (result.success) {
             res.json({ success: true });
         } else {

@@ -151,8 +151,7 @@ class AnthropicAdapter extends BaseResponseAdapter {
         try {
             const { getCurrentSettings } = require('../services/settingsService');
             const settings = getCurrentSettings();
-            // Check new provider-specific setting, fallback to old setting for backward compatibility
-            return settings.enableThinkingAnthropic === true || settings.enableThinking === true;
+            return settings.enableThinkingAnthropic === true;
         } catch (error) {
             console.log('[ANTHROPIC-ADAPTER] Could not get thinking settings, defaulting to disabled:', error.message);
             return false;
@@ -166,8 +165,7 @@ class AnthropicAdapter extends BaseResponseAdapter {
         try {
             const { getCurrentSettings } = require('../services/settingsService');
             const settings = getCurrentSettings();
-            // Check new provider-specific setting, fallback to old setting for backward compatibility
-            const budget = parseInt(settings.thinkingBudgetAnthropic) || parseInt(settings.thinkingBudget) || 8192;
+            const budget = parseInt(settings.thinkingBudgetAnthropic) || 1024;
             // Ensure it's within valid range for Anthropic
             return Math.max(1024, Math.min(32000, budget));
         } catch (error) {
