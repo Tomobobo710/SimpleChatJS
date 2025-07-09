@@ -219,7 +219,9 @@ class ChatRenderer {
     // Render thinking block as dropdown
     renderThinkingBlock(content, metadata, isOpen = false) {
         const dropdownId = `thinking-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const dropdown = new StreamingDropdown(dropdownId, "Thinking Process", "thinking", !isOpen);
+        // Use title from metadata if available (Gemini), otherwise use default
+        const title = metadata.title || "Thinking Process";
+        const dropdown = new StreamingDropdown(dropdownId, title, "thinking", !isOpen);
         dropdown.setContent(content);
         return dropdown.element;
     }

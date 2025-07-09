@@ -48,13 +48,14 @@ class StreamingMessageProcessor {
     }
     
     checkForThinkingStart() {
-        // Check for both <think> and <thinking> tags
+        // Check for both <think> and <thinking> tags, including ones with title attributes
         const thinkStartIndex = this.buffer.indexOf('<think>');
-        const thinkingStartIndex = this.buffer.indexOf('<thinking>');
+        const thinkingStartIndex = this.buffer.indexOf('<thinking');
         
         let startIndex = -1;
         let tagLength = 0;
         let tagType = '';
+        let title = null;
         
         // Find the earliest tag
         if (thinkStartIndex !== -1 && (thinkingStartIndex === -1 || thinkStartIndex < thinkingStartIndex)) {
@@ -62,9 +63,14 @@ class StreamingMessageProcessor {
             tagLength = 7; // '<think>'.length
             tagType = '<think>';
         } else if (thinkingStartIndex !== -1) {
-            startIndex = thinkingStartIndex;
-            tagLength = 10; // '<thinking>'.length
-            tagType = '<thinking>';
+            // Look for the full thinking tag (could be <thinking> or <thinking title="...">)
+            const thinkingTagMatch = this.buffer.slice(thinkingStartIndex).match(/^<thinking(?:\s+title="([^"]*)")?>/);
+            if (thinkingTagMatch) {
+                startIndex = thinkingStartIndex;
+                tagLength = thinkingTagMatch[0].length;
+                tagType = thinkingTagMatch[0];
+                title = thinkingTagMatch[1] || null; // Extract title if present
+            }
         }
         
         if (startIndex !== -1) {
@@ -83,7 +89,8 @@ class StreamingMessageProcessor {
                 metadata: { 
                     id: `thinking_${Date.now()}`, 
                     isStreaming: true,
-                    tagType: tagType // Track which tag type we're using
+                    tagType: tagType, // Track which tag type we're using
+                    title: title // Store the title if present
                 }
             };
             this.blocks.push(thinkingBlock);
@@ -92,7 +99,7 @@ class StreamingMessageProcessor {
             // Switch to thinking state
             this.buffer = this.buffer.slice(startIndex + tagLength);
             this.state = 'thinking';
-            logger.debug(`[PROCESSOR] THINKING BLOCK CREATED with ${tagType}! Total blocks: ${this.blocks.length}`);
+            logger.debug(`[PROCESSOR] THINKING BLOCK CREATED with ${tagType}${title ? ` (title: "${title}")` : ''}! Total blocks: ${this.blocks.length}`);
             return true;
         }
         return false;

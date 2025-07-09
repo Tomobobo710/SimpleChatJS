@@ -133,10 +133,26 @@ class GoogleAdapter extends BaseResponseAdapter {
                             
                             // If this part has thought=true, it's thinking content
                             if (part.thought) {
-                                response.addContent('<thinking>');
-                                response.addContent(part.text);
-                                response.addContent('</thinking>');
-                                response.addDebugData('thinkingContent', part.text);
+                                // Parse Gemini thinking content to separate summary from detailed thoughts
+                                const lines = part.text.split('\n');
+                                const summaryLine = lines[0] || ''; // "**Summary Title**"
+                                const summary = summaryLine.replace(/\*\*/g, '').trim(); // Remove markdown bold
+                                const detailedThoughts = lines.slice(2).join('\n').trim(); // Skip title and empty line
+                                
+                                // Use summary as dropdown title, detailed thoughts as content
+                                if (summary && detailedThoughts) {
+                                    response.addContent(`<thinking title="${summary}">`);
+                                    response.addContent(detailedThoughts);
+                                    response.addContent('</thinking>');
+                                    response.addDebugData('thinkingContent', detailedThoughts);
+                                    response.addDebugData('thinkingSummary', summary);
+                                } else {
+                                    // Fallback: use original format if parsing fails
+                                    response.addContent('<thinking>');
+                                    response.addContent(part.text);
+                                    response.addContent('</thinking>');
+                                    response.addDebugData('thinkingContent', part.text);
+                                }
                             }
                             // Otherwise it's the regular response
                             else {
