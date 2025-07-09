@@ -95,11 +95,11 @@
                     
                     <div class="settings-section">
                         <h3>API Configuration</h3>
-                        <label for="apiUrl">API URL (required):</label>
-                        <input type="text" id="apiUrl" placeholder="http://localhost:11434/v1 (Ollama) or https://api.openai.com/v1">
-                        
                         <label for="apiKey">API Key (optional for local APIs):</label>
                         <input type="password" id="apiKey" placeholder="Leave empty for local APIs like Ollama">
+                        
+                        <label for="apiUrl">API URL (required):</label>
+                        <input type="text" id="apiUrl" placeholder="http://localhost:11434/v1 (Ollama) or https://api.openai.com/v1">
                         
                         <label for="modelName">Model:</label>
                         <div class="model-selector-container">
@@ -120,7 +120,10 @@
                             <button id="testConnectionBtn" class="test-connection-btn">Test Connection</button>
                         </div>
                     </div>
-                    
+                </div>
+                
+                <!-- MCP Tab -->                <!-- Tokens Tab -->
+                <div id="tokensTab" class="tab-content">
                     <!-- System Prompts Section -->
                     <div class="settings-section system-prompts-section">
                         <h3>System Prompts</h3>
@@ -136,12 +139,9 @@
                             <p class="setting-description">This prompt will be automatically added to the beginning of new conversations with all AI providers.</p>
                         </div>
                     </div>
-                </div>
-                
-                <!-- MCP Tab -->                <!-- Tokens Tab -->
-                <div id="tokensTab" class="tab-content">
+                    
                     <!-- Anthropic Thinking Section -->
-                    <div class="settings-section anthropic-thinking-section">
+                    <div class="settings-section thinking-section" data-provider="anthropic">
                         <h3>Anthropic (Claude) Thinking</h3>
                         <div class="checkbox-group">
                             <input type="checkbox" id="enableThinkingAnthropic" />
@@ -155,12 +155,19 @@
                                 <input type="range" id="thinkingBudgetAnthropic" min="1024" max="32000" step="1024" value="8192">
                                 <span id="thinkingBudgetValueAnthropic">8192</span>
                             </div>
+                            <div class="budget-presets">
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetAnthropic" data-value="1024">Light (1K)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetAnthropic" data-value="4096">Medium (4K)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetAnthropic" data-value="8192">High (8K)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetAnthropic" data-value="16384">Heavy (16K)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetAnthropic" data-value="32000">Max (32K)</button>
+                            </div>
                             <p class="setting-description">Higher budgets allow more thorough reasoning but cost more tokens. Range: 1024-32000</p>
                         </div>
                     </div>
                     
                     <!-- Google Thinking Section -->
-                    <div class="settings-section google-thinking-section">
+                    <div class="settings-section thinking-section" data-provider="google">
                         <h3>Google (Gemini) Thinking</h3>
                         <div class="checkbox-group">
                             <input type="checkbox" id="enableThinkingGoogle" />

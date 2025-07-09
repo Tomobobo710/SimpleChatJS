@@ -309,14 +309,7 @@
     margin: 0;
 }
 
-/* Thinking mode controls */
-.thinking-budget-group {
-    margin-top: 10px;
-    padding: 10px;
-    background-color: var(--background-light);
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-}
+/* Legacy thinking mode controls - keeping for compatibility */
 
 .budget-input-container {
     display: flex;
@@ -570,7 +563,37 @@ input[type="checkbox"]:disabled {
     border: 1px inset #555;
     background: linear-gradient(to bottom, #3d1a1a, #5a2d2d);
 }
-/* Budget presets for Google thinking */
+/* Legacy budget presets - removed in favor of unified version */
+
+/* Unified thinking sections */
+.thinking-section {
+    border-left: 3px solid var(--thinking-color);
+    padding-left: 15px;
+}
+
+.thinking-section[data-provider="anthropic"] {
+    --thinking-color: #ff6b35;
+}
+
+.thinking-section[data-provider="google"] {
+    --thinking-color: #4285f4;
+}
+
+/* Unified thinking section headings */
+.thinking-section h3 {
+    color: var(--thinking-color);
+}
+
+/* Unified thinking budget groups */
+.thinking-budget-group {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #2a2a2a;
+    border-radius: 4px;
+    border: 1px solid #555;
+}
+
+/* Unified budget presets */
 .budget-presets {
     display: flex;
     flex-wrap: wrap;
@@ -581,44 +604,24 @@ input[type="checkbox"]:disabled {
 
 .budget-preset {
     padding: 4px 8px;
-    background: var(--surface-secondary);
-    border: 1px solid var(--border-color);
+    background: #3a3a3a;
+    border: 1px solid #555;
     border-radius: 4px;
     font-size: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
-    color: var(--text-secondary);
+    color: #ccc;
 }
 
 .budget-preset:hover {
-    background: var(--surface-hover);
-    border-color: var(--accent-primary);
+    background: #4a4a4a;
+    border-color: var(--thinking-color);
 }
 
 .budget-preset.active {
-    background: var(--accent-primary);
-    border-color: var(--accent-primary);
+    background: var(--thinking-color);
+    border-color: var(--thinking-color);
     color: white;
-}
-
-/* Provider-specific thinking sections */
-.anthropic-thinking-section {
-    border-left: 3px solid #ff6b35;
-    padding-left: 15px;
-}
-
-.google-thinking-section {
-    border-left: 3px solid #4285f4;
-    padding-left: 15px;
-}
-
-/* Provider section headings */
-.anthropic-thinking-section h3 {
-    color: #ff6b35;
-}
-
-.google-thinking-section h3 {
-    color: #4285f4;
 }
 
 /* System prompts section */
@@ -634,9 +637,9 @@ input[type="checkbox"]:disabled {
 .system-prompt-group {
     margin-top: 10px;
     padding: 10px;
-    background-color: var(--background-light);
+    background-color: #2a2a2a;
     border-radius: 4px;
-    border: 1px solid var(--border-color);
+    border: 1px solid #555;
 }
 
 .system-prompt-group textarea {

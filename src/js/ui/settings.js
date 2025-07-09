@@ -574,9 +574,13 @@ function loadProviderThinkingSettings(settings) {
     
     if (enableThinkingAnthropic && thinkingBudgetAnthropic) {
         enableThinkingAnthropic.checked = settings.enableThinkingAnthropic !== undefined ? settings.enableThinkingAnthropic : true;
-        thinkingBudgetAnthropic.value = settings.thinkingBudgetAnthropic !== undefined ? settings.thinkingBudgetAnthropic : 1024;
-        thinkingBudgetValueAnthropic.textContent = settings.thinkingBudgetAnthropic !== undefined ? settings.thinkingBudgetAnthropic : 1024;
-        thinkingBudgetGroupAnthropic.style.display = (settings.enableThinkingAnthropic !== undefined ? settings.enableThinkingAnthropic : true) ? 'block' : 'none';
+        const budgetValue = settings.thinkingBudgetAnthropic !== undefined ? settings.thinkingBudgetAnthropic : 1024;
+        thinkingBudgetAnthropic.value = budgetValue;
+        thinkingBudgetValueAnthropic.textContent = budgetValue;
+        thinkingBudgetGroupAnthropic.style.display = enableThinkingAnthropic.checked ? 'block' : 'none';
+        
+        // Update preset button active state
+        updatePresetButtons('thinkingBudgetAnthropic', budgetValue);
     }
     
     // Google thinking settings
@@ -615,7 +619,9 @@ function setupThinkingEventHandlers() {
     
     if (thinkingBudgetAnthropic && thinkingBudgetValueAnthropic) {
         thinkingBudgetAnthropic.addEventListener('input', () => {
-            thinkingBudgetValueAnthropic.textContent = thinkingBudgetAnthropic.value;
+            const value = thinkingBudgetAnthropic.value;
+            thinkingBudgetValueAnthropic.textContent = value;
+            updatePresetButtons('thinkingBudgetAnthropic', value);
         });
     }
     
@@ -641,7 +647,7 @@ function setupThinkingEventHandlers() {
         });
     }
     
-    // Google preset buttons
+    // Unified preset buttons for all providers
     const budgetPresets = document.querySelectorAll('.budget-preset');
     budgetPresets.forEach(button => {
         button.addEventListener('click', () => {
@@ -652,16 +658,21 @@ function setupThinkingEventHandlers() {
             
             if (slider && valueDisplay) {
                 slider.value = value;
-                valueDisplay.textContent = value === -1 ? 'Auto' : value;
-                updateGooglePresetButtons(value);
+                // Handle special Google values
+                if (target === 'thinkingBudgetGoogle') {
+                    valueDisplay.textContent = value === -1 ? 'Auto' : value;
+                } else {
+                    valueDisplay.textContent = value;
+                }
+                updatePresetButtons(target, value);
             }
         });
     });
 }
 
-// Update Google preset button active states
-function updateGooglePresetButtons(currentValue) {
-    const presets = document.querySelectorAll('.budget-preset');
+// Update preset button active states for any provider
+function updatePresetButtons(targetId, currentValue) {
+    const presets = document.querySelectorAll(`[data-target="${targetId}"]`);
     presets.forEach(preset => {
         const presetValue = parseInt(preset.dataset.value);
         if (presetValue === parseInt(currentValue)) {
@@ -670,6 +681,11 @@ function updateGooglePresetButtons(currentValue) {
             preset.classList.remove('active');
         }
     });
+}
+
+// Legacy function for backwards compatibility
+function updateGooglePresetButtons(currentValue) {
+    updatePresetButtons('thinkingBudgetGoogle', currentValue);
 }
 
 // Load system prompt settings
@@ -703,8 +719,8 @@ function setupSystemPromptEventHandlers() {
 
 // Show/hide provider-specific thinking controls based on API provider
 function updateThinkingControlsVisibility(apiUrl) {
-    const anthropicSection = document.querySelector('.anthropic-thinking-section');
-    const googleSection = document.querySelector('.google-thinking-section');
+    const anthropicSection = document.querySelector('.thinking-section[data-provider="anthropic"]');
+    const googleSection = document.querySelector('.thinking-section[data-provider="google"]');
     
     if (!anthropicSection || !googleSection) return;
     
