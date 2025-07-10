@@ -3,6 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
 
+// Default system prompt constant
+const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.';
+
 // Current settings in memory
 let currentSettings = {
     apiUrl: 'http://localhost:11434/v1',
@@ -34,7 +37,7 @@ function getDefaultProfileSettings() {
         enableThinkingGoogle: true,
         thinkingBudgetGoogle: -1,
         enableSystemPrompt: true,
-        systemPrompt: 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.'
+        systemPrompt: DEFAULT_SYSTEM_PROMPT
     };
 }
 
@@ -47,7 +50,7 @@ function getDefaultProfiles() {
                 apiUrl: 'http://localhost:11434/v1',
                 modelName: '',
                 enableSystemPrompt: true,
-                systemPrompt: 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.'
+                systemPrompt: DEFAULT_SYSTEM_PROMPT
             }
         },
         activeProfile: 'Default'
@@ -285,5 +288,8 @@ module.exports = {
     switchProfile,
     saveAsProfile,
     deleteProfile,
-    updateActiveProfile
+    updateActiveProfile,
+    
+    // Constants
+    DEFAULT_SYSTEM_PROMPT
 };

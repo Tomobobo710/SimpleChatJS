@@ -3,6 +3,8 @@
 // Profile management variables
 let currentProfilesData = null;
 
+// No more wimpy fallbacks - system prompt must come from settings
+
 // Load initial settings
 async function loadInitialSettings() {
     try {
@@ -26,7 +28,7 @@ async function loadInitialSettings() {
         if (settings.logLevel) {
             logger.setLevel(settings.logLevel);
             const logLevelSelect = document.getElementById('logLevel');
-            if (logLevelSelect) logLevelSelect.value = settings.logLevel;
+            logLevelSelect.value = settings.logLevel;
         }
         
         // Load enabled tools
@@ -36,24 +38,20 @@ async function loadInitialSettings() {
         if (settings.apiUrl) {
             logger.info('API URL configured - fetching available models for dropdown');
             try {
-                await fetchAvailableModels(settings.apiUrl, settings.apiKey || '');
+                await fetchAvailableModels(settings.apiUrl, settings.apiKey);
             } catch (error) {
                 logger.warn('Could not auto-fetch models at startup:', error.message);
                 // Still show current model in dropdown if fetch fails
-                if (mainModelSelect && settings.modelName) {
-                    mainModelSelect.innerHTML = `<option value="${settings.modelName}">${settings.modelName}</option>`;
-                    mainModelSelect.value = settings.modelName;
-                }
+                mainModelSelect.innerHTML = `<option value="${settings.modelName}">${settings.modelName}</option>`;
+                mainModelSelect.value = settings.modelName;
             }
         } else {
             // No API URL configured, just show current model if available
-            if (mainModelSelect) {
-                if (settings.modelName) {
-                    mainModelSelect.innerHTML = `<option value="${settings.modelName}">${settings.modelName}</option>`;
-                    mainModelSelect.value = settings.modelName;
-                } else {
-                    mainModelSelect.innerHTML = '<option value="">Configure API URL first</option>';
-                }
+            if (settings.modelName) {
+                mainModelSelect.innerHTML = `<option value="${settings.modelName}">${settings.modelName}</option>`;
+                mainModelSelect.value = settings.modelName;
+            } else {
+                mainModelSelect.innerHTML = '<option value="">Configure API URL first</option>';
             }
         }
 
@@ -75,12 +73,12 @@ async function loadSettingsIntoModal() {
         const settings = await response.json();
         logger.info('Loading fresh settings into modal:', settings);
         
-        // If no API URL is set, use the default Ollama URL
-        apiUrlInput.value = settings.apiUrl || 'http://localhost:11434/v1';
-        apiKeyInput.value = settings.apiKey || '';
-        modelNameInput.value = settings.modelName || '';
-        debugPanelsInput.checked = settings.debugPanels !== undefined ? settings.debugPanels : true;
-        showPhaseMarkersInput.checked = settings.showPhaseMarkers || false;
+        // Load settings directly - crash if they don't exist
+        apiUrlInput.value = settings.apiUrl;
+        apiKeyInput.value = settings.apiKey;
+        modelNameInput.value = settings.modelName;
+        debugPanelsInput.checked = settings.debugPanels;
+        showPhaseMarkersInput.checked = settings.showPhaseMarkers;
         
         // Provider-specific thinking mode settings
         loadProviderThinkingSettings(settings);
@@ -88,25 +86,18 @@ async function loadSettingsIntoModal() {
         // System prompt settings
         loadSystemPromptSettings(settings);
         
-        // Also update main model dropdown if it exists
-        if (mainModelSelect && settings.modelName) {
-            mainModelSelect.value = settings.modelName;
-        }
+        // Update main model dropdown
+        mainModelSelect.value = settings.modelName;
         
         // Show/hide thinking controls based on provider
-        updateThinkingControlsVisibility(settings.apiUrl || '');
+        updateThinkingControlsVisibility(settings.apiUrl);
         // Setup thinking control event handlers
         setupThinkingEventHandlers();
         // Setup system prompt event handlers
         setupSystemPromptEventHandlers();
         
-        // If API URL is set, try to fetch models automatically
-        if (settings.apiUrl) {
-            fetchAvailableModels(settings.apiUrl, settings.apiKey || '').catch(() => {
-                // Silently fail - just means models couldn't be fetched
-                logger.info('Could not auto-fetch models for existing API URL');
-            });
-        }
+        // Fetch models - fail hard if this doesn't work
+        await fetchAvailableModels(settings.apiUrl, settings.apiKey);
         
         logger.info('Form values after loading:', {
             apiUrl: apiUrlInput.value,
@@ -118,18 +109,7 @@ async function loadSettingsIntoModal() {
         
     } catch (error) {
         logger.error('Failed to load settings into modal:', error);
-        // Fallback to defaults if backend fails
-        apiUrlInput.value = 'http://localhost:11434/v1';
-        apiKeyInput.value = '';
-        modelNameInput.value = '';
-        debugPanelsInput.checked = true;
-        showPhaseMarkersInput.checked = false;
-        
-        // Provider-specific thinking mode fallbacks
-        loadProviderThinkingSettings({});
-        
-        // System prompt fallbacks
-        loadSystemPromptSettings({});
+        throw error; // FAIL HARD - no wimpy fallbacks
     }
 }
 
@@ -148,14 +128,14 @@ async function handleSaveSettings() {
         debugPanels: debugPanelsInput.checked,
         showPhaseMarkers: showPhaseMarkersInput.checked,
         // Provider-specific thinking settings
-        enableThinkingAnthropic: enableThinkingAnthropic ? enableThinkingAnthropic.checked : true,
-        thinkingBudgetAnthropic: thinkingBudgetAnthropic ? parseInt(thinkingBudgetAnthropic.value) : 1024,
-        enableThinkingGoogle: enableThinkingGoogle ? enableThinkingGoogle.checked : true,
-        thinkingBudgetGoogle: thinkingBudgetGoogle ? parseInt(thinkingBudgetGoogle.value) : -1,
+        enableThinkingAnthropic: enableThinkingAnthropic.checked,
+        thinkingBudgetAnthropic: parseInt(thinkingBudgetAnthropic.value),
+        enableThinkingGoogle: enableThinkingGoogle.checked,
+        thinkingBudgetGoogle: parseInt(thinkingBudgetGoogle.value),
         
         // System prompt settings
-        enableSystemPrompt: document.getElementById('enableSystemPrompt') ? document.getElementById('enableSystemPrompt').checked : true,
-        systemPrompt: document.getElementById('systemPrompt') ? document.getElementById('systemPrompt').value.trim() : 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.'
+        enableSystemPrompt: document.getElementById('enableSystemPrompt').checked,
+        systemPrompt: document.getElementById('systemPrompt').value.trim()
     };
     
     logger.info('Attempting to save settings:', settings);
@@ -178,7 +158,7 @@ async function handleSaveSettings() {
         if (!response.ok) throw new Error('Failed to save');
         
         // Update cached settings immediately
-        const currentSettings = window.cachedSettings() || {};
+        const currentSettings = window.cachedSettings();
         window.setCachedSettings({ ...currentSettings, ...settings });
         
         showSuccess('Settings saved successfully');
@@ -572,16 +552,14 @@ function loadProviderThinkingSettings(settings) {
     const thinkingBudgetGroupAnthropic = document.getElementById('thinkingBudgetGroupAnthropic');
     const thinkingBudgetValueAnthropic = document.getElementById('thinkingBudgetValueAnthropic');
     
-    if (enableThinkingAnthropic && thinkingBudgetAnthropic) {
-        enableThinkingAnthropic.checked = settings.enableThinkingAnthropic !== undefined ? settings.enableThinkingAnthropic : true;
-        const budgetValue = settings.thinkingBudgetAnthropic !== undefined ? settings.thinkingBudgetAnthropic : 1024;
-        thinkingBudgetAnthropic.value = budgetValue;
-        thinkingBudgetValueAnthropic.textContent = budgetValue;
-        thinkingBudgetGroupAnthropic.style.display = enableThinkingAnthropic.checked ? 'block' : 'none';
-        
-        // Update preset button active state
-        updatePresetButtons('thinkingBudgetAnthropic', budgetValue);
-    }
+    enableThinkingAnthropic.checked = settings.enableThinkingAnthropic;
+    const anthropicBudgetValue = settings.thinkingBudgetAnthropic;
+    thinkingBudgetAnthropic.value = anthropicBudgetValue;
+    thinkingBudgetValueAnthropic.textContent = anthropicBudgetValue;
+    thinkingBudgetGroupAnthropic.style.display = enableThinkingAnthropic.checked ? 'block' : 'none';
+    
+    // Update preset button active state
+    updatePresetButtons('thinkingBudgetAnthropic', anthropicBudgetValue);
     
     // Google thinking settings
     const enableThinkingGoogle = document.getElementById('enableThinkingGoogle');
@@ -589,16 +567,14 @@ function loadProviderThinkingSettings(settings) {
     const thinkingBudgetGroupGoogle = document.getElementById('thinkingBudgetGroupGoogle');
     const thinkingBudgetValueGoogle = document.getElementById('thinkingBudgetValueGoogle');
     
-    if (enableThinkingGoogle && thinkingBudgetGoogle) {
-        enableThinkingGoogle.checked = settings.enableThinkingGoogle !== undefined ? settings.enableThinkingGoogle : true;
-        const budgetValue = settings.thinkingBudgetGoogle !== undefined ? settings.thinkingBudgetGoogle : -1;
-        thinkingBudgetGoogle.value = budgetValue;
-        thinkingBudgetValueGoogle.textContent = budgetValue === -1 || budgetValue === '-1' ? 'Auto' : budgetValue;
-        thinkingBudgetGroupGoogle.style.display = enableThinkingGoogle.checked ? 'block' : 'none';
-        
-        // Update preset button active state
-        updateGooglePresetButtons(budgetValue);
-    }
+    enableThinkingGoogle.checked = settings.enableThinkingGoogle;
+    const googleBudgetValue = settings.thinkingBudgetGoogle;
+    thinkingBudgetGoogle.value = googleBudgetValue;
+    thinkingBudgetValueGoogle.textContent = googleBudgetValue === -1 || googleBudgetValue === '-1' ? 'Auto' : googleBudgetValue;
+    thinkingBudgetGroupGoogle.style.display = enableThinkingGoogle.checked ? 'block' : 'none';
+    
+    // Update preset button active state
+    updateGooglePresetButtons(googleBudgetValue);
 }
 
 // Setup event handlers for thinking controls
@@ -694,13 +670,9 @@ function loadSystemPromptSettings(settings) {
     const systemPrompt = document.getElementById('systemPrompt');
     const systemPromptGroup = document.getElementById('systemPromptGroup');
     
-    if (enableSystemPrompt && systemPrompt && systemPromptGroup) {
-        const defaultPrompt = 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.';
-        
-        enableSystemPrompt.checked = settings.enableSystemPrompt !== undefined ? settings.enableSystemPrompt : true;
-        systemPrompt.value = settings.systemPrompt !== undefined ? settings.systemPrompt : defaultPrompt;
-        systemPromptGroup.style.display = enableSystemPrompt.checked ? 'block' : 'none';
-    }
+    enableSystemPrompt.checked = settings.enableSystemPrompt;
+    systemPrompt.value = settings.systemPrompt;
+    systemPromptGroup.style.display = enableSystemPrompt.checked ? 'block' : 'none';
 }
 
 // Setup event handlers for system prompt controls
