@@ -216,9 +216,21 @@ function getChatHistoryForAPI(chat_id) {
         const branchMessages = messagesStmt.all(activeBranch.id);
         
         branchMessages.forEach(row => {
+            // Parse content - handle both string and JSON (multimodal) content
+            let parsedContent = row.content;
+            if (typeof row.content === 'string' && row.content.startsWith('[')) {
+                try {
+                    // Try to parse as JSON array (multimodal content)
+                    parsedContent = JSON.parse(row.content);
+                } catch (e) {
+                    // If parsing fails, keep as string
+                    parsedContent = row.content;
+                }
+            }
+            
             const message = {
                 role: row.role,
-                content: row.content,
+                content: parsedContent,
                 turn_number: row.turn_number
             };
             
@@ -270,7 +282,9 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
         }
         
         // Prepare message data
-        const content = messageData.content || '';
+        const content = Array.isArray(messageData.content) 
+            ? JSON.stringify(messageData.content)  // JSON stringify multimodal content
+            : messageData.content || '';  // Keep strings as-is
         const role = messageData.role || 'user';
         const toolCalls = messageData.tool_calls ? JSON.stringify(messageData.tool_calls) : null;
         const toolCallId = messageData.tool_call_id || null;

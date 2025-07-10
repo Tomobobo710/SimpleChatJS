@@ -4,6 +4,8 @@
 let messageInput, sendBtn, turnsContainer, scrollContainer, conductorModeCheckbox;
 let settingsModal, settingsBtn, newChatBtn, closeModalBtn;
 let apiUrlInput, apiKeyInput, modelNameInput, modelSelectDropdown, mainModelSelect, refreshModelsBtn, saveSettingsBtn, debugPanelsInput, testConnectionBtn;
+// Image upload elements
+let imageInput, addImageBtn, imagePreviews, imageArea;
 // Legacy thinking variables removed
 let mcpServersDiv;
 let mcpConfigModal, mcpConfigBtn, closeMcpModalBtn, mcpConfigText, saveMcpConfigBtn, testMcpConfigBtn;
@@ -90,25 +92,61 @@ async function handleSendMessage() {
         return;
     }
     
-    const message = messageInput.value.trim();
-    if (!message) return;
+    const textMessage = messageInput.value.trim();
+    const images = getSelectedImages();
+    
+    // Need either text or images
+    if (!textMessage && images.length === 0) return;
+    
+    // Create message content (string for text-only, array for multimodal)
+    let messageContent;
+    if (images.length > 0) {
+        // Multimodal content
+        messageContent = [];
+        
+        // Add text part if present
+        if (textMessage) {
+            messageContent.push({
+                type: 'text',
+                text: textMessage
+            });
+        }
+        
+        // Add image parts
+        images.forEach(imageData => {
+            messageContent.push({
+                type: 'image',
+                imageData: imageData.data,
+                mimeType: imageData.mimeType
+            });
+        });
+        
+        logger.info(`Sending multimodal message: ${textMessage ? 'text + ' : ''}${images.length} image(s)`);
+    } else {
+        // Text-only content (backward compatible)
+        messageContent = textMessage;
+        logger.info('Sending text-only message');
+    }
     
     const isConductorMode = conductorModeCheckbox.checked;
     
-    // Clear input and show loading
+    // Clear input and images, show loading
     messageInput.value = '';
+    clearSelectedImages();
     setLoading(true);
     
     try {
         // Get clean conversation history once using our utility function
-        const conversationHistory = await getCleanConversationHistory(currentChatId, message);
+        // Use text for logging, but we'll send the full messageContent
+        const logMessage = typeof messageContent === 'string' ? messageContent : textMessage || '[Images only]';
+        const conversationHistory = await getCleanConversationHistory(currentChatId, logMessage);
         
         if (isConductorMode) {
             // Use conductor mode with block system
-            await handleConductorChat(message, conversationHistory);
+            await handleConductorChat(messageContent, conversationHistory);
         } else {
             // Simple chat mode
-            await handleSimpleChat(message, conversationHistory);
+            await handleSimpleChat(messageContent, conversationHistory);
         }
     } catch (error) {
         if (error.name === 'AbortError') {

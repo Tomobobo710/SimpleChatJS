@@ -1,9 +1,19 @@
 // Simple Chat Mode - Direct streaming chat without conductor complexity
 
-async function handleSimpleChat(message, conversationHistory) {
+async function handleSimpleChat(messageContent, conversationHistory) {
     // These variables will be used across both user and assistant phases
     let requestId, requestInfo;
-    logger.info('Starting simple chat');
+    
+    // Handle both string messages and multimodal content
+    const isMultimodal = Array.isArray(messageContent);
+    const textContent = isMultimodal 
+        ? messageContent.find(part => part.type === 'text')?.text || '[Images only]'
+        : messageContent;
+    const imageCount = isMultimodal 
+        ? messageContent.filter(part => part.type === 'image').length 
+        : 0;
+    
+    logger.info(`Starting simple chat - ${isMultimodal ? 'multimodal' : 'text-only'} message${imageCount > 0 ? ` with ${imageCount} image(s)` : ''}`);
     
     // Get enabled tools that will be sent to AI (do this ONCE)
     const settings = loadSettings();
@@ -19,13 +29,13 @@ async function handleSimpleChat(message, conversationHistory) {
     // Add user message to UI using global chatRenderer (same as saved chats)
     chatRenderer.renderTurn({
         role: 'user',
-        content: message,
+        content: messageContent, // Pass full content (string or multimodal array)
         turn_number: userTurnNumber
     }, true);
     
     // Save user message to database
     try {
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, null, userTurnNumber);
+        await saveCompleteMessage(currentChatId, { role: 'user', content: messageContent }, null, userTurnNumber);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
     }
@@ -38,11 +48,14 @@ async function handleSimpleChat(message, conversationHistory) {
                 step: 1,
                 data: {
                     userQuery: {
-                        message: message,
+                        message: textContent,
+                        content: messageContent, // Full content for debugging
                         chat_id: currentChatId,
                         conductor_mode: false,
                         timestamp: new Date().toISOString(),
-                        message_length: message.length,
+                        message_length: textContent.length,
+                        is_multimodal: isMultimodal,
+                        image_count: imageCount,
                         turn_number: userTurnNumber // Include turn number
                     },
                     tools: {
@@ -72,7 +85,7 @@ async function handleSimpleChat(message, conversationHistory) {
     userDebugData.currentTurnNumber = userTurnNumber;
     
     // INITIATE the API request here (but don't await the response)
-    requestInfo = initiateMessageRequest(message, false, enabledToolDefinitions, null, null, false, false, requestId);
+    requestInfo = initiateMessageRequest(messageContent, false, enabledToolDefinitions, null, null, false, false, requestId);
     logger.info('[SIMPLE-CHAT] Initiated API request with requestId:', requestId);
     
     // Add API request info to debug data
@@ -83,7 +96,9 @@ async function handleSimpleChat(message, conversationHistory) {
         data: {
             requestId: requestId,
             endpoint: 'chat',
-            message: message,
+            message: textContent,
+            content: messageContent, // Full content for debugging
+            is_multimodal: isMultimodal,
             tools_enabled: enabledToolDefinitions.length,
             turn_number: userTurnNumber // Include turn number here too
         }

@@ -118,12 +118,24 @@ router.get('/chat/:id/history', (req, res) => {
             const parsedBlocks = row.blocks ? JSON.parse(row.blocks) : null;
             const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;
             
+            // Parse content - handle both string and JSON (multimodal) content
+            let parsedContent = row.content;
+            if (typeof row.content === 'string' && row.content.startsWith('[')) {
+                try {
+                    // Try to parse as JSON array (multimodal content)
+                    parsedContent = JSON.parse(row.content);
+                } catch (e) {
+                    // If parsing fails, keep as string
+                    parsedContent = row.content;
+                }
+            }
+            
             log(`[HISTORY] Loading blocks for ${row.role} message in turn ${row.turn_number}:`, parsedBlocks ? parsedBlocks.map(b => ({ type: b.type, id: b.id })) : 'null');
             
             const message = {
                 id: row.original_message_id || row.id, // Use original ID if available for editing compatibility
                 role: row.role,
-                content: row.content,
+                content: parsedContent,
                 timestamp: row.timestamp,
                 turn_number: row.turn_number,
                 edit_count: row.edit_count || 0,

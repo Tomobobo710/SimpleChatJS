@@ -4,6 +4,12 @@
 function initializeElements() {
     messageInput = document.getElementById('messageInput');
     sendBtn = document.getElementById('sendBtn');
+    
+    // Image upload elements
+    imageInput = document.getElementById('imageInput');
+    addImageBtn = document.getElementById('addImageBtn');
+    imagePreviews = document.getElementById('imagePreviews');
+    imageArea = document.getElementById('imageArea');
     turnsContainer = document.getElementById('messages');        // Inner div for appending turns
     scrollContainer = document.getElementById('messagesContainer');   // Outer div for scrolling
     conductorModeCheckbox = document.getElementById('conductorMode');
@@ -182,6 +188,68 @@ function setupEventListeners() {
     
     // New chat
     newChatBtn.addEventListener('click', handleNewChat);
+    // Image upload functionality
+    addImageBtn.addEventListener('click', () => {
+        imageInput.click();
+    });
+    
+    imageInput.addEventListener('change', handleImageSelect);
+    
+    // Drag and drop for images
+    imageArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        imageArea.classList.add('drag-over');
+    });
+    
+    imageArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        imageArea.classList.remove('drag-over');
+    });
+    
+    imageArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        imageArea.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+        if (files.length > 0) {
+            handleImageFiles(files);
+        }
+    });
+    // Clipboard paste support for images
+    document.addEventListener('paste', (e) => {
+        // Only handle paste when the message input is focused or in the input area
+        const isInputFocused = document.activeElement === messageInput;
+        const isInInputArea = imageArea.contains(document.activeElement) || 
+                              document.getElementById('inputContainer').contains(document.activeElement);
+        
+        if (!isInputFocused && !isInInputArea) {
+            return; // Don't intercept paste events outside input area
+        }
+        
+        const clipboardData = e.clipboardData || window.clipboardData;
+        const items = clipboardData.items;
+        
+        let hasImages = false;
+        const imageFiles = [];
+        
+        // Check for image items in clipboard
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.startsWith('image/')) {
+                hasImages = true;
+                const file = item.getAsFile();
+                if (file) {
+                    imageFiles.push(file);
+                }
+            }
+        }
+        
+        // If we found images, prevent default paste and handle them
+        if (hasImages && imageFiles.length > 0) {
+            e.preventDefault();
+            handleImageFiles(imageFiles, 'paste');
+            logger.info(`Pasted ${imageFiles.length} image(s) from clipboard`);
+        }
+    });
     
     // MCP Config modal
     mcpConfigBtn.addEventListener('click', () => {
@@ -251,3 +319,121 @@ window.addEventListener('load', () => {
         messageInput.focus();
     }
 });
+
+// ===== IMAGE HANDLING FUNCTIONS =====
+
+// Store selected images
+let selectedImages = [];
+
+function handleImageSelect(event) {
+    const files = Array.from(event.target.files);
+    handleImageFiles(files);
+    // Clear the input so the same file can be selected again
+    event.target.value = '';
+}
+
+function handleImageFiles(files, source = 'file') {
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length === 0) {
+        logger.warn('No valid image files selected');
+        return;
+    }
+    
+    // Show brief visual feedback for paste operations
+    if (source === 'paste' || source === 'clipboard') {
+        const hint = document.querySelector('.image-hint');
+        if (hint) {
+            const originalText = hint.textContent;
+            hint.textContent = `✓ Pasted ${imageFiles.length} image${imageFiles.length > 1 ? 's' : ''}`;
+            hint.style.color = '#4a9d4a';
+            setTimeout(() => {
+                hint.textContent = originalText;
+                hint.style.color = '';
+            }, 2000);
+        }
+    }
+    
+    imageFiles.forEach(file => {
+        // Check file size (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            logger.warn(`Image ${file.name} is too large (max 10MB)`);
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const imageData = {
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                data: e.target.result.split(',')[1], // Remove data:image/...;base64, prefix
+                mimeType: file.type
+            };
+            
+            selectedImages.push(imageData);
+            createImagePreview(imageData, selectedImages.length - 1);
+            updateImageAreaVisibility();
+            
+            logger.info(`Added image: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+function createImagePreview(imageData, index) {
+    const preview = document.createElement('div');
+    preview.className = 'image-preview';
+    preview.dataset.index = index;
+    
+    const img = document.createElement('img');
+    img.src = `data:${imageData.mimeType};base64,${imageData.data}`;
+    img.alt = imageData.name;
+    img.title = `${imageData.name} (${(imageData.size / 1024).toFixed(1)}KB)`;
+    
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-btn';
+    removeBtn.innerHTML = '×';
+    removeBtn.title = 'Remove image';
+    removeBtn.onclick = () => removeImage(index);
+    
+    preview.appendChild(img);
+    preview.appendChild(removeBtn);
+    imagePreviews.appendChild(preview);
+}
+
+function removeImage(index) {
+    selectedImages.splice(index, 1);
+    
+    // Rebuild all previews with correct indices
+    imagePreviews.innerHTML = '';
+    selectedImages.forEach((imageData, newIndex) => {
+        createImagePreview(imageData, newIndex);
+    });
+    
+    updateImageAreaVisibility();
+    logger.info(`Removed image at index ${index}`);
+}
+
+function updateImageAreaVisibility() {
+    const hasImages = selectedImages.length > 0;
+    imagePreviews.style.display = hasImages ? 'flex' : 'none';
+    
+    // Update input container height smoothly
+    const inputContainer = document.getElementById('inputContainer');
+    if (hasImages) {
+        inputContainer.classList.add('has-images');
+    } else {
+        inputContainer.classList.remove('has-images');
+    }
+}
+
+function getSelectedImages() {
+    return selectedImages;
+}
+
+function clearSelectedImages() {
+    selectedImages = [];
+    imagePreviews.innerHTML = '';
+    updateImageAreaVisibility();
+}

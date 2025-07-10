@@ -82,9 +82,11 @@ class AnthropicAdapter extends BaseResponseAdapter {
                         content: content
                     });
                 } else {
+                    // Handle both string and multimodal array content
+                    const anthropicContent = this.convertContentToAnthropic(message.content);
                     anthropicMessages.push({
                         role: message.role,
-                        content: message.content
+                        content: anthropicContent
                     });
                 }
             }
@@ -269,6 +271,70 @@ class AnthropicAdapter extends BaseResponseAdapter {
         }
         
         return { events, context };
+    }
+
+    /**
+     * Convert content (string or multimodal array) to Anthropic format
+     * @param {string|Array} content - Message content
+     * @returns {string|Array} Content in Anthropic format
+     */
+    convertContentToAnthropic(content) {
+        // If content is a string (text-only), return as-is
+        if (typeof content === 'string') {
+            return content;
+        }
+        
+        // If content is an array (multimodal), convert each part
+        if (Array.isArray(content)) {
+            return content.map(part => {
+                switch (part.type) {
+                    case 'text':
+                        return {
+                            type: 'text',
+                            text: part.text
+                        };
+                    
+                    case 'image':
+                        // Convert to Anthropic's image format
+                        return {
+                            type: 'image',
+                            source: {
+                                type: 'base64',
+                                media_type: part.mimeType || 'image/jpeg',
+                                data: part.imageData
+                            }
+                        };
+                    
+                    default:
+                        // Fallback for unknown types
+                        console.warn(`[ANTHROPIC-ADAPTER] Unknown content part type: ${part.type}`);
+                        return {
+                            type: 'text',
+                            text: part.text || JSON.stringify(part)
+                        };
+                }
+            });
+        }
+        
+        // Fallback for unexpected content format
+        console.warn(`[ANTHROPIC-ADAPTER] Unexpected content format:`, typeof content);
+        return String(content);
+    }
+
+    /**
+     * Check if a model supports vision/image input
+     * Claude 3 and 4 family models support vision
+     */
+    supportsVision(modelName) {
+        // Claude 3 and 4 models support vision
+        const visionModels = [
+            'claude-3',
+            'claude-4'
+        ];
+        
+        return visionModels.some(visionModel => 
+            modelName.toLowerCase().includes(visionModel)
+        );
     }
 }
 

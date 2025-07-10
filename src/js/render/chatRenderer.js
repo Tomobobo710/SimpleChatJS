@@ -254,8 +254,80 @@ class ChatRenderer {
     renderChatBlock(content) {
         const div = document.createElement("div");
         div.className = "chat-block";
-        div.innerHTML = formatMessage(escapeHtml(content));
+        
+        // Handle multimodal content (array) or simple text content (string)
+        if (Array.isArray(content)) {
+            // Multimodal content - render each part
+            content.forEach(part => {
+                switch (part.type) {
+                    case 'text':
+                        if (part.text && part.text.trim()) {
+                            const textDiv = document.createElement('div');
+                            textDiv.className = 'content-part text-part';
+                            textDiv.innerHTML = formatMessage(escapeHtml(part.text));
+                            div.appendChild(textDiv);
+                        }
+                        break;
+                    
+                    case 'image':
+                        const imageDiv = document.createElement('div');
+                        imageDiv.className = 'content-part image-part';
+                        
+                        const img = document.createElement('img');
+                        img.src = `data:${part.mimeType};base64,${part.imageData}`;
+                        img.className = 'message-image';
+                        img.loading = 'lazy';
+                        img.onclick = () => this.openImageModal(img.src);
+                        
+                        imageDiv.appendChild(img);
+                        div.appendChild(imageDiv);
+                        break;
+                    
+                    default:
+                        console.warn('Unknown content part type:', part.type);
+                        break;
+                }
+            });
+        } else {
+            // Simple text content (backward compatible)
+            div.innerHTML = formatMessage(escapeHtml(content));
+        }
+        
         return div;
+    }
+    
+    // Open image in modal for full view
+    openImageModal(imageSrc) {
+        // Create modal if it doesn't exist
+        let modal = document.getElementById('imageModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'imageModal';
+            modal.className = 'image-modal hidden';
+            
+            const img = document.createElement('img');
+            img.id = 'modalImage';
+            modal.appendChild(img);
+            
+            // Close modal on click
+            modal.addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+            
+            // Close modal on Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+                    modal.classList.add('hidden');
+                }
+            });
+            
+            document.body.appendChild(modal);
+        }
+        
+        // Set image and show modal
+        const modalImg = document.getElementById('modalImage');
+        modalImg.src = imageSrc;
+        modal.classList.remove('hidden');
     }
     
     // Simple phase marker rendering - no more complexity!

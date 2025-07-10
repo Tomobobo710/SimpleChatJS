@@ -38,9 +38,11 @@ class GoogleAdapter extends BaseResponseAdapter {
             if (msg.parts) {
                 contents.push(msg);
             } else if (msg.role === 'user' || msg.role === 'assistant') {
+                // Convert content to parts array
+                const parts = this.convertContentToParts(msg.content);
                 contents.push({
                     role: msg.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: msg.content }]
+                    parts: parts
                 });
             } else if (msg.role === 'tool') {
                 // OpenAI tool response format - convert to Gemini
@@ -271,6 +273,46 @@ class GoogleAdapter extends BaseResponseAdapter {
     }
 
     /**
+     * Convert content (string or array) to Google Gemini parts format
+     * @param {string|Array} content - Message content
+     * @returns {Array} Array of parts for Gemini API
+     */
+    convertContentToParts(content) {
+        // If content is a string (current format), convert to text part
+        if (typeof content === 'string') {
+            return [{ text: content }];
+        }
+        
+        // If content is an array (new multimodal format), convert each part
+        if (Array.isArray(content)) {
+            return content.map(part => {
+                switch (part.type) {
+                    case 'text':
+                        return { text: part.text };
+                    
+                    case 'image':
+                        // Convert to Google's inlineData format
+                        return {
+                            inlineData: {
+                                mimeType: part.mimeType || 'image/jpeg',
+                                data: part.imageData
+                            }
+                        };
+                    
+                    default:
+                        // Fallback for unknown types
+                        console.warn(`[GOOGLE-ADAPTER] Unknown content part type: ${part.type}`);
+                        return { text: part.text || JSON.stringify(part) };
+                }
+            });
+        }
+        
+        // Fallback for unexpected content format
+        console.warn(`[GOOGLE-ADAPTER] Unexpected content format:`, typeof content);
+        return [{ text: String(content) }];
+    }
+
+    /**
      * Clean schema for Gemini compatibility
      * Removes fields that Gemini doesn't support
      */
@@ -305,6 +347,15 @@ class GoogleAdapter extends BaseResponseAdapter {
      */
     supportsThinking(modelName) {
         return modelName.toLowerCase().includes('2.5');
+    }
+    /**
+     * Check if a model supports vision/image input
+     * All current Gemini models support vision
+     */
+    supportsVision(modelName) {
+        // All Gemini models (1.5+, 2.0+, 2.5+) support vision
+        // Could add more specific logic here if needed in the future
+        return true;
     }
 
     /**

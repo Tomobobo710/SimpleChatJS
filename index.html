@@ -56,8 +56,22 @@
             </div>
             
             <div id="inputContainer" class="input-container">
-                <textarea id="messageInput" placeholder="Type your message and press Enter..." rows="2"></textarea>
-                <button id="sendBtn" class="send-button">Send</button>
+                <div class="input-row">
+                    <textarea id="messageInput" placeholder="Type your message and press Enter... (Ctrl+V to paste images)" rows="2"></textarea>
+                    <button id="sendBtn" class="send-button">Send</button>
+                </div>
+                
+                <!-- Image upload and preview area -->
+                <div id="imageArea" class="image-area">
+                    <div class="image-upload-controls">
+                        <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
+                        <button id="addImageBtn" class="add-image-btn" title="Add images">
+                            <span>📎</span>
+                        </button>
+                        <span class="image-hint">Drop, paste, or click to add images</span>
+                    </div>
+                    <div id="imagePreviews" class="image-previews"></div>
+                </div>
             </div>
         </div>
 
