@@ -4,7 +4,7 @@ const path = require('path');
 const { log } = require('../utils/logger');
 
 // Default system prompt constant
-const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. If the user\'s query requires you to use tools, do it. Otherwise, just chat with the user in a friendly manner.';
+const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. If the previous query requires you to use tools, do so. Otherwise, just chat with the user in a friendly manner.';
 
 // Current settings in memory
 let currentSettings = {
