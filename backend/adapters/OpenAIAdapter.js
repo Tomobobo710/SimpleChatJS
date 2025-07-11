@@ -38,10 +38,23 @@ class OpenAIAdapter extends BaseResponseAdapter {
     }
 
     convertRequest(unifiedRequest) {
-        // OpenAI uses the unified request format directly
+        // Process messages to handle multimodal content
+        const processedMessages = unifiedRequest.messages.map(message => {
+            return {
+                role: message.role,
+                content: this.convertContentToOpenAI(message.content),
+                // Preserve tool calls if present
+                ...(message.tool_calls ? { tool_calls: message.tool_calls } : {}),
+                // Preserve tool call id if present
+                ...(message.tool_call_id ? { tool_call_id: message.tool_call_id } : {}),
+                // Preserve tool name if present
+                ...(message.tool_name ? { tool_name: message.tool_name } : {})
+            };
+        });
+
         return {
             model: unifiedRequest.model,
-            messages: unifiedRequest.messages,
+            messages: processedMessages,
             stream: true,
             ...(unifiedRequest.tools?.length ? { tools: unifiedRequest.tools } : {})
         };
@@ -127,6 +140,68 @@ class OpenAIAdapter extends BaseResponseAdapter {
         
         return { events, context };
     }
+
+    /**
+     * Convert content (string or multimodal array) to OpenAI format
+     * @param {string|Array} content - Message content
+     * @returns {string|Array} Content in OpenAI format
+     */
+    convertContentToOpenAI(content) {
+        // If content is a string (text-only), return as-is
+        if (typeof content === 'string') {
+            return content;
+        }
+        
+        // If content is an array (multimodal), convert each part
+        if (Array.isArray(content)) {
+            return content.map(part => {
+                switch (part.type) {
+                    case 'text':
+                        return {
+                            type: 'text',
+                            text: part.text
+                        };
+                    
+                    case 'image':
+                        // Convert to OpenAI's image_url format with data URL
+                        const mimeType = part.mimeType || 'image/jpeg';
+                        const dataUrl = `data:${mimeType};base64,${part.imageData}`;
+                        
+                        return {
+                            type: 'image_url',
+                            image_url: {
+                                url: dataUrl
+                            }
+                        };
+                    
+                    default:
+                        // Fallback for unknown types
+                        console.warn(`[OPENAI-ADAPTER] Unknown content part type: ${part.type}`);
+                        return {
+                            type: 'text',
+                            text: part.text || JSON.stringify(part)
+                        };
+                }
+            });
+        }
+        
+        // Fallback for unexpected content format
+        console.warn(`[OPENAI-ADAPTER] Unexpected content format:`, typeof content);
+        return String(content);
+    }
+
+    /**
+     * Check if a model supports vision/image input
+     * Since OpenAI could be any model/provider, we'll assume vision support
+     * and let the API handle unsupported models
+     */
+    supportsVision(modelName) {
+        // For OpenAI adapter, we can't reliably detect vision support
+        // since it could be any model (local, OpenAI, compatible APIs)
+        // So we return true and let the API handle unsupported models
+        return true;
+    }
+
 }
 
 module.exports = OpenAIAdapter;
