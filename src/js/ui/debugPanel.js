@@ -255,34 +255,22 @@ class SequentialDebugPanel {
         
         content += `</div>`;  // Close message-history-section
         
-        // Construct unified request from available data
+        // Show the actual HTTP request data
         content += `<div class="http-request-section">`;
-        content += `<h4>HTTP Request to AI Provider</h4>`;
-        content += `<div class="debug-note">Unified request structure that would be sent to AI</div>`;
+        content += `<h4>ACTUAL HTTP Request to AI Provider</h4>`;
+        content += `<div class="debug-note">Real HTTP request that was sent to the API</div>`;
         
-        // Build unified request structure
-        const unifiedRequest = {};
-        
-        if (debugData.conversationHistory) {
-            unifiedRequest.messages = debugData.conversationHistory;
+        // Show the actual request data directly
+        if (debugData.actualHttpRequest && debugData.actualHttpRequest.body) {
+            content += this.createDropdown(
+                `Request Body (ACTUAL)`,
+                JSON.stringify(debugData.actualHttpRequest.body, null, 2),
+                true,
+                'json'
+            );
+        } else {
+            content += `<div class="debug-error">Actual request data not available.</div>`;
         }
-        
-        // Add tools from user input data
-        // We already have userInputStep from above, so we don't need to find it again
-        if (userInputStep && userInputStep.data && userInputStep.data.tools && userInputStep.data.tools.definitions) {
-            unifiedRequest.tools = userInputStep.data.tools.definitions;
-        }
-        
-        // Add typical fields
-        unifiedRequest.stream = true;
-        unifiedRequest.model = '[model from settings]';
-        
-        content += this.createDropdown(
-            `Unified Request Structure`,
-            JSON.stringify(unifiedRequest, null, 2),
-            false,
-            'json'
-        );
         
         content += `</div>`;
         

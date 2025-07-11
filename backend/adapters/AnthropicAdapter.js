@@ -155,7 +155,7 @@ class AnthropicAdapter extends BaseResponseAdapter {
             const settings = getCurrentSettings();
             return settings.enableThinkingAnthropic === true;
         } catch (error) {
-            console.log('[ANTHROPIC-ADAPTER] Could not get thinking settings, defaulting to disabled:', error.message);
+            logger.info('[ANTHROPIC-ADAPTER] Could not get thinking settings, defaulting to disabled:', error.message);
             return false;
         }
     }
@@ -171,7 +171,7 @@ class AnthropicAdapter extends BaseResponseAdapter {
             // Ensure it's within valid range for Anthropic
             return Math.max(1024, Math.min(32000, budget));
         } catch (error) {
-            console.log('[ANTHROPIC-ADAPTER] Could not get thinking budget, using default');
+            logger.info('[ANTHROPIC-ADAPTER] Could not get thinking budget, using default');
             return 1024; // default to minimum
         }
     }

@@ -48,13 +48,31 @@ async function saveTurnDebugData(chatId, turnNumber, debugData) {
             return null;
         }
         
-        // Update debug data in branch_messages for the specific turn
-        const stmt = db.prepare(`
-            UPDATE branch_messages 
-            SET debug_data = ?
+        // First check if a message exists for this turn
+        const checkStmt = db.prepare(`
+            SELECT id FROM branch_messages 
             WHERE branch_id = ? AND turn_number = ?
+            LIMIT 1
         `);
-        const result = stmt.run(debugDataJson, activeBranch.id, turnNumber);
+        const existing = checkStmt.get(activeBranch.id, turnNumber);
+        
+        let result;
+        if (existing) {
+            // Update existing message
+            const updateStmt = db.prepare(`
+                UPDATE branch_messages 
+                SET debug_data = ?
+                WHERE branch_id = ? AND turn_number = ?
+            `);
+            result = updateStmt.run(debugDataJson, activeBranch.id, turnNumber);
+        } else {
+            // Insert placeholder message with debug data
+            const insertStmt = db.prepare(`
+                INSERT INTO branch_messages (branch_id, turn_number, role, content, debug_data, timestamp)
+                VALUES (?, ?, 'user', '', ?, datetime('now'))
+            `);
+            result = insertStmt.run(activeBranch.id, turnNumber, debugDataJson);
+        }
         
         log(`[TURN-DEBUG] Updated debug data for turn ${turnNumber} in chat ${chatId} (branch: ${activeBranch.branch_name})`);
         return result;
@@ -324,7 +342,7 @@ const responseAdapterFactory = require('../adapters/ResponseAdapterFactory');
 const UnifiedResponse = require('../adapters/UnifiedResponse');
 
 // Handle chat with potential tool calls
-async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null, conductorPhase = null, blockToolExecution = false, blockRecursiveToolResponse = false) {
+async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null, conductorPhase = null, blockToolExecution = false, blockRecursiveToolResponse = false, userTurnNumber = null) {
     const currentSettings = getCurrentSettings();
     
     // Ensure we have a model name
@@ -361,20 +379,25 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             headers['X-Request-Id'] = requestId;
         }
         
+        // Include the actual AI request in response headers for frontend debug panel
+        if (requestData) {
+            headers['X-Actual-Request'] = encodeURIComponent(JSON.stringify(requestData));
+        }
+        
         res.writeHead(200, headers);
     }
     
     // Initialize debug data and turn number
     let collectedDebugData = existingDebugData;
     
-    // Calculate the turn number ONCE for this entire conversation (to prevent turn increment on recursive calls)
+    // Use the user turn number provided by frontend
     let currentTurn;
     if (collectedDebugData && collectedDebugData.currentTurn) {
         // Reuse existing turn from recursive calls
         currentTurn = collectedDebugData.currentTurn;
     } else {
-        // Get current turn (will be incremented when conversation is complete)
-        currentTurn = chatId ? getCurrentTurnNumber(chatId) + 1 : 1;
+        // Use the turn number from frontend, or calculate if not provided
+        currentTurn = userTurnNumber || (chatId ? getCurrentTurnNumber(chatId) + 1 : 1);
     }
     
     // Calculate next sequence step from existing debug data to maintain sequential order across recursive calls
@@ -421,6 +444,34 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
     }
     
+    // Store the REAL request data in the user's debug data    
+    if (chatId && currentTurn) {
+        try {
+            const userDebugData = getTurnDebugData(chatId, currentTurn);
+            
+            if (userDebugData) {
+                // Store the ACTUAL request that gets sent to AI with real tool definitions
+                userDebugData.actualHttpRequest = {
+                    url: targetUrl,
+                    method: 'POST',
+                    headers: { ...headers },
+                    body: requestData // This is the REAL request with full tool definitions
+                };
+                
+                // Save back to the same turn
+                saveTurnDebugData(chatId, currentTurn, userDebugData);
+            } else {
+                log('[DEBUG-STORE] FAIL - No user debug data found');
+            }
+        } catch (error) {
+            log('[DEBUG-STORE] ERROR:', error.message);
+        }
+    } else {
+        log('[DEBUG-STORE] SKIP - Missing chatId or currentTurn');
+    }
+    
+    log('[ACTUAL-REQUEST] Sending to API:', JSON.stringify(requestData, null, 2));
+    
     const url = new URL(targetUrl);
     const options = {
         hostname: url.hostname,
@@ -457,9 +508,30 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
                     collectedDebugData.rawData.errors.push({ type: 'http_error', message: errorData });
                 }
+                
+                // Parse and show the actual API error message to the user
+                let userErrorMessage = `API error: ${apiRes.statusCode} ${apiRes.statusMessage}`;
+                
+                try {
+                    // Try to parse the error response and extract useful details
+                    const errorObj = JSON.parse(errorData);
+                    if (errorObj.error && errorObj.error.message) {
+                        userErrorMessage = `[${apiRes.statusCode}] ${errorObj.error.message}`;
+                    } else if (errorObj.message) {
+                        userErrorMessage = `[${apiRes.statusCode}] ${errorObj.message}`;
+                    } else if (errorObj.detail) {
+                        userErrorMessage = `[${apiRes.statusCode}] ${errorObj.detail}`;
+                    }
+                } catch (parseError) {
+                    // If error response isn't JSON, show raw error data if it's reasonable length
+                    if (errorData && errorData.length < 500) {
+                        userErrorMessage = `[${apiRes.statusCode}] ${errorData.trim()}`;
+                    }
+                }
+                
+                res.write(userErrorMessage);
+                res.end();
             });
-            res.write(`API error: ${apiRes.statusCode} ${apiRes.statusMessage}`);
-            res.end();
             return;
         }
         
@@ -587,7 +659,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 await executeToolCallsAndContinue(
                     res, unifiedResponse.toolCalls, messages, tools, chatId, 
                     unifiedResponse.content, collectedDebugData, responseCounter, 
-                    requestId, conductorPhase, blockRecursiveToolResponse
+                    requestId, conductorPhase, blockRecursiveToolResponse, userTurnNumber
                 );
             } else {
                 // No tool calls, finish response
@@ -688,7 +760,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
 }
 
 // Execute tool calls and continue conversation
-async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, conductorPhase, blockRecursiveToolResponse) {
+async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, conductorPhase, blockRecursiveToolResponse, userTurnNumber) {
     // Get the turn number from debug data (calculated once at conversation start)
     const currentTurn = debugData && debugData.currentTurn ? debugData.currentTurn : 1;
     
@@ -823,13 +895,13 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     }
     
     // Continue conversation with tool results
-    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, conductorPhase);
+    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, conductorPhase, false, false, userTurnNumber);
 }
 
 // Process chat request (entry point from routes)
 async function processChatRequest(req, res) {
     try {
-        const { message, chat_id, conductor_mode, enabled_tools, conductor_phase, message_role, block_tool_execution, block_recursive_call, request_id } = req.body;
+        const { message, chat_id, conductor_mode, enabled_tools, conductor_phase, message_role, block_tool_execution, block_recursive_call, request_id, user_turn_number } = req.body;
         
         if (!message) {
             return res.status(400).json({ error: 'Message is required' });
@@ -910,7 +982,7 @@ async function processChatRequest(req, res) {
         // Initialize tool events for this request
         initializeToolEvents(requestId);
         
-        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null, conductor_phase, block_tool_execution, block_recursive_call);
+        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null, conductor_phase, block_tool_execution, block_recursive_call, user_turn_number);
         // Response is handled in handleChatWithTools via streaming
         
     } catch (error) {
