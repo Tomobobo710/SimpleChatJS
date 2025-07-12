@@ -626,12 +626,13 @@ class ChatRenderer {
             
             // 4. Generate assistant response using the same pattern as simpleChatMode
             const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const enabledToolDefinitions = await getEnabledToolDefinitions();
+            await loadEnabledToolsFromBackend(); // Ensure cache is loaded
+            const enabledToolsFlags = loadEnabledTools(); // Get flags like {"server.tool": false}
             
             const requestInfo = initiateMessageRequest(
                 lastUserMessage.content,
                 false,
-                enabledToolDefinitions,
+                enabledToolsFlags,
                 null,
                 null,
                 false,
@@ -1012,7 +1013,8 @@ class ChatRenderer {
                 
                 // Generate new requestId for this retried request
                 const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                const enabledToolDefinitions = await getEnabledToolDefinitions();
+                await loadEnabledToolsFromBackend(); // Ensure cache is loaded
+                const enabledToolsFlags = loadEnabledTools(); // Get flags like {"server.tool": false}
                 
                 // Construct user debug data for the new user turn
                 const userDebugData = {
@@ -1030,8 +1032,8 @@ class ChatRenderer {
                                     turn_number: retryTurnNumber
                                 },
                                 tools: {
-                                    total: enabledToolDefinitions.length,
-                                    definitions: enabledToolDefinitions
+                                    total: Object.keys(enabledToolsFlags).length,
+                                    flags: enabledToolsFlags
                                 },
                                 context: {
                                     input_method: "edit_retry",
@@ -1045,7 +1047,7 @@ class ChatRenderer {
                     metadata: {
                         endpoint: "user_input_retry",
                         timestamp: new Date().toISOString(),
-                        tools: enabledToolDefinitions.length
+                        tools: Object.keys(enabledToolsFlags).length
                     },
                     currentTurnNumber: retryTurnNumber
                 };
@@ -1059,7 +1061,7 @@ class ChatRenderer {
                         requestId: requestId,
                         endpoint: "chat",
                         message: editedContent,
-                        tools_enabled: enabledToolDefinitions.length,
+                        tools_enabled: Object.keys(enabledToolsFlags).length,
                         turn_number: retryTurnNumber
                     }
                 });
@@ -1093,7 +1095,7 @@ class ChatRenderer {
                 const requestInfo = initiateMessageRequest(
                     editedContent,
                     false,
-                    enabledToolDefinitions,
+                    enabledToolsFlags,
                     null,
                     null,
                     false,

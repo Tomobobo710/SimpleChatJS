@@ -100,7 +100,7 @@ async function getTurnData(chatId, turnNumber) {
 }
 
 // Initiate a request without awaiting the response (returns controller and requestId)
-function initiateMessageRequest(message, conductorMode = false, toolDefinitions = [], phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
+function initiateMessageRequest(message, conductorMode = false, enabledToolsData = null, phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
     try {
         // Generate requestId if not provided
         const generatedRequestId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -109,7 +109,7 @@ function initiateMessageRequest(message, conductorMode = false, toolDefinitions 
             message: message,
             chat_id: currentChatId,
             conductor_mode: conductorMode,
-            enabled_tools: toolDefinitions,
+            enabled_tools: enabledToolsData,
             block_tool_execution: blockToolExecution,
             block_recursive_call: blockRecursiveToolResponse,
             ...(messageRole && { message_role: messageRole }),
@@ -232,7 +232,10 @@ function saveEnabledTools(enabledTools) {
 
 function isToolEnabled(serverName, toolName) {
     const enabledTools = loadEnabledTools();
-    return enabledTools[`${serverName}.${toolName}`] !== false; // Default to enabled
+    const toolKey = `${serverName}.${toolName}`;
+    const isEnabled = enabledTools[toolKey] !== false; // Default to enabled
+    
+    return isEnabled;
 }
 
 function setToolEnabled(serverName, toolName, enabled) {

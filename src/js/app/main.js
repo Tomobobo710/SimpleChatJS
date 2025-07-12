@@ -35,6 +35,9 @@ document.addEventListener('DOMContentLoaded', function() {
 async function getEnabledToolDefinitions() {
     let enabledToolDefinitions = [];
     try {
+        // Ensure enabled tools cache is loaded before checking tool status
+        await loadEnabledToolsFromBackend();
+        
         const mcpStatus = await getMCPStatus();
         if (mcpStatus.connected && mcpStatus.servers) {
             mcpStatus.servers.forEach(server => {
@@ -54,6 +57,7 @@ async function getEnabledToolDefinitions() {
     } catch (error) {
         logger.warn('Failed to get MCP tools:', error);
     }
+    
     return enabledToolDefinitions;
 }
 // Turn management functions

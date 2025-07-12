@@ -15,9 +15,10 @@ async function handleSimpleChat(messageContent, conversationHistory) {
     
     logger.info(`Starting simple chat - ${isMultimodal ? 'multimodal' : 'text-only'} message${imageCount > 0 ? ` with ${imageCount} image(s)` : ''}`);
     
-    // Get enabled tools that will be sent to AI (do this ONCE)
+    // Get enabled tools flags for filtering (do this ONCE)
     const settings = loadSettings();
-    const enabledToolDefinitions = await getEnabledToolDefinitions();
+    await loadEnabledToolsFromBackend(); // Ensure cache is loaded
+    const enabledToolsFlags = loadEnabledTools(); // Get flags like {"server.tool": false}
     
     // Generate requestId upfront - will be used for both user and assistant
     requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -60,8 +61,8 @@ async function handleSimpleChat(messageContent, conversationHistory) {
                         turn_number: userTurnNumber // Include turn number
                     },
                     tools: {
-                        total: enabledToolDefinitions.length,
-                        definitions: enabledToolDefinitions
+                        total: Object.keys(enabledToolsFlags).length,
+                        flags: enabledToolsFlags
                     },
                     context: {
                         input_method: 'manual',
@@ -75,7 +76,7 @@ async function handleSimpleChat(messageContent, conversationHistory) {
         metadata: {
             endpoint: 'user_input',
             timestamp: new Date().toISOString(),
-            tools: enabledToolDefinitions.length
+            tools: Object.keys(enabledToolsFlags).length
         },
         currentTurnNumber: userTurnNumber // Add turn number at top level
     };    
@@ -86,7 +87,7 @@ async function handleSimpleChat(messageContent, conversationHistory) {
     userDebugData.currentTurnNumber = userTurnNumber;
     
     // USER TURN MAKES THE HTTP REQUEST
-    requestInfo = initiateMessageRequest(messageContent, false, enabledToolDefinitions, null, null, false, false, requestId);
+    requestInfo = initiateMessageRequest(messageContent, false, enabledToolsFlags, null, null, false, false, requestId);
     // Save user debug data BEFORE making request so backend can find it
     try {
         await saveTurnData(currentChatId, userTurnNumber, userDebugData);
@@ -108,7 +109,7 @@ async function handleSimpleChat(messageContent, conversationHistory) {
             message: messageContent,
             chat_id: currentChatId,
             conductor_mode: false,
-            enabled_tools: enabledToolDefinitions,
+            enabled_tools: enabledToolsFlags,
             request_id: requestId,
             user_turn_number: userTurnNumber
         }
@@ -253,7 +254,7 @@ async function handleSimpleChat(messageContent, conversationHistory) {
             message: textContent,
             content: messageContent, // Full content for debugging
             is_multimodal: isMultimodal,
-            tools_enabled: enabledToolDefinitions.length,
+            tools_enabled: Object.keys(enabledToolsFlags).length,
             turn_number: userTurnNumber // Include turn number here too
         }
     });
