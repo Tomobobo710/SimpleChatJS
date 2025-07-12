@@ -113,8 +113,7 @@ function initiateMessageRequest(message, conductorMode = false, enabledToolsData
             block_tool_execution: blockToolExecution,
             block_recursive_call: blockRecursiveToolResponse,
             ...(messageRole && { message_role: messageRole }),
-            request_id: generatedRequestId, // Always include the requestId
-            user_turn_number: window.currentUserTurnNumber // Tell backend which turn the user data is in
+            request_id: generatedRequestId // Always include the requestId
         };
         
         // Add phase number for conductor mode
