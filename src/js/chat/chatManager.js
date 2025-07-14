@@ -1,5 +1,27 @@
 // Chat Manager - Chat list management, switching, and history
 
+// Utility function to safely extract text content from multimodal or string content
+function getTextContent(content) {
+    if (typeof content === 'string') {
+        return content;
+    }
+    if (Array.isArray(content)) {
+        // Extract text from multimodal array
+        const textPart = content.find(part => part.type === 'text');
+        return textPart ? textPart.text : '[Images only]';
+    }
+    return String(content || '');
+}
+
+// Utility function to get preview text with length limit
+function getPreviewText(content, maxLength = 50) {
+    const textContent = getTextContent(content);
+    if (textContent.length > maxLength) {
+        return textContent.substring(0, maxLength) + '...';
+    }
+    return textContent;
+}
+
 // Handle new chat
 async function handleNewChat() {
     try {
@@ -93,7 +115,7 @@ function addChatToList(chatId, title, lastMessage, lastUpdated) {
         <div class="chat-item-content">
             <div class="chat-item-time">${timeStr}</div>
             <div class="chat-item-title">${escapeHtml(title)}</div>
-            <div class="chat-item-preview">${escapeHtml(lastMessage.substring(0, 50))}${lastMessage.length > 50 ? '...' : ''}</div>
+            <div class="chat-item-preview">${escapeHtml(getPreviewText(lastMessage, 50))}</div>
         </div>
         <button class="chat-delete-btn" title="Delete chat">×</button>
     `;
@@ -117,11 +139,17 @@ function addChatToList(chatId, title, lastMessage, lastUpdated) {
 
 // Handle chat deletion with confirmation
 async function handleDeleteChat(chatId, title) {
-    const confirmed = confirm(`Are you sure you want to delete "${title}"?\n\nThis will permanently delete all messages in this chat.`);
-    
-    if (!confirmed) {
-        return;
-    }
+    // Use custom confirm instead of browser popup
+    showCustomConfirm(
+        `Delete chat "${title}"?\n\nThis will permanently delete all messages in this chat.`,
+        async () => {
+            await performChatDeletion(chatId, title);
+        }
+    );
+}
+
+// Separate function to perform the actual deletion
+async function performChatDeletion(chatId, title) {
     
     try {
         const response = await fetch(`${API_BASE}/api/chat/${chatId}`, {
@@ -329,7 +357,7 @@ async function loadChatHistory(chatId) {
             // Check for duplicate assistant messages in the same turn
             if (assistantMessages.length > 1) {
                 console.warn(`[LOAD-HISTORY] WARNING: Turn ${turnNumber} has ${assistantMessages.length} assistant messages!`);
-                console.warn(`[LOAD-HISTORY] Assistant message IDs:`, assistantMessages.map(m => ({id: m.id, content: m.content?.substring(0, 50)})));
+                console.warn(`[LOAD-HISTORY] Assistant message IDs:`, assistantMessages.map(m => ({id: m.id, content: getPreviewText(m.content, 50)})));
             }
             
             // Render user messages directly (exactly like live rendering)
@@ -370,7 +398,18 @@ async function loadChatHistory(chatId) {
                     
                     // Handle only assistant content - this properly processes <think> and <thinking> tags and normal text
                     if (msg.content) {
-                        processor.addChunk(msg.content);
+                        // Check if content is multimodal (array) - if so, only process text parts for streaming processor
+                        if (Array.isArray(msg.content)) {
+                            const textParts = msg.content.filter(part => part.type === 'text');
+                            textParts.forEach(part => {
+                                if (part.text) {
+                                    processor.addChunk(part.text);
+                                }
+                            });
+                        } else {
+                            // Regular string content
+                            processor.addChunk(msg.content);
+                        }
                     }
                     
                     // Simulate SSE tool events using the same structured data
@@ -435,14 +474,44 @@ async function loadChatHistory(chatId) {
                 processor.finalize();
                 
                 // Get the blocks that were created through the exact same pipeline as live rendering
-                const blocks = processor.getBlocks();
+                let blocks = processor.getBlocks();
                 
-                // Render assistant turn with all blocks
+                // Determine content to render - preserve multimodal content if it exists
+                let contentToRender = processor.getRawContent() || '';
+                if (primaryAssistantMessage?.content && Array.isArray(primaryAssistantMessage.content)) {
+                    // Use original multimodal content to preserve images
+                    contentToRender = primaryAssistantMessage.content;
+                    
+                    // CRITICAL FIX: Create complete blocks that include multimodal content
+                    // The processor only created blocks from text parts, but we need to include images too
+                    const hasImages = primaryAssistantMessage.content.some(part => part.type === 'image');
+                    
+                    if (hasImages && blocks.length > 0) {
+                        // Replace the first chat block with the complete multimodal content
+                        const firstChatBlockIndex = blocks.findIndex(block => block.type === 'chat');
+                        if (firstChatBlockIndex !== -1) {
+                            blocks[firstChatBlockIndex] = {
+                                type: 'chat',
+                                content: primaryAssistantMessage.content, // Full multimodal array
+                                metadata: {}
+                            };
+                        }
+                    } else if (hasImages && blocks.length === 0) {
+                        // No blocks were created (probably no text), but we have images - create a multimodal block
+                        blocks = [{
+                            type: 'chat',
+                            content: primaryAssistantMessage.content, // Full multimodal array
+                            metadata: {}
+                        }];
+                    }
+                }
+                
+                // Render assistant turn with complete blocks (including images)
                 chatRenderer.renderTurn({
                     id: primaryAssistantMessage?.id,
                     role: 'assistant',
-                    blocks: blocks,
-                    content: processor.getRawContent() || '',
+                    blocks: blocks, // Now includes complete multimodal content
+                    content: contentToRender,
                     debug_data: turnDebugData,
                     turn_number: turnNumber,
                     edit_count: primaryAssistantMessage?.edit_count,
@@ -491,8 +560,7 @@ function updateChatPreview(chatId, message) {
     if (chatItem) {
         const previewEl = chatItem.querySelector('.chat-item-preview');
         if (previewEl) {
-            const preview = message.substring(0, 50);
-            previewEl.textContent = preview + (message.length > 50 ? '...' : '');
+            previewEl.textContent = getPreviewText(message, 50);
         }
         
         // Update timestamp

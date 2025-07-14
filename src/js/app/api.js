@@ -125,13 +125,27 @@ function initiateMessageRequest(message, conductorMode = false, enabledToolsData
         const abortController = new AbortController();
         currentAbortController = abortController;
         
+        // Log request size for debugging
+        const requestBodyString = JSON.stringify(requestBody);
+        const requestSizeMB = (requestBodyString.length / 1024 / 1024).toFixed(2);
+        logger.debug(`[API] Request size: ${requestSizeMB}MB`);
+        
+        if (requestSizeMB > 50) {
+            logger.warn(`[API] Large request detected: ${requestSizeMB}MB - this may cause "headers too big" errors`);
+            showError(`Warning: Large request (${requestSizeMB}MB) may fail. Consider reducing image sizes.`);
+        }
+        
+        if (requestSizeMB > 100) {
+            throw new Error(`Request too large (${requestSizeMB}MB). Please reduce image sizes or remove some images.`);
+        }
+        
         // Start the request but don't await it
         const fetchPromise = fetch(`${API_BASE}/api/chat`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(requestBody),
+            body: requestBodyString,
             signal: abortController.signal
         });
         
@@ -232,7 +246,7 @@ function saveEnabledTools(enabledTools) {
 function isToolEnabled(serverName, toolName) {
     const enabledTools = loadEnabledTools();
     const toolKey = `${serverName}.${toolName}`;
-    const isEnabled = enabledTools[toolKey] !== false; // Default to enabled
+    const isEnabled = enabledTools[toolKey] === true; // Default to disabled
     
     return isEnabled;
 }
@@ -242,9 +256,9 @@ function setToolEnabled(serverName, toolName, enabled) {
     const toolKey = `${serverName}.${toolName}`;
     
     if (enabled) {
-        delete enabledTools[toolKey]; // Remove from storage (default is enabled)
+        enabledTools[toolKey] = true; // Explicitly enable
     } else {
-        enabledTools[toolKey] = false; // Explicitly disable
+        delete enabledTools[toolKey]; // Remove from storage (default is disabled)
     }
     
     saveEnabledTools(enabledTools);

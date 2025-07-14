@@ -5,7 +5,7 @@ let messageInput, sendBtn, turnsContainer, scrollContainer, conductorModeCheckbo
 let settingsModal, settingsBtn, newChatBtn, closeModalBtn;
 let apiUrlInput, apiKeyInput, modelNameInput, modelSelectDropdown, mainModelSelect, refreshModelsBtn, saveSettingsBtn, debugPanelsInput, testConnectionBtn;
 // Image upload elements
-let imageInput, addImageBtn, imagePreviews, imageArea;
+let imageInput, addImageBtn, imagePreviews, imageArea, toolsBtn;
 // Legacy thinking variables removed
 let mcpServersDiv;
 let mcpConfigModal, mcpConfigBtn, closeMcpModalBtn, mcpConfigText, saveMcpConfigBtn, testMcpConfigBtn;
@@ -108,13 +108,11 @@ async function handleSendMessage() {
         // Multimodal content
         messageContent = [];
         
-        // Add text part if present
-        if (textMessage) {
-            messageContent.push({
-                type: 'text',
-                text: textMessage
-            });
-        }
+        // Add text part - always include even if empty to maintain consistency
+        messageContent.push({
+            type: 'text',
+            text: textMessage || ''
+        });
         
         // Add image parts
         images.forEach(imageData => {

@@ -10,6 +10,7 @@ function initializeElements() {
     addImageBtn = document.getElementById('addImageBtn');
     imagePreviews = document.getElementById('imagePreviews');
     imageArea = document.getElementById('imageArea');
+    toolsBtn = document.getElementById('toolsBtn');
     turnsContainer = document.getElementById('messages');        // Inner div for appending turns
     scrollContainer = document.getElementById('messagesContainer');   // Outer div for scrolling
     conductorModeCheckbox = document.getElementById('conductorMode');
@@ -193,6 +194,11 @@ function setupEventListeners() {
         imageInput.click();
     });
     
+    // Tools button functionality
+    if (toolsBtn) {
+        toolsBtn.addEventListener('click', openToolsSettings);
+    }
+    
     imageInput.addEventListener('change', handleImageSelect);
     
     // Drag and drop for images
@@ -313,6 +319,19 @@ function switchTab(tabName) {
     logger.info(`Switched to ${tabName} tab`);
 }
 
+// Open settings modal directly to MCP tab for tool management
+async function openToolsSettings() {
+    try {
+        await loadSettingsIntoModal();
+        settingsModal.classList.remove('hidden');
+        switchTab('mcp'); // Switch to MCP tab
+        logger.info('Opened tools settings via tools button');
+    } catch (error) {
+        logger.error('Error opening tools settings:', error);
+        showError('Failed to open tools settings');
+    }
+}
+
 // Auto-focus input on load
 window.addEventListener('load', () => {
     if (messageInput) {
@@ -342,7 +361,7 @@ function handleImageFiles(files, source = 'file') {
     
     // Show brief visual feedback for paste operations
     if (source === 'paste' || source === 'clipboard') {
-        const hint = document.querySelector('.image-hint');
+        const hint = document.querySelector('.action-hint');
         if (hint) {
             const originalText = hint.textContent;
             hint.textContent = `✓ Pasted ${imageFiles.length} image${imageFiles.length > 1 ? 's' : ''}`;
@@ -354,30 +373,20 @@ function handleImageFiles(files, source = 'file') {
         }
     }
     
-    imageFiles.forEach(file => {
-        // Check file size (max 10MB)
-        if (file.size > 10 * 1024 * 1024) {
-            logger.warn(`Image ${file.name} is too large (max 10MB)`);
-            return;
-        }
-        
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const imageData = {
-                name: file.name,
-                type: file.type,
-                size: file.size,
-                data: e.target.result.split(',')[1], // Remove data:image/...;base64, prefix
-                mimeType: file.type
-            };
+    imageFiles.forEach(async (file) => {
+        try {
+            // Use shared image processing logic (from edit modal)
+            const imageData = await processImageFile(file);
             
             selectedImages.push(imageData);
             createImagePreview(imageData, selectedImages.length - 1);
             updateImageAreaVisibility();
             
-            logger.info(`Added image: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`);
-        };
-        reader.readAsDataURL(file);
+            logger.info(`Added image: ${imageData.name} (${(imageData.originalSize / 1024).toFixed(1)}KB → ${(imageData.size / 1024).toFixed(1)}KB)`);
+            
+        } catch (error) {
+            logger.error(`Error processing image ${file.name}:`, error);
+        }
     });
 }
 

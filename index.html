@@ -61,14 +61,17 @@
                     <button id="sendBtn" class="send-button">Send</button>
                 </div>
                 
-                <!-- Image upload and preview area -->
+                <!-- File upload and main actions area -->
                 <div id="imageArea" class="image-area">
-                    <div class="image-upload-controls">
+                    <div class="main-action-bar">
                         <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
                         <button id="addImageBtn" class="add-image-btn" title="Add images">
                             <span>📎</span>
                         </button>
-                        <span class="image-hint">Drop, paste, or click to add images</span>
+                        <button id="toolsBtn" class="tools-btn" title="Manage tools">
+                            <span>🔧</span>
+                        </button>
+                        <span class="action-hint">Drop, paste, or click to add files</span>
                     </div>
                     <div id="imagePreviews" class="image-previews"></div>
                 </div>
@@ -297,6 +300,7 @@
     <!-- Core app utilities -->
     <script src="src/js/app/logger.js"></script>
     <script src="src/js/app/utils.js"></script>
+    <script src="src/js/app/imageProcessing.js"></script>
     <script src="src/js/app/api.js"></script>
     
     <!-- Rendering system -->

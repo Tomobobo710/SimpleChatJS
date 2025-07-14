@@ -543,6 +543,9 @@ function showCustomConfirm(message, onConfirm) {
     });
 }
 
+// Make showCustomConfirm globally available
+window.showCustomConfirm = showCustomConfirm;
+
 // Delete selected profile
 // Load provider-specific thinking settings
 function loadProviderThinkingSettings(settings) {

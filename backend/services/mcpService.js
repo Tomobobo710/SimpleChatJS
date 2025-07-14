@@ -308,13 +308,13 @@ function getAvailableToolsForChat(enabled_tools) {
             
             // If enabled_tools is provided, check if this tool is enabled
             if (enabled_tools) {
-                const isEnabled = enabled_tools[toolKey] !== false;
+                const isEnabled = enabled_tools[toolKey] === true;
                 log(`[CHAT] Tool ${toolKey}: ${isEnabled ? 'ENABLED' : 'DISABLED'}`);
                 return isEnabled;
             }
-            // If no enabled_tools filter provided, include all tools (default behavior)
-            log(`[CHAT] Tool ${toolKey}: ENABLED (no filter)`);
-            return true;
+            // If no enabled_tools filter provided, disable all tools by default (safer behavior)
+            log(`[CHAT] Tool ${toolKey}: DISABLED (no filter - default disabled for security)`);
+            return false;
         });
         
         log('[CHAT] Filtered tools count:', filteredTools.length);

@@ -409,12 +409,27 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
         
         log(`[TURN-MESSAGES] Found ${messages.length} messages for turn ${turnNum} in chat ${chatId}`);
         
-        // Parse blocks for each message
-        const processedMessages = messages.map(msg => ({
-            ...msg,
-            blocks: msg.blocks ? JSON.parse(msg.blocks) : null,
-            edit_count: msg.edit_count || 0
-        }));
+        // Parse blocks for each message and handle multimodal content
+        const processedMessages = messages.map(msg => {
+            let processedContent = msg.content;
+            
+            // Parse JSON stringified multimodal content
+            if (typeof msg.content === 'string' && msg.content.startsWith('[')) {
+                try {
+                    processedContent = JSON.parse(msg.content);
+                } catch (e) {
+                    // If parsing fails, keep as string
+                    processedContent = msg.content;
+                }
+            }
+            
+            return {
+                ...msg,
+                content: processedContent,
+                blocks: msg.blocks ? JSON.parse(msg.blocks) : null,
+                edit_count: msg.edit_count || 0
+            };
+        });
         
         res.json({ messages: processedMessages });
         

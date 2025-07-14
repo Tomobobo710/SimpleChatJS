@@ -441,3 +441,171 @@
 .edit-btn-cancel:hover {
     background: #da190b;
 }
+
+/* Image preview styles for edit mode */
+.edit-images-container {
+    margin-bottom: 15px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.edit-images-header {
+    color: #ccc;
+    font-size: 12px;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #444;
+}
+
+.edit-images-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.edit-image-preview img {
+    display: block;
+    max-width: 150px;
+    max-height: 150px;
+    object-fit: contain;
+}
+
+.edit-image-preview:hover {
+    border-color: #4a90e2;
+}
+
+/* Image removal button */
+.edit-image-remove {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(244, 67, 54, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 10;
+}
+
+.edit-image-remove:hover {
+    background: rgba(244, 67, 54, 1);
+    transform: scale(1.1);
+}
+
+.edit-image-preview:hover .edit-image-remove {
+    opacity: 1;
+}
+
+/* Make image preview relative positioned for absolute button positioning */
+.edit-image-preview {
+    position: relative;
+    border: 1px solid #666;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #333;
+}
+
+/* Edit modal image controls */
+.edit-image-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+}
+
+.edit-add-image-btn {
+    background: #444;
+    border: 1px solid #666;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    padding: 6px 10px;
+    font-size: 16px;
+    transition: background-color 0.2s ease;
+}
+
+.edit-add-image-btn:hover {
+    background: #555;
+    border-color: #4a90e2;
+}
+
+.edit-add-image-btn:active {
+    background: #333;
+}
+
+/* Drag and drop styling for edit containers */
+.editable-message {
+    position: relative;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.editable-message.drag-over {
+    border-color: #4a90e2 !important;
+    background-color: rgba(74, 144, 226, 0.1) !important;
+}
+
+.editable-message.drag-over::before {
+    content: '🖼️ Drop images here';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(74, 144, 226, 0.9);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+/* Improved image controls layout */
+.edit-image-controls::before {
+    content: '🖼️ Add images:';
+    font-size: 12px;
+    color: #ccc;
+    white-space: nowrap;
+}
+
+/* Enhanced textarea styling when images are present */
+.message-content-textarea:focus {
+    outline: none;
+    border-color: #4a90e2;
+    background: #111;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
+}
+
+/* Visual feedback for successful operations */
+.edit-success-feedback {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(76, 175, 80, 0.9);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    z-index: 1001;
+    animation: fadeInOut 2s ease-in-out;
+}
+
+@keyframes fadeInOut {
+    0%, 100% { opacity: 0; }
+    20%, 80% { opacity: 1; }
+}

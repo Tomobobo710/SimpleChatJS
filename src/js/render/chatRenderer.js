@@ -33,8 +33,9 @@ class ChatRenderer {
         let finalBlocks;
         if (!blocks) {
             if (role === "assistant") {
-                console.error("[BROKEN-RENDER] No blocks provided for assistant message:", turnData);
-                throw new Error("Blocks are required for assistant messages");
+                // Auto-generate blocks for assistant messages when missing
+                console.warn("[AUTO-BLOCKS] Creating blocks for assistant message from content");
+                finalBlocks = this.createBlocksFromContent(content);
             } else {
                 // User messages can render without blocks
                 finalBlocks = [{ type: "chat", content: content || "", metadata: {} }];
@@ -255,10 +256,21 @@ class ChatRenderer {
         const div = document.createElement("div");
         div.className = "chat-block";
         
+        // Handle cases where content might be JSON stringified
+        let processedContent = content;
+        if (typeof content === 'string' && content.startsWith('[')) {
+            try {
+                processedContent = JSON.parse(content);
+            } catch (e) {
+                // If parsing fails, treat as regular text
+                processedContent = content;
+            }
+        }
+        
         // Handle multimodal content (array) or simple text content (string)
-        if (Array.isArray(content)) {
+        if (Array.isArray(processedContent)) {
             // Multimodal content - render each part
-            content.forEach(part => {
+            processedContent.forEach(part => {
                 switch (part.type) {
                     case 'text':
                         if (part.text && part.text.trim()) {
@@ -290,7 +302,7 @@ class ChatRenderer {
             });
         } else {
             // Simple text content (backward compatible)
-            div.innerHTML = formatMessage(escapeHtml(content));
+            div.innerHTML = formatMessage(escapeHtml(String(processedContent || '')));
         }
         
         return div;
@@ -506,13 +518,13 @@ class ChatRenderer {
     // Handle turn-level editing - show all messages in the turn
     async handleEditMessage(turnId, role, turnNumber, messageId) {
         if (!turnNumber) {
-            alert("Cannot edit: Turn number not available");
+            showError("Cannot edit: Turn number not available");
             return;
         }
         
         const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (!turnDiv) {
-            alert("Cannot edit: Turn element not found");
+            showError("Cannot edit: Turn element not found");
             return;
         }
         
@@ -526,7 +538,7 @@ class ChatRenderer {
             const response = await getTurnMessages(currentChatId, turnNumber);
             
             if (!response || !response.messages) {
-                alert("Cannot edit: Invalid response from server");
+                showError("Cannot edit: Invalid response from server");
                 console.error("[EDIT] Invalid response:", response);
                 return;
             }
@@ -534,7 +546,7 @@ class ChatRenderer {
             const turnMessages = response.messages;
             
             if (!Array.isArray(turnMessages) || turnMessages.length === 0) {
-                alert("Cannot edit: No messages found for this turn");
+                showError("Cannot edit: No messages found for this turn");
                 return;
             }
             
@@ -542,7 +554,7 @@ class ChatRenderer {
             this.enterMessageEditMode(turnDiv, turnMessages, turnNumber);
         } catch (error) {
             console.error("[EDIT] Error getting turn messages:", error);
-            alert(`Error loading turn for editing: ${error.message}`);
+            showError(`Error loading turn for editing: ${error.message}`);
         }
     }
     
@@ -732,7 +744,7 @@ class ChatRenderer {
     // Save the edited message
     async saveEdit(turnDiv, chatBlock, newContent, messageId, originalHtml) {
         if (!newContent.trim()) {
-            alert("Message cannot be empty");
+            showError("Message cannot be empty");
             return;
         }
         
@@ -758,7 +770,7 @@ class ChatRenderer {
             }
         } catch (error) {
             console.error("[EDIT] Error saving message:", error);
-            alert(`Error saving message: ${error.message}`);
+            showError(`Error saving message: ${error.message}`);
             
             // Restore original content on error
             chatBlock.innerHTML = originalHtml;
@@ -828,7 +840,319 @@ class ChatRenderer {
         throw new Error("This function has been replaced by enterMessageEditMode");
     }
     
+    // ===== UTILITY METHODS =====
+    
+    // Utility function to safely extract text content from multimodal or string content
+    getTextContent(content) {
+        if (typeof content === 'string') {
+            return content;
+        }
+        if (Array.isArray(content)) {
+            // Extract text from multimodal array
+            const textPart = content.find(part => part.type === 'text');
+            return textPart ? textPart.text : '[Images only]';
+        }
+        return String(content || '');
+    }
+    
+    // Create blocks from content (for assistant messages that don't have blocks)
+    createBlocksFromContent(content) {
+        if (!content) {
+            return [{ type: "chat", content: "", metadata: {} }];
+        }
+        
+        // If content is already a string, create a simple chat block
+        if (typeof content === 'string') {
+            return [{ type: "chat", content: content, metadata: {} }];
+        }
+        
+        // If content is an array (multimodal), convert to appropriate blocks
+        if (Array.isArray(content)) {
+            const blocks = [];
+            
+            content.forEach(part => {
+                if (part.type === 'text' && part.text) {
+                    blocks.push({ type: "chat", content: part.text, metadata: {} });
+                } else if (part.type === 'image') {
+                    // Create an image block
+                    blocks.push({
+                        type: "image",
+                        content: `![Image](data:${part.mimeType};base64,${part.imageData})`,
+                        metadata: {
+                            mimeType: part.mimeType,
+                            imageData: part.imageData
+                        }
+                    });
+                }
+            });
+            
+            // If no blocks were created, add an empty chat block
+            if (blocks.length === 0) {
+                blocks.push({ type: "chat", content: "", metadata: {} });
+            }
+            
+            return blocks;
+        }
+        
+        // Fallback for unexpected content types
+        return [{ type: "chat", content: String(content), metadata: {} }];
+    }
+    
     // ===== EDIT SYSTEM =====
+    
+    // Remove an image from the edit modal
+    removeImageFromEdit(messageContainer, imageIndex) {
+        if (!messageContainer._originalContent || !Array.isArray(messageContainer._originalContent)) {
+            console.warn('[IMAGE-REMOVE] Cannot remove image - content is not multimodal', messageContainer._originalContent);
+            return;
+        }
+        
+        // Remove the image from the original content array
+        let imageCount = 0;
+        messageContainer._originalContent = messageContainer._originalContent.filter(part => {
+            if (part.type === 'image') {
+                if (imageCount === imageIndex) {
+                    imageCount++;
+                    return false; // Remove this image
+                }
+                imageCount++;
+            }
+            return true; // Keep text parts and other images
+        });
+        
+        // Update the hasImages flag
+        const remainingImages = messageContainer._originalContent.filter(part => part.type === 'image');
+        messageContainer._hasImages = remainingImages.length > 0;
+        
+        // Update the textarea placeholder
+        const textarea = messageContainer.querySelector('.message-content-textarea');
+        if (textarea) {
+            textarea.placeholder = remainingImages.length > 0 ? 
+                "Edit text content (images shown above)" : 
+                "Enter message content";
+        }
+        
+        // Regenerate the images display
+        this.updateImagesDisplay(messageContainer);
+        
+        console.log(`[IMAGE-REMOVE] Removed image ${imageIndex}, ${remainingImages.length} images remaining`);
+    }
+    
+    // Handle file selection in edit modal
+    handleEditImageSelect(event, messageContainer) {
+        const files = Array.from(event.target.files);
+        this.handleEditImageFiles(files, messageContainer, 'file');
+        // Clear the input so the same file can be selected again
+        event.target.value = '';
+    }
+    
+    // Handle image files in edit modal (similar to main handleImageFiles)
+    handleEditImageFiles(files, messageContainer, source = 'file') {
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+    if (imageFiles.length === 0) {
+        console.warn('[EDIT-IMAGES] No valid image files selected');
+        return;
+    }
+
+    if (source === 'paste' || source === 'clipboard') {
+        const textarea = messageContainer.querySelector('.message-content-textarea');
+        if (textarea) {
+            const originalPlaceholder = textarea.placeholder;
+            textarea.placeholder = `✓ Pasted ${imageFiles.length} image${imageFiles.length > 1 ? 's' : ''}`;
+            setTimeout(() => {
+                textarea.placeholder = originalPlaceholder;
+            }, 2000);
+        }
+    }
+
+    let processedCount = 0;
+
+    imageFiles.forEach(async (file) => {
+        try {
+            // Use shared image processing logic
+            const processedImage = await processImageFile(file);
+            
+            // Convert to edit modal format
+            const imageData = {
+                type: 'image',
+                imageData: processedImage.data, // Convert 'data' to 'imageData'
+                mimeType: processedImage.mimeType,
+                name: processedImage.name,
+                size: processedImage.size
+            };
+
+            if (!Array.isArray(messageContainer._originalContent)) {
+                const currentText = messageContainer.querySelector('.message-content-textarea').value;
+                messageContainer._originalContent = [
+                    { type: 'text', text: currentText }
+                ];
+                console.warn('[EDIT-IMAGES] Had to convert _originalContent to array format');
+            }
+
+            messageContainer._originalContent.push(imageData);
+            messageContainer._hasImages = true;
+
+            const textarea = messageContainer.querySelector('.message-content-textarea');
+            if (textarea) {
+                textarea.placeholder = "Edit text content (images shown above)";
+            }
+
+            processedCount++;
+            if (processedCount === imageFiles.length) {
+                this.updateImagesDisplay(messageContainer);
+            }
+
+            console.log(`[EDIT-IMAGES] Added image: ${processedImage.name} (${(processedImage.originalSize / 1024).toFixed(1)}KB → ${(processedImage.size / 1024).toFixed(1)}KB)`);
+
+        } catch (error) {
+            console.error(`[EDIT-IMAGES] Error processing image ${file.name}:`, error);
+        }
+    });
+}
+    
+    // Setup drag & drop for edit modal message container
+    setupEditDragAndDrop(messageContainer) {
+        // Drag & drop support
+        messageContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            messageContainer.classList.add('drag-over');
+        });
+        
+        messageContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            // Only remove drag-over if we're actually leaving the container
+            if (!messageContainer.contains(e.relatedTarget)) {
+                messageContainer.classList.remove('drag-over');
+            }
+        });
+        
+        messageContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            messageContainer.classList.remove('drag-over');
+            const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+            if (files.length > 0) {
+                this.handleEditImageFiles(files, messageContainer, 'drop');
+            }
+        });
+        
+        // Clipboard paste support
+        const textarea = messageContainer.querySelector('.message-content-textarea');
+        if (textarea) {
+            textarea.addEventListener('paste', (e) => {
+                this.handleEditClipboardPaste(e, messageContainer);
+            });
+        }
+    }
+    
+    // Handle clipboard paste in edit modal
+    handleEditClipboardPaste(event, messageContainer) {
+        const clipboardData = event.clipboardData || window.clipboardData;
+        const items = clipboardData.items;
+        
+        let hasImages = false;
+        const imageFiles = [];
+        
+        // Check for image items in clipboard
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.startsWith('image/')) {
+                hasImages = true;
+                const file = item.getAsFile();
+                if (file) {
+                    imageFiles.push(file);
+                }
+            }
+        }
+        
+        // If we found images, prevent default paste and handle them
+        if (hasImages && imageFiles.length > 0) {
+            event.preventDefault();
+            this.handleEditImageFiles(imageFiles, messageContainer, 'paste');
+            console.log(`[EDIT-IMAGES] Pasted ${imageFiles.length} image(s) from clipboard`);
+        }
+    }
+    
+    // Update the images display in edit modal
+    updateImagesDisplay(messageContainer) {
+        let imagesContainer = messageContainer.querySelector('.edit-images-container');
+        
+        // Defensive check for _originalContent
+        const remainingImages = (messageContainer._originalContent && Array.isArray(messageContainer._originalContent)) ? 
+            messageContainer._originalContent.filter(part => part.type === 'image') : [];
+            
+        if (remainingImages.length === 0) {
+            // No images left - remove the entire images container if it exists
+            if (imagesContainer) {
+                imagesContainer.remove();
+            }
+            return;
+        }
+        
+        // Create images container if it doesn't exist
+        if (!imagesContainer) {
+            imagesContainer = document.createElement("div");
+            imagesContainer.className = "edit-images-container";
+            
+            const imagesHeader = document.createElement("div");
+            imagesHeader.className = "edit-images-header";
+            imagesContainer.appendChild(imagesHeader);
+            
+            const imagesGrid = document.createElement("div");
+            imagesGrid.className = "edit-images-grid";
+            imagesContainer.appendChild(imagesGrid);
+            
+            // Insert before the textarea (images show above text)
+            const textarea = messageContainer.querySelector('.message-content-textarea');
+            if (textarea) {
+                messageContainer.insertBefore(imagesContainer, textarea);
+            } else {
+                // Fallback: insert at the top
+                messageContainer.insertBefore(imagesContainer, messageContainer.firstChild);
+            }
+        }
+        
+        // Update the header and regenerate the grid
+        const header = imagesContainer.querySelector('.edit-images-header');
+        if (header) {
+            header.innerHTML = `<strong>Images (${remainingImages.length}):</strong>`;
+        }
+        
+        const grid = imagesContainer.querySelector('.edit-images-grid');
+        if (grid) {
+            grid.innerHTML = ''; // Clear existing previews
+            
+            // Regenerate image previews with new indices
+            remainingImages.forEach((imageData, idx) => {
+                const imagePreview = document.createElement("div");
+                imagePreview.className = "edit-image-preview";
+                imagePreview.dataset.imageIndex = idx;
+                
+                const img = document.createElement("img");
+                img.src = `data:${imageData.mimeType};base64,${imageData.imageData}`;
+                img.style.maxWidth = "150px";
+                img.style.maxHeight = "150px";
+                img.style.border = "1px solid #666";
+                img.style.borderRadius = "4px";
+                
+                // Add remove button
+                const removeBtn = document.createElement("button");
+                removeBtn.className = "edit-image-remove";
+                removeBtn.innerHTML = "×";
+                removeBtn.title = "Remove this image";
+                removeBtn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.removeImageFromEdit(messageContainer, idx);
+                });
+                
+                imagePreview.appendChild(img);
+                imagePreview.appendChild(removeBtn);
+                grid.appendChild(imagePreview);
+            });
+        }
+    }
+    
     enterMessageEditMode(turnDiv, messages, turnNumber) {
         turnDiv.classList.add("editing");
         
@@ -861,12 +1185,92 @@ class ChatRenderer {
             messageHeader.innerHTML = `<strong>${message.role}</strong> (ID: ${message.id})`;
             messageContainer.appendChild(messageHeader);
             
-            // Textarea for raw content
+            // Handle multimodal content properly - parse JSON strings if needed
+            let textContent = "";
+            let images = [];
+            let parsedContent = message.content;
+            
+            // Parse JSON string if content is a string that looks like JSON
+            if (typeof message.content === 'string' && message.content.startsWith('[')) {
+                try {
+                    parsedContent = JSON.parse(message.content);
+                } catch (e) {
+                    // If parsing fails, treat as regular text
+                    parsedContent = message.content;
+                }
+            }
+            
+            if (Array.isArray(parsedContent)) {
+                // Multimodal content - extract text and images
+                const textPart = parsedContent.find(part => part.type === 'text');
+                textContent = textPart ? textPart.text : "";
+                images = parsedContent.filter(part => part.type === 'image');
+            } else {
+                // Regular text content
+                textContent = parsedContent || "";
+            }
+            
+            // Images will be shown via updateImagesDisplay after drag/drop setup
+            
+            // Textarea for text content
             const textarea = document.createElement("textarea");
             textarea.className = "message-content-textarea";
-            textarea.value = message.content || "";
-            textarea.rows = Math.max(3, (message.content || "").split("\n").length + 1);
+            textarea.value = textContent;
+            textarea.rows = Math.max(3, textContent.split("\n").length + 1);
+            textarea.placeholder = images.length > 0 ? "Edit text content (images shown above)" : "Enter message content";
             messageContainer.appendChild(textarea);
+            
+            // Add image controls (file input + paperclip button + drag/drop area) at the bottom
+            const imageControlsContainer = document.createElement("div");
+            imageControlsContainer.className = "edit-image-controls";
+            
+            // Hidden file input
+            const fileInput = document.createElement("input");
+            fileInput.type = "file";
+            fileInput.accept = "image/*";
+            fileInput.multiple = true;
+            fileInput.style.display = "none";
+            fileInput.addEventListener("change", (e) => {
+                this.handleEditImageSelect(e, messageContainer);
+            });
+            
+            // Paperclip button
+            const addImageBtn = document.createElement("button");
+            addImageBtn.type = "button";
+            addImageBtn.className = "edit-add-image-btn";
+            addImageBtn.innerHTML = "📎";
+            addImageBtn.title = "Add images";
+            addImageBtn.addEventListener("click", () => {
+                fileInput.click();
+            });
+            
+            imageControlsContainer.appendChild(fileInput);
+            imageControlsContainer.appendChild(addImageBtn);
+            messageContainer.appendChild(imageControlsContainer);
+            
+            // Store original content structure for reconstruction
+            // Ensure _originalContent is always an array for consistent handling
+            if (Array.isArray(parsedContent)) {
+                messageContainer._originalContent = parsedContent;
+            } else {
+                // Convert string content to array format
+                messageContainer._originalContent = [{ type: 'text', text: parsedContent || '' }];
+            }
+            messageContainer._hasImages = images.length > 0;
+            
+            console.log(`[EDIT-INIT] Initialized ${message.role} message:`, {
+                originalFormat: typeof message.content,
+                parsedFormat: typeof parsedContent,
+                finalFormat: Array.isArray(messageContainer._originalContent) ? 'array' : typeof messageContainer._originalContent,
+                hasImages: messageContainer._hasImages,
+                imageCount: images.length
+            });
+            
+            // Add drag & drop support to this message container
+            this.setupEditDragAndDrop(messageContainer);
+            
+            // Display any existing images
+            this.updateImagesDisplay(messageContainer);
             
             editForm.appendChild(messageContainer);
         });
@@ -917,10 +1321,34 @@ class ChatRenderer {
                 const savePromises = Array.from(messageContainers).map(async (container) => {
                     const messageId = container.dataset.messageId;
                     const textarea = container.querySelector(".message-content-textarea");
-                    const newContent = textarea.value;
+                    const newTextContent = textarea.value;
                     
-                    if (messageId && newContent !== undefined) {
-                        return editMessage(messageId, newContent);
+                    if (messageId && newTextContent !== undefined) {
+                        // Reconstruct content properly - _originalContent is always an array now
+                        let finalContent;
+                        
+                        if (Array.isArray(container._originalContent)) {
+                            // Update the text part in the array
+                            const reconstructedArray = container._originalContent.map(part => {
+                                if (part.type === 'text') {
+                                    return { ...part, text: newTextContent };
+                                }
+                                return part; // Keep images unchanged
+                            });
+                            
+                            // If it's just text (no images), send as string for backend compatibility
+                            const hasImages = reconstructedArray.some(part => part.type === 'image');
+                            if (hasImages) {
+                                finalContent = JSON.stringify(reconstructedArray);
+                            } else {
+                                finalContent = newTextContent; // Text-only, send as string
+                            }
+                        } else {
+                            // Fallback for old format
+                            finalContent = newTextContent;
+                        }
+                        
+                        return editMessage(messageId, finalContent);
                     }
                 });
                 
@@ -931,7 +1359,7 @@ class ChatRenderer {
             await this.exitMessageEditMode(turnDiv, turnNumber);
         } catch (error) {
             console.error("[EDIT] Error saving messages:", error);
-            alert(`Error saving messages: ${error.message}`);
+            showError(`Error saving messages: ${error.message}`);
             
             saveBtn.textContent = "Save All Messages";
             saveBtn.disabled = false;
@@ -972,11 +1400,33 @@ class ChatRenderer {
                 const messageContainers = turnDiv.querySelectorAll("[data-message-id]");
                 let editedContent = null;
                 
-                // Find the user message textarea with edited content
+                // Find the user message textarea with edited content and reconstruct properly
                 for (const container of messageContainers) {
                     const textarea = container.querySelector(".message-content-textarea");
                     if (textarea) {
-                        editedContent = textarea.value;
+                        const newTextContent = textarea.value;
+                        
+                        // Reconstruct content properly - _originalContent is always an array now
+                        if (Array.isArray(container._originalContent)) {
+                            // Update the text part in the array
+                            const reconstructedArray = container._originalContent.map(part => {
+                                if (part.type === 'text') {
+                                    return { ...part, text: newTextContent };
+                                }
+                                return part; // Keep images unchanged
+                            });
+                            
+                            // Check if it has images to determine format for retry
+                            const hasImages = reconstructedArray.some(part => part.type === 'image');
+                            if (hasImages) {
+                                editedContent = reconstructedArray; // Keep as array for multimodal
+                            } else {
+                                editedContent = newTextContent; // Text-only for simplicity
+                            }
+                        } else {
+                            // Fallback for old format
+                            editedContent = newTextContent;
+                        }
                         break;
                     }
                 }
@@ -991,9 +1441,12 @@ class ChatRenderer {
                 
                 // CRITICAL: Save the edited user message to the new branch (so it persists on reload)
                 // The original branch keeps the original message unchanged
+                // Convert multimodal arrays to JSON strings for database storage
+                const contentForSave = Array.isArray(editedContent) ? JSON.stringify(editedContent) : editedContent;
+                
                 await saveCompleteMessage(
                     currentChatId,
-                    { role: "user", content: editedContent },
+                    { role: "user", content: contentForSave },
                     null,
                     retryTurnNumber
                 );
@@ -1028,8 +1481,9 @@ class ChatRenderer {
                                     chat_id: currentChatId,
                                     conductor_mode: false, // Assuming simple chat mode for retry
                                     timestamp: new Date().toISOString(),
-                                    message_length: editedContent.length,
-                                    turn_number: retryTurnNumber
+                                    message_length: Array.isArray(editedContent) ? JSON.stringify(editedContent).length : editedContent.length,
+                                    turn_number: retryTurnNumber,
+                                    is_multimodal: Array.isArray(editedContent)
                                 },
                                 tools: {
                                     total: Object.keys(enabledToolsFlags).length,
@@ -1092,8 +1546,9 @@ class ChatRenderer {
                 );
                 
                 // Generate assistant response to the edited user message
+                // Send the proper content format to the AI (multimodal array or text string)
                 const requestInfo = initiateMessageRequest(
-                    editedContent,
+                    editedContent, // This is now properly reconstructed (array for multimodal, string for text)
                     false,
                     enabledToolsFlags,
                     null,
@@ -1112,8 +1567,13 @@ class ChatRenderer {
                     await this.refreshBranchNavigation();
                 }, 100);
             } else {
-                // Regular edit - just reload the chat
+                // Regular edit - reload chat and refresh branch navigation
                 await loadChatHistory(currentChatId);
+                
+                // Refresh branch navigation in case the edit created new branches
+                setTimeout(async () => {
+                    await this.refreshBranchNavigation();
+                }, 100);
             }
         } catch (error) {
             console.error("[EDIT] Error in exitMessageEditMode:", error);
@@ -1131,7 +1591,8 @@ class ChatRenderer {
                 if (chatItem) {
                     const currentTitle = chatItem.querySelector(".chat-item-title").textContent;
                     if (currentTitle === "New Chat") {
-                        const newTitle = content.substring(0, 30) + (content.length > 30 ? "..." : "");
+                        const textContent = this.getTextContent(content);
+                        const newTitle = textContent.substring(0, 30) + (textContent.length > 30 ? "..." : "");
                         updateChatTitle(newTitle);
                     }
                 }
