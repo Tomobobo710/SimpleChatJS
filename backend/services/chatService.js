@@ -919,9 +919,23 @@ async function processChatRequest(req, res) {
         
         // Check if the last message in history is the same user message (avoid duplication)
         const lastMessage = messages[messages.length - 1];
-        const isDuplicate = lastMessage && 
-                          lastMessage.role === role && 
-                          lastMessage.content === message;
+        
+        // Enhanced duplicate detection for both string and array content
+        let isDuplicate = false;
+        if (lastMessage && lastMessage.role === role) {
+            // For string content, do direct comparison
+            if (typeof message === 'string' && typeof lastMessage.content === 'string') {
+                isDuplicate = lastMessage.content === message;
+            }
+            // For array content (multimodal), do deep comparison
+            else if (Array.isArray(message) && Array.isArray(lastMessage.content)) {
+                isDuplicate = JSON.stringify(lastMessage.content) === JSON.stringify(message);
+            }
+            // For mixed types, they're different
+            else {
+                isDuplicate = false;
+            }
+        }
         
         if (!isDuplicate) {
             messages.push(newMessage);

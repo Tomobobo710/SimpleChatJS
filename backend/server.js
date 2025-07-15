@@ -14,6 +14,7 @@ const chatRoutes = require('./routes/chat');
 const mcpRoutes = require('./routes/mcp');
 const settingsRoutes = require('./routes/settings');
 const debugRoutes = require('./routes/debug');
+const documentRoutes = require('./routes/documents');
 
 const app = express();
 const PORT = process.env.PORT || 50505;
@@ -30,6 +31,7 @@ app.use('/api', chatRoutes);
 app.use('/api', mcpRoutes);
 app.use('/api', settingsRoutes);
 app.use('/api', debugRoutes);
+app.use('/api', documentRoutes);
 
 // Initialize and start server
 async function startServer() {

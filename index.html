@@ -57,15 +57,15 @@
             
             <div id="inputContainer" class="input-container">
                 <div class="input-row">
-                    <textarea id="messageInput" placeholder="Type your message and press Enter... (Ctrl+V to paste images)" rows="2"></textarea>
+                    <textarea id="messageInput" placeholder="Type your message and press Enter... (Ctrl+V to paste files)" rows="2"></textarea>
                     <button id="sendBtn" class="send-button">Send</button>
                 </div>
                 
                 <!-- File upload and main actions area -->
                 <div id="imageArea" class="image-area">
                     <div class="main-action-bar">
-                        <input type="file" id="imageInput" accept="image/*" multiple style="display: none;">
-                        <button id="addImageBtn" class="add-image-btn" title="Add images">
+                        <input type="file" id="fileInput" accept="*" multiple style="display: none;">
+                        <button id="addFileBtn" class="add-file-btn" title="Add files & images">
                             <span>📎</span>
                         </button>
                         <button id="toolsBtn" class="tools-btn" title="Manage tools">
@@ -74,6 +74,7 @@
                         <span class="action-hint">Drop, paste, or click to add files</span>
                     </div>
                     <div id="imagePreviews" class="image-previews"></div>
+                    <div id="documentPreviews" class="document-previews"></div>
                 </div>
             </div>
         </div>
@@ -301,6 +302,8 @@
     <script src="src/js/app/logger.js"></script>
     <script src="src/js/app/utils.js"></script>
     <script src="src/js/app/imageProcessing.js"></script>
+    <!-- Document processing (server-side via API) -->
+    <script src="src/js/app/documentProcessing.js"></script>
     <script src="src/js/app/api.js"></script>
     
     <!-- Rendering system -->

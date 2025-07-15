@@ -4,8 +4,8 @@
 let messageInput, sendBtn, turnsContainer, scrollContainer, conductorModeCheckbox;
 let settingsModal, settingsBtn, newChatBtn, closeModalBtn;
 let apiUrlInput, apiKeyInput, modelNameInput, modelSelectDropdown, mainModelSelect, refreshModelsBtn, saveSettingsBtn, debugPanelsInput, testConnectionBtn;
-// Image upload elements
-let imageInput, addImageBtn, imagePreviews, imageArea, toolsBtn;
+// File upload elements
+let fileInput, addFileBtn, imagePreviews, documentPreviews, imageArea, toolsBtn;
 // Legacy thinking variables removed
 let mcpServersDiv;
 let mcpConfigModal, mcpConfigBtn, closeMcpModalBtn, mcpConfigText, saveMcpConfigBtn, testMcpConfigBtn;
@@ -98,21 +98,30 @@ async function handleSendMessage() {
     
     const textMessage = messageInput.value.trim();
     const images = getSelectedImages();
+    const documents = getSelectedDocuments();
     
-    // Need either text or images
-    if (!textMessage && images.length === 0) return;
+    // Need either text, images, or documents
+    if (!textMessage && images.length === 0 && documents.length === 0) return;
+    
+    // Build final text content with document content appended
+    let finalText = textMessage || '';
+    documents.forEach(doc => {
+        finalText += `\n\n\`\`\`userdocument\nFile: ${doc.fileName}\n${doc.extractedText}\n\`\`\``;
+    });
     
     // Create message content (string for text-only, array for multimodal)
     let messageContent;
-    if (images.length > 0) {
-        // Multimodal content
+    if (images.length > 0 || documents.length > 0) {
+        // Multimodal content or documents
         messageContent = [];
         
-        // Add text part - always include even if empty to maintain consistency
-        messageContent.push({
-            type: 'text',
-            text: textMessage || ''
-        });
+        // Add text part (including document content)
+        if (finalText || documents.length > 0) {
+            messageContent.push({
+                type: 'text',
+                text: finalText
+            });
+        }
         
         // Add image parts
         images.forEach(imageData => {
@@ -123,18 +132,23 @@ async function handleSendMessage() {
             });
         });
         
-        logger.info(`Sending multimodal message: ${textMessage ? 'text + ' : ''}${images.length} image(s)`);
+        const parts = [];
+        if (textMessage) parts.push('text');
+        if (documents.length > 0) parts.push(`${documents.length} document(s)`);
+        if (images.length > 0) parts.push(`${images.length} image(s)`);
+        logger.info(`Sending multimodal message: ${parts.join(' + ')}`);
     } else {
         // Text-only content (backward compatible)
-        messageContent = textMessage;
+        messageContent = finalText;
         logger.info('Sending text-only message');
     }
     
     const isConductorMode = conductorModeCheckbox.checked;
     
-    // Clear input and images, show loading
+    // Clear input and files, show loading
     messageInput.value = '';
     clearSelectedImages();
+    clearSelectedDocuments();
     setLoading(true);
     
     try {

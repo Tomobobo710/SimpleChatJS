@@ -5,10 +5,11 @@ function initializeElements() {
     messageInput = document.getElementById('messageInput');
     sendBtn = document.getElementById('sendBtn');
     
-    // Image upload elements
-    imageInput = document.getElementById('imageInput');
-    addImageBtn = document.getElementById('addImageBtn');
+    // File upload elements
+    fileInput = document.getElementById('fileInput');
+    addFileBtn = document.getElementById('addFileBtn');
     imagePreviews = document.getElementById('imagePreviews');
+    documentPreviews = document.getElementById('documentPreviews');
     imageArea = document.getElementById('imageArea');
     toolsBtn = document.getElementById('toolsBtn');
     turnsContainer = document.getElementById('messages');        // Inner div for appending turns
@@ -189,9 +190,9 @@ function setupEventListeners() {
     
     // New chat
     newChatBtn.addEventListener('click', handleNewChat);
-    // Image upload functionality
-    addImageBtn.addEventListener('click', () => {
-        imageInput.click();
+    // File upload functionality
+    addFileBtn.addEventListener('click', () => {
+        fileInput.click();
     });
     
     // Tools button functionality
@@ -199,9 +200,9 @@ function setupEventListeners() {
         toolsBtn.addEventListener('click', openToolsSettings);
     }
     
-    imageInput.addEventListener('change', handleImageSelect);
+    fileInput.addEventListener('change', handleFileSelect);
     
-    // Drag and drop for images
+    // Drag and drop for files
     imageArea.addEventListener('dragover', (e) => {
         e.preventDefault();
         imageArea.classList.add('drag-over');
@@ -215,9 +216,9 @@ function setupEventListeners() {
     imageArea.addEventListener('drop', (e) => {
         e.preventDefault();
         imageArea.classList.remove('drag-over');
-        const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+        const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
-            handleImageFiles(files);
+            handleFiles(files);
         }
     });
     // Clipboard paste support for images
@@ -234,26 +235,26 @@ function setupEventListeners() {
         const clipboardData = e.clipboardData || window.clipboardData;
         const items = clipboardData.items;
         
-        let hasImages = false;
-        const imageFiles = [];
+        let hasFiles = false;
+        const pastedFiles = [];
         
-        // Check for image items in clipboard
+        // Check for file items in clipboard
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            if (item.type.startsWith('image/')) {
-                hasImages = true;
+            if (item.kind === 'file') {
+                hasFiles = true;
                 const file = item.getAsFile();
                 if (file) {
-                    imageFiles.push(file);
+                    pastedFiles.push(file);
                 }
             }
         }
         
-        // If we found images, prevent default paste and handle them
-        if (hasImages && imageFiles.length > 0) {
+        // If we found files, prevent default paste and handle them
+        if (hasFiles && pastedFiles.length > 0) {
             e.preventDefault();
-            handleImageFiles(imageFiles, 'paste');
-            logger.info(`Pasted ${imageFiles.length} image(s) from clipboard`);
+            handleFiles(pastedFiles, 'paste');
+            logger.info(`Pasted ${pastedFiles.length} file(s) from clipboard`);
         }
     });
     
@@ -339,16 +340,32 @@ window.addEventListener('load', () => {
     }
 });
 
-// ===== IMAGE HANDLING FUNCTIONS =====
+// ===== FILE HANDLING FUNCTIONS =====
 
-// Store selected images
+// Store selected files
 let selectedImages = [];
+let selectedDocuments = [];
 
-function handleImageSelect(event) {
+function handleFileSelect(event) {
     const files = Array.from(event.target.files);
-    handleImageFiles(files);
+    handleFiles(files);
     // Clear the input so the same file can be selected again
     event.target.value = '';
+}
+
+function handleFiles(files, source = 'file') {
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    const documentFiles = files.filter(file => !file.type.startsWith('image/'));
+    
+    // Process images (existing logic)
+    if (imageFiles.length > 0) {
+        handleImageFiles(imageFiles, source);
+    }
+    
+    // Process documents (new logic)
+    if (documentFiles.length > 0) {
+        handleDocumentFiles(documentFiles, source);
+    }
 }
 
 function handleImageFiles(files, source = 'file') {
@@ -426,6 +443,7 @@ function removeImage(index) {
 
 function updateImageAreaVisibility() {
     const hasImages = selectedImages.length > 0;
+    const hasDocuments = selectedDocuments.length > 0;
     imagePreviews.style.display = hasImages ? 'flex' : 'none';
     
     // Update input container height smoothly
@@ -434,6 +452,12 @@ function updateImageAreaVisibility() {
         inputContainer.classList.add('has-images');
     } else {
         inputContainer.classList.remove('has-images');
+    }
+    
+    if (hasDocuments) {
+        inputContainer.classList.add('has-documents');
+    } else {
+        inputContainer.classList.remove('has-documents');
     }
 }
 
@@ -445,4 +469,140 @@ function clearSelectedImages() {
     selectedImages = [];
     imagePreviews.innerHTML = '';
     updateImageAreaVisibility();
+}
+
+// ===== DOCUMENT HANDLING FUNCTIONS =====
+
+async function handleDocumentFiles(files, source = 'file') {
+    if (files.length === 0) {
+        logger.warn('No document files selected');
+        return;
+    }
+    
+    // Show upload feedback
+    const hint = document.querySelector('.action-hint');
+    const originalText = hint ? hint.textContent : '';
+    
+    if (hint) {
+        if (source === 'paste' || source === 'clipboard') {
+            hint.textContent = `✓ Pasted ${files.length} document${files.length > 1 ? 's' : ''} - Processing...`;
+        } else {
+            hint.textContent = `Processing ${files.length} document${files.length > 1 ? 's' : ''}...`;
+        }
+        hint.style.color = '#4a90e2';
+    }
+    
+    try {
+        // Upload documents to server for processing
+        const result = await processDocumentFiles(files);
+        
+        // Handle successful results
+        for (const docData of result.results) {
+            selectedDocuments.push(docData);
+            createDocumentPreview(docData, selectedDocuments.length - 1);
+            logger.info(`Added document: ${docData.fileName} (${(docData.size / 1024).toFixed(1)}KB)`);
+        }
+        
+        // Handle errors
+        for (const error of result.errors || []) {
+            logger.error(`Error processing document ${error.fileName}:`, error.error);
+        }
+        
+        updateDocumentAreaVisibility();
+        
+        // Show completion feedback
+        if (hint) {
+            if (result.failed > 0) {
+                hint.textContent = `✓ Processed ${result.processed}/${files.length} documents (${result.failed} failed)`;
+                hint.style.color = '#ffa500';
+            } else {
+                hint.textContent = `✓ Processed ${result.processed} document${result.processed > 1 ? 's' : ''}`;
+                hint.style.color = '#4a9d4a';
+            }
+        }
+        
+    } catch (error) {
+        logger.error('Error uploading documents:', error);
+        
+        // Show error to user
+        if (hint) {
+            hint.textContent = `Error: ${error.message}`;
+            hint.style.color = '#ff4444';
+        }
+    }
+    
+    // Reset hint after delay
+    if (hint) {
+        setTimeout(() => {
+            hint.textContent = originalText;
+            hint.style.color = '';
+        }, 3000);
+    }
+}
+
+function createDocumentPreview(docData, index) {
+    const preview = document.createElement('div');
+    preview.className = 'document-preview';
+    preview.dataset.index = index;
+    
+    const icon = document.createElement('span');
+    icon.className = 'doc-icon';
+    icon.textContent = getFileIcon(docData.fileName);
+    
+    const info = document.createElement('div');
+    info.className = 'doc-info';
+    
+    const name = document.createElement('div');
+    name.className = 'doc-name';
+    name.textContent = docData.fileName;
+    name.title = docData.fileName;
+    
+    const size = document.createElement('div');
+    size.className = 'doc-size';
+    size.textContent = `${(docData.size / 1024).toFixed(1)}KB`;
+    
+    info.appendChild(name);
+    info.appendChild(size);
+    
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-btn';
+    removeBtn.innerHTML = '×';
+    removeBtn.title = 'Remove document';
+    removeBtn.onclick = () => removeDocument(index);
+    
+    preview.appendChild(icon);
+    preview.appendChild(info);
+    preview.appendChild(removeBtn);
+    documentPreviews.appendChild(preview);
+}
+
+function removeDocument(index) {
+    selectedDocuments.splice(index, 1);
+    
+    // Rebuild all previews with correct indices
+    documentPreviews.innerHTML = '';
+    selectedDocuments.forEach((docData, newIndex) => {
+        createDocumentPreview(docData, newIndex);
+    });
+    
+    updateDocumentAreaVisibility();
+    logger.info(`Removed document at index ${index}`);
+}
+
+function updateDocumentAreaVisibility() {
+    const hasDocuments = selectedDocuments.length > 0;
+    documentPreviews.style.display = hasDocuments ? 'flex' : 'none';
+    
+    // Update the main visibility function to handle both images and documents
+    updateImageAreaVisibility();
+}
+
+function getSelectedDocuments() {
+    return selectedDocuments;
+}
+
+function clearSelectedDocuments() {
+    selectedDocuments = [];
+    documentPreviews.innerHTML = '';
+    updateDocumentAreaVisibility();
 }

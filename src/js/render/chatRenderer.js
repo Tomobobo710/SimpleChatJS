@@ -1030,9 +1030,9 @@ class ChatRenderer {
         messageContainer.addEventListener('drop', (e) => {
             e.preventDefault();
             messageContainer.classList.remove('drag-over');
-            const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+            const files = Array.from(e.dataTransfer.files);
             if (files.length > 0) {
-                this.handleEditImageFiles(files, messageContainer, 'drop');
+                this.handleEditFiles(files, messageContainer, 'drop');
             }
         });
         
@@ -1050,27 +1050,105 @@ class ChatRenderer {
         const clipboardData = event.clipboardData || window.clipboardData;
         const items = clipboardData.items;
         
-        let hasImages = false;
-        const imageFiles = [];
+        let hasFiles = false;
+        const pastedFiles = [];
         
-        // Check for image items in clipboard
+        // Check for file items in clipboard
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            if (item.type.startsWith('image/')) {
-                hasImages = true;
+            if (item.kind === 'file') {
+                hasFiles = true;
                 const file = item.getAsFile();
                 if (file) {
-                    imageFiles.push(file);
+                    pastedFiles.push(file);
                 }
             }
         }
         
-        // If we found images, prevent default paste and handle them
-        if (hasImages && imageFiles.length > 0) {
+        // If we found files, prevent default paste and handle them
+        if (hasFiles && pastedFiles.length > 0) {
             event.preventDefault();
-            this.handleEditImageFiles(imageFiles, messageContainer, 'paste');
-            console.log(`[EDIT-IMAGES] Pasted ${imageFiles.length} image(s) from clipboard`);
+            this.handleEditFiles(pastedFiles, messageContainer, 'paste');
+            console.log(`[EDIT-FILES] Pasted ${pastedFiles.length} file(s) from clipboard`);
         }
+    }
+    
+    // NEW: Handle file selection in edit modal (images + documents)
+    handleEditFileSelect(event, messageContainer) {
+        const files = Array.from(event.target.files);
+        this.handleEditFiles(files, messageContainer, 'file');
+        // Clear the input so the same file can be selected again
+        event.target.value = '';
+    }
+    
+    // NEW: Handle all file types in edit modal
+    handleEditFiles(files, messageContainer, source = 'file') {
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+        const documentFiles = files.filter(file => !file.type.startsWith('image/'));
+        
+        // Process images (existing logic)
+        if (imageFiles.length > 0) {
+            this.handleEditImageFiles(imageFiles, messageContainer, source);
+        }
+        
+        // Process documents (new logic)
+        if (documentFiles.length > 0) {
+            this.handleEditDocumentFiles(documentFiles, messageContainer, source);
+        }
+    }
+    
+    // NEW: Handle document files in edit modal
+    async handleEditDocumentFiles(files, messageContainer, source = 'file') {
+        if (files.length === 0) {
+            console.warn('[EDIT-DOCUMENTS] No document files selected');
+            return;
+        }
+        
+        const textarea = messageContainer.querySelector('.message-content-textarea');
+        if (!textarea) {
+            console.error('[EDIT-DOCUMENTS] No textarea found in message container');
+            return;
+        }
+        
+        // Show processing feedback
+        const originalPlaceholder = textarea.placeholder;
+        textarea.placeholder = `Processing ${files.length} document${files.length > 1 ? 's' : ''}...`;
+        
+        try {
+            // Upload documents to server for processing
+            const result = await processDocumentFiles(files);
+            
+            // Append document text to textarea content
+            let currentText = textarea.value;
+            
+            for (const docData of result.results) {
+                currentText += `\n\n\`\`\`userdocument\nFile: ${docData.fileName}\n${docData.extractedText}\n\`\`\``;
+                console.log(`[EDIT-DOCUMENTS] Added document: ${docData.fileName} (${(docData.size / 1024).toFixed(1)}KB)`);
+            }
+            
+            // Handle errors
+            for (const error of result.errors || []) {
+                console.error(`[EDIT-DOCUMENTS] Error processing: ${error.fileName} - ${error.error}`);
+            }
+            
+            textarea.value = currentText;
+            
+            // Show completion feedback
+            if (result.failed > 0) {
+                textarea.placeholder = `✓ Processed ${result.processed}/${files.length} documents (${result.failed} failed)`;
+            } else {
+                textarea.placeholder = `✓ Processed ${result.processed} document${result.processed > 1 ? 's' : ''}`;
+            }
+            
+        } catch (error) {
+            console.error('[EDIT-DOCUMENTS] Error uploading documents:', error);
+            textarea.placeholder = `Error: ${error.message}`;
+        }
+        
+        // Reset placeholder after delay
+        setTimeout(() => {
+            textarea.placeholder = originalPlaceholder;
+        }, 3000);
     }
     
     // Update the images display in edit modal
@@ -1227,11 +1305,11 @@ class ChatRenderer {
             // Hidden file input
             const fileInput = document.createElement("input");
             fileInput.type = "file";
-            fileInput.accept = "image/*";
+            fileInput.accept = "*";
             fileInput.multiple = true;
             fileInput.style.display = "none";
             fileInput.addEventListener("change", (e) => {
-                this.handleEditImageSelect(e, messageContainer);
+                this.handleEditFileSelect(e, messageContainer);
             });
             
             // Paperclip button
@@ -1239,7 +1317,7 @@ class ChatRenderer {
             addImageBtn.type = "button";
             addImageBtn.className = "edit-add-image-btn";
             addImageBtn.innerHTML = "📎";
-            addImageBtn.title = "Add images";
+            addImageBtn.title = "Add files & images";
             addImageBtn.addEventListener("click", () => {
                 fileInput.click();
             });
