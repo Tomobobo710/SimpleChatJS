@@ -21,13 +21,13 @@
 .phase-text {
     color: #90ee90;
     font-weight: bold;
-    font-size: 11px;
+    font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .phase-timestamp {
     color: #70a070;
-    font-size: 9px;
+    font-size: 11px;
     opacity: 0.8;
 }

@@ -3,16 +3,16 @@
 /* Debug Toggle Button */
 .debug-toggle {
     position: absolute;
-    top: 2px;
-    right: 8px;
+    top: 4px;
+    right: 10px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #ccc;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -36,10 +36,10 @@
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 4px;
-    padding: 12px;
-    margin: 8px 0;
+    padding: 15px;
+    margin: 10px 0;
     font-family: 'Courier New', monospace;
-    font-size: 12px;
+    font-size: 13px;
     color: #e0e0e0;
 }
 
@@ -48,16 +48,16 @@
 }
 
 .debug-panel h3 {
-    margin: 0 0 8px 0;
+    margin: 0 0 10px 0;
     color: #4CAF50;
-    font-size: 14px;
+    font-size: 16px;
 }
 
 .debug-note {
     color: #888;
     font-style: italic;
-    margin-bottom: 12px;
-    font-size: 11px;
+    margin-bottom: 15px;
+    font-size: 13px;
 }
 
 /* HTTP Request/Response Pairs */
@@ -70,10 +70,10 @@
 
 .http-pair h4 {
     margin: 0;
-    padding: 8px 12px;
+    padding: 10px 15px;
     background: #333;
     color: #4CAF50;
-    font-size: 13px;
+    font-size: 15px;
     border-bottom: 1px solid #444;
 }
 

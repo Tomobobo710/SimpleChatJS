@@ -1,71 +1,160 @@
 /* MCP Styles - Model Context Protocol server and tool styling */
 
-/* MCP Server Styling */
+/* MCP Controls */
 .mcp-controls {
-    margin-bottom: 15px;
+    margin-bottom: 6px;
     display: flex;
     gap: 8px;
     justify-content: center;
 }
 
+/* Remove nested scrolling - use natural modal scroll */
 #mcpServers {
-    max-height: 250px;
-    overflow-y: auto;
+    /* Remove max-height and overflow to eliminate nested scrolling */
     border: 1px inset #555;
     background: #1e1e1e;
     padding: 8px;
-    margin-top: 10px;
+    margin-top: 8px;
 }
 
+/* Server Container - Collapsible Design */
 .mcp-server {
-    background: #1e1e1e;
-    border: 1px inset #555;
-    margin: 8px 0;
-    padding: 8px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    margin: 6px 0;
+    border-radius: 4px;
+    overflow: hidden;
 }
 
+/* Server Header - Only arrow area clickable to expand/collapse */
 .mcp-server-header {
     display: flex;
     align-items: center;
-    margin-bottom: 6px;
-    font-weight: bold;
-    color: #b3d9ff;
+    padding: 8px 12px;
+    background: #333;
+    user-select: none;
+    border-bottom: 1px solid #444;
+    transition: background 0.2s ease;
+    gap: 8px;
 }
 
+.mcp-server-header:hover {
+    background: #3a3a3a;
+}
+
+/* Make only the arrow area clickable for expand/collapse */
+.mcp-server-expand-area {
+    cursor: pointer;
+    padding: 4px 8px;
+    margin: -4px -8px -4px 8px;
+    border-radius: 3px;
+    transition: background 0.2s ease;
+}
+
+.mcp-server-expand-area:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Server Toggle - Master enable/disable for all tools */
 .mcp-server-toggle {
-    margin-right: 8px;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
 }
 
+/* Server Name */
 .mcp-server-name {
     flex: 1;
+    font-weight: bold;
+    color: #e0e0e0;
+    font-size: 14px;
 }
 
+/* Server Status */
 .mcp-server-status {
-    font-size: 10px;
+    font-size: 12px;
     color: #90ee90;
+    margin-right: 8px;
 }
 
 .mcp-server-status.disconnected {
     color: #ff9999;
 }
 
-.mcp-tools {
-    margin-left: 20px;
-    margin-top: 6px;
+/* Collapse/Expand Indicator */
+.mcp-server-arrow {
+    font-size: 12px;
+    color: #999;
+    transition: transform 0.2s ease;
+    display: inline-block;
+    user-select: none;
 }
 
+.mcp-server.expanded .mcp-server-arrow {
+    transform: rotate(90deg);
+}
+
+/* Tools Container - Collapsible */
+.mcp-tools {
+    display: none;
+    padding: 8px 12px;
+    background: #1e1e1e;
+    border-top: 1px solid #444;
+}
+
+.mcp-server.expanded .mcp-tools {
+    display: block;
+}
+
+/* Individual Tool */
 .mcp-tool {
     display: flex;
     align-items: center;
-    margin: 3px 0;
-    font-size: 10px;
+    margin: 4px 0;
+    padding: 2px 0;
+    font-size: 13px;
     color: #e0e0e0;
+    gap: 6px;
 }
 
+.mcp-tool:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+}
+
+/* Tool Toggle */
 .mcp-tool-toggle {
-    margin-right: 6px;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
 }
 
+/* Tool Name */
 .mcp-tool-name {
     flex: 1;
+    color: #ccc;
+}
+
+/* Tool Description (if we add it later) */
+.mcp-tool-description {
+    font-size: 11px;
+    color: #888;
+    margin-left: 22px;
+    margin-top: 2px;
+}
+
+/* Loading State */
+.mcp-loading {
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    padding: 20px;
+}
+
+/* No Servers State */
+.mcp-no-servers {
+    text-align: center;
+    color: #888;
+    padding: 20px;
+    font-style: italic;
 }

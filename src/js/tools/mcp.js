@@ -140,8 +140,11 @@ async function updateMCPStatus() {
                 // Check if all tools are enabled for server toggle
                 const allToolsEnabled = isConnected && server.tools.length > 0 && server.tools.every(tool => isToolEnabled(server.name, tool));
                 
+                // Check if this server was previously expanded
+                const isExpanded = expandedServers.has(server.name);
+                
                 statusHtml += `
-                    <div class="mcp-server">
+                    <div class="mcp-server ${isExpanded ? 'expanded' : ''}" data-server="${escapeHtml(server.name)}">
                         <div class="mcp-server-header">
                             <input type="checkbox" class="mcp-server-toggle" 
                                    data-server="${escapeHtml(server.name)}" 
@@ -149,6 +152,9 @@ async function updateMCPStatus() {
                                    ${!isConnected ? 'disabled' : ''}>
                             <span class="mcp-server-name">${escapeHtml(server.name)}</span>
                             <span class="mcp-server-status ${statusClass}">${statusText}</span>
+                            <span class="mcp-server-expand-area" onclick="toggleMCPServer('${escapeHtml(server.name)}')">
+                                <span class="mcp-server-arrow">▶</span>
+                            </span>
                         </div>
                         
                         ${isConnected && server.tools.length > 0 ? `
@@ -178,11 +184,9 @@ async function updateMCPStatus() {
             
         } else {
             mcpServersDiv.innerHTML = `
-                <div class="mcp-server">
-                    <div class="mcp-server-header">
-                        <span class="mcp-server-status disconnected">No MCP servers connected</span>
-                    </div>
-                    <p>Configure servers in "MCP Config" then use "Refresh MCP Servers".</p>
+                <div class="mcp-no-servers">
+                    <p><strong>No MCP servers connected</strong></p>
+                    <p>Configure servers in "MCP Config" then use "Refresh MCP Servers" to connect.</p>
                 </div>
             `;
         }
@@ -191,16 +195,36 @@ async function updateMCPStatus() {
         const mcpServersDiv = document.getElementById('mcpServers');
         if (mcpServersDiv) {
             mcpServersDiv.innerHTML = `
-                <div class="mcp-server">
-                    <div class="mcp-server-header">
-                        <span class="mcp-server-status disconnected">[ERROR] Failed to load MCP status</span>
-                    </div>
+                <div class="mcp-no-servers">
+                    <p><strong style="color: #ff9999;">[ERROR] Failed to load MCP status</strong></p>
+                    <p>Check the console for more details.</p>
                 </div>
             `;
         }
         logger.error('Failed to load MCP status:', error, true);
     }
 }
+
+// Keep track of expanded servers
+let expandedServers = new Set();
+
+// Toggle MCP server expanded/collapsed state
+function toggleMCPServer(serverName) {
+    const serverElement = document.querySelector(`.mcp-server[data-server="${CSS.escape(serverName)}"]`);
+    if (serverElement) {
+        if (serverElement.classList.contains('expanded')) {
+            serverElement.classList.remove('expanded');
+            expandedServers.delete(serverName);
+        } else {
+            serverElement.classList.add('expanded');
+            expandedServers.add(serverName);
+        }
+    }
+}
+
+// Make toggle function globally accessible
+window.toggleMCPServer = toggleMCPServer;
+window.expandedServers = expandedServers;
 
 // Add event listeners for MCP checkboxes
 function addMCPCheckboxListeners() {

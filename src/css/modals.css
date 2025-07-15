@@ -24,12 +24,12 @@
 .aim-modal-content {
     background: #2c2c2c;
     border: 2px outset #555;
-    max-width: 600px;
+    max-width: 700px;
     width: 90%;
-    height: 550px; /* Fixed height to prevent tab switching jumps */
+    height: 600px; /* Increased height for larger fonts */
     max-height: calc(90vh - 10vh); /* Limit height so X button always visible */
     font-family: Tahoma, Arial, sans-serif;
-    font-size: 11px;
+    font-size: 14px; /* Increased from 11px */
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -38,7 +38,7 @@
 .aim-modal-header {
     background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
     color: white;
-    padding: 6px 8px;
+    padding: 8px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -50,15 +50,15 @@
 }
 
 .aim-modal-title {
-    font-size: 11px;
+    font-size: 16px;
 }
 
 .close, .close-mcp {
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: bold;
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -77,27 +77,28 @@
 
 /* MCP Config Modal specific sizing */
 #mcpConfigModal .aim-modal-content {
-    max-width: 800px;
+    max-width: 900px;
     max-height: 90vh;
 }
 
 /* Responsive styling for high zoom levels */
 @media screen and (min-width: 1000px) {
     .aim-modal-content {
-        max-width: 700px; /* Wider modal on larger screens */
+        max-width: 800px; /* Wider modal on larger screens */
     }
 }
 
 /* Adjust for very high zoom levels */
 @media screen and (max-width: 600px) {
     .btn-tab {
-        padding: 4px 8px; /* Smaller padding for tabs */
-        font-size: 10px;
+        padding: 6px 10px; /* Adjusted for larger fonts */
+        font-size: 12px;
     }
     
     .aim-modal-content {
         width: 95%; /* Take up more space */
         max-height: 90vh;
+        font-size: 12px; /* Slightly smaller on mobile */
     }
     
     .test-connection-btn {
@@ -129,9 +130,9 @@
 }
 
 #mcpConfigText {
-    height: 300px;
+    height: 350px;
     font-family: 'Courier New', monospace;
-    font-size: 10px;
+    font-size: 13px;
     resize: vertical;
 }
 
@@ -149,7 +150,7 @@
 /* Tab Content */
 .tab-content {
     display: none;
-    padding: 5px 0;
+    padding: 4px 0;
     overflow-y: auto; /* Scroll if content overflows */
     flex: 1; /* Take up remaining space */
     min-height: 0; /* Allow content to scroll */

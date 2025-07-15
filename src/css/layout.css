@@ -29,13 +29,12 @@
 
 .user-name {
     font-weight: bold;
-    font-size: 18px; /* Increased from 16px */
-    font-weight: bold;
+    font-size: 20px; /* Increased from 18px */
     color: #ffffff;
 }
 
 .user-status {
-    font-size: 12px; /* Increased from 10px */
+    font-size: 14px; /* Increased from 12px */
     color: #b3d9ff;
 }
 
@@ -50,10 +49,10 @@
 
 .chat-list-header {
     background: #4a4a4a;
-    padding: 5px 8px;
+    padding: 6px 10px;
     border-bottom: 1px inset #2c2c2c;
     font-weight: bold;
-    font-size: 12px; /* Increased from 10px */
+    font-size: 14px; /* Increased from 12px */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -61,7 +60,7 @@
 }
 
 .conductor-toggle {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: normal;
 }
 
@@ -90,9 +89,9 @@
 .chat-item {
     display: flex;
     align-items: center;
-    padding: 6px 8px; /* Slightly larger padding */
+    padding: 8px 10px; /* Increased padding */
     border-bottom: 1px solid #333;
-    font-size: 13px; /* Increased from 11px */
+    font-size: 15px; /* Increased from 13px */
     color: #e0e0e0;
     position: relative; /* For absolute positioning of child elements */
 }
@@ -116,7 +115,7 @@
 }
 
 .chat-item-preview {
-    font-size: 9px;
+    font-size: 12px;
     color: #999;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -128,10 +127,10 @@
 }
 
 .chat-item-time {
-    font-size: 9px;
+    font-size: 11px;
     color: #666;
     position: absolute;
-    top: 4px;
+    top: 6px;
     right: 28px; /* Make room for delete button */
 }
 
@@ -187,8 +186,8 @@
 .chat-header {
     background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
     border-bottom: 1px solid #555;
-    padding: 8px 12px;
-    min-height: 40px;
+    padding: 10px 15px;
+    min-height: 50px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -205,19 +204,19 @@
 }
 
 .model-label {
-    font-size: 11px;
+    font-size: 13px;
     color: #b0b0b0;
     font-weight: 500;
 }
 
 .chat-title {
     font-weight: bold;
-    font-size: 12px;
+    font-size: 15px;
     color: #e0e0e0;
 }
 
 .chat-info {
-    font-size: 10px;
+    font-size: 12px;
     color: #999;
     margin-top: 2px;
 }
@@ -244,11 +243,11 @@
 .input-container {
     background: #3a3a3a;
     border-top: 1px solid #555;
-    padding: 12px;
+    padding: 15px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    min-height: 60px;
+    gap: 12px;
+    min-height: 70px;
 }
 
 .input-row {
@@ -425,15 +424,15 @@
 
 /* Input container states */
 .input-container.has-images {
-    min-height: 120px;
-}
-
-.input-container.has-documents {
     min-height: 140px;
 }
 
+.input-container.has-documents {
+    min-height: 160px;
+}
+
 .input-container.has-images.has-documents {
-    min-height: 180px;
+    min-height: 200px;
 }
 
 /* Smooth transitions */

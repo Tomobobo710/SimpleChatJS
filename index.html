@@ -103,16 +103,22 @@
                     <!-- Profile Management Section -->
                     <div class="settings-section">
                         <h3>Profiles</h3>
-                        <div class="profile-selector-container">
+                        <div class="profile-row">
                             <label for="profileSelect">Active Profile:</label>
                             <select id="profileSelect" class="profile-dropdown">
                                 <option value="Default">Default</option>
                             </select>
+                            <input type="text" id="newProfileName" placeholder="New profile name" class="profile-name-input">
+                            <button type="button" id="saveAsProfileBtn" class="btn">Save As New Profile</button>
+                            <button type="button" id="deleteProfileBtn" class="btn btn-danger">Delete Profile</button>
                         </div>
                     </div>
                     
                     <div class="settings-section">
-                        <h3>API Configuration</h3>
+                        <div class="api-config-header">
+                            <h3>API Configuration</h3>
+                            <button id="testConnectionBtn" class="test-connection-btn">Test Connection</button>
+                        </div>
                         <label for="apiKey">API Key (optional for local APIs):</label>
                         <input type="password" id="apiKey" placeholder="Leave empty for local APIs like Ollama">
                         
@@ -128,15 +134,9 @@
                             <button type="button" id="refreshModelsBtn" class="refresh-models-btn" title="Refresh model list">🔄</button>
                         </div>
                         
-                        <div class="profile-actions">
-                            <input type="text" id="newProfileName" placeholder="New profile name" class="profile-name-input">
-                            <button type="button" id="saveAsProfileBtn" class="btn">Save As New Profile</button>
-                            <button type="button" id="deleteProfileBtn" class="btn btn-danger">Delete Profile</button>
-                        </div>
+
                         
-                        <div class="api-config-actions">
-                            <button id="testConnectionBtn" class="btn btn-success">Test Connection</button>
-                        </div>
+
                     </div>
                 </div>
                 

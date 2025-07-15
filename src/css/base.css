@@ -8,7 +8,7 @@
 
 body {
     font-family: Tahoma, Arial, sans-serif;
-    font-size: 13px; /* Increased from 11px to make everything more zoomed in */
+    font-size: 16px; /* Increased from 13px for better readability */
     background: #2c2c2c;
     color: #e0e0e0;
     height: 100vh;
@@ -48,13 +48,13 @@ body {
     top: 20px;
     left: 50%;
     transform: translateX(-50%);
-    padding: 8px 12px;
+    padding: 10px 16px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: bold;
     z-index: 2000;
     border: 1px solid;
-    max-width: 300px;
+    max-width: 350px;
     word-wrap: break-word;
 }
 
