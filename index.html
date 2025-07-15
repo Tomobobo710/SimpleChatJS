@@ -18,8 +18,8 @@
             </div>
             
             <div class="chat-controls">
-                <button id="newChatBtn" class="aim-button">New Chat</button>
-                <button id="settingsBtn" class="aim-button">Settings</button>
+                <button id="newChatBtn" class="btn">New Chat</button>
+                <button id="settingsBtn" class="btn">Settings</button>
             </div>
             
             <div class="chat-list-header">
@@ -57,21 +57,21 @@
             
             <div id="inputContainer" class="input-container">
                 <div class="input-row">
-                    <textarea id="messageInput" placeholder="Type your message and press Enter... (Ctrl+V to paste files)" rows="2"></textarea>
-                    <button id="sendBtn" class="send-button">Send</button>
+                    <textarea id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
+                    <button id="sendBtn" class="btn">Send</button>
                 </div>
                 
                 <!-- File upload and main actions area -->
                 <div id="imageArea" class="image-area">
                     <div class="main-action-bar">
                         <input type="file" id="fileInput" accept="*" multiple style="display: none;">
-                        <button id="addFileBtn" class="add-file-btn" title="Add files & images">
-                            <span>📎</span>
+                        <button id="addFileBtn" class="btn" title="Add files & images">
+                            Add Files
                         </button>
-                        <button id="toolsBtn" class="tools-btn" title="Manage tools">
-                            <span>🔧</span>
+                        <button id="toolsBtn" class="btn" title="Manage tools">
+                            Tool Settings
                         </button>
-                        <span class="action-hint">Drop, paste, or click to add files</span>
+
                     </div>
                     <div id="imagePreviews" class="image-previews"></div>
                     <div id="documentPreviews" class="document-previews"></div>
@@ -91,11 +91,11 @@
                 
                 <!-- Tab Navigation -->
                 <div class="tab-navigation">
-                    <button class="tab-button active" data-tab="general">General</button>
-                    <button class="tab-button" data-tab="tokens">Tokens</button>
-                    <button class="tab-button" data-tab="mcp">MCP</button>
-                    <button class="tab-button" data-tab="debug">Debug</button>
-                    <button class="tab-button" data-tab="logging">Logging</button>
+                    <button class="btn btn-tab active" data-tab="general">General</button>
+                    <button class="btn btn-tab" data-tab="tokens">Tokens</button>
+                    <button class="btn btn-tab" data-tab="mcp">MCP</button>
+                    <button class="btn btn-tab" data-tab="debug">Debug</button>
+                    <button class="btn btn-tab" data-tab="logging">Logging</button>
                 </div>
                 
                 <!-- General Tab -->
@@ -130,12 +130,12 @@
                         
                         <div class="profile-actions">
                             <input type="text" id="newProfileName" placeholder="New profile name" class="profile-name-input">
-                            <button type="button" id="saveAsProfileBtn" class="profile-btn">Save As New Profile</button>
-                            <button type="button" id="deleteProfileBtn" class="profile-btn profile-btn-danger">Delete Profile</button>
+                            <button type="button" id="saveAsProfileBtn" class="btn">Save As New Profile</button>
+                            <button type="button" id="deleteProfileBtn" class="btn btn-danger">Delete Profile</button>
                         </div>
                         
                         <div class="api-config-actions">
-                            <button id="testConnectionBtn" class="test-connection-btn">Test Connection</button>
+                            <button id="testConnectionBtn" class="btn btn-success">Test Connection</button>
                         </div>
                     </div>
                 </div>
@@ -215,8 +215,8 @@
                 <div id="mcpTab" class="tab-content">
                     <div class="settings-section">
                         <div class="mcp-controls">
-                            <button id="refreshMcpBtn" class="aim-button">Refresh MCP Servers</button>
-                            <button id="mcpConfigBtn" class="aim-button">MCP Config</button>
+                            <button id="refreshMcpBtn" class="btn">Refresh MCP Servers</button>
+                            <button id="mcpConfigBtn" class="btn">MCP Config</button>
                         </div>
                         <div id="mcpServers">
                             <p>Loading MCP servers...</p>
@@ -256,7 +256,7 @@
                     </div>
                 </div>
 
-                <button id="saveSettings" class="aim-button">Save Settings</button>
+                <button id="saveSettings" class="btn">Save Settings</button>
             </div>
         </div>
 
@@ -290,8 +290,8 @@
                 </div>
 
                 <div class="button-group">
-                    <button id="saveMcpConfig" class="aim-button">Save MCP Config</button>
-                    <button id="testMcpConfig" class="aim-button">Check JSON Format</button>
+                    <button id="saveMcpConfig" class="btn">Save MCP Config</button>
+                    <button id="testMcpConfig" class="btn">Check JSON Format</button>
                 </div>
             </div>
         </div>

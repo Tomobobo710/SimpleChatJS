@@ -106,10 +106,10 @@ function setLoading(isLoading) {
     
     if (isLoading) {
         sendBtn.textContent = 'Stop';
-        sendBtn.classList.add('stop-mode');
+        sendBtn.classList.add('btn-stop');
     } else {
         sendBtn.textContent = 'Send';
-        sendBtn.classList.remove('stop-mode');
+        sendBtn.classList.remove('btn-stop');
     }
 }
 

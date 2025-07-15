@@ -203,19 +203,24 @@ function setupEventListeners() {
     fileInput.addEventListener('change', handleFileSelect);
     
     // Drag and drop for files
-    imageArea.addEventListener('dragover', (e) => {
+    // Expand drag/drop to entire input area instead of just bottom bar
+    const inputContainer = document.getElementById('inputContainer');
+    inputContainer.addEventListener('dragover', (e) => {
         e.preventDefault();
-        imageArea.classList.add('drag-over');
+        inputContainer.classList.add('drag-over');
     });
     
-    imageArea.addEventListener('dragleave', (e) => {
+    inputContainer.addEventListener('dragleave', (e) => {
         e.preventDefault();
-        imageArea.classList.remove('drag-over');
+        // Only remove if we're actually leaving the container
+        if (!inputContainer.contains(e.relatedTarget)) {
+            inputContainer.classList.remove('drag-over');
+        }
     });
     
-    imageArea.addEventListener('drop', (e) => {
+    inputContainer.addEventListener('drop', (e) => {
         e.preventDefault();
-        imageArea.classList.remove('drag-over');
+        inputContainer.classList.remove('drag-over');
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
             handleFiles(files);
@@ -283,7 +288,7 @@ function setupEventListeners() {
     }
     
     // Tab switching
-    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabButtons = document.querySelectorAll('.btn-tab');
     tabButtons.forEach(button => {
         button.addEventListener('click', (e) => {
             switchTab(e.target.dataset.tab);
@@ -300,7 +305,7 @@ function switchTab(tabName) {
     });
     
     // Remove active class from all tab buttons
-    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabButtons = document.querySelectorAll('.btn-tab');
     tabButtons.forEach(button => {
         button.classList.remove('active');
     });
@@ -419,7 +424,7 @@ function createImagePreview(imageData, index) {
     
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove-btn';
-    removeBtn.innerHTML = '×';
+    removeBtn.innerHTML = '<span class="x-icon"></span>';
     removeBtn.title = 'Remove image';
     removeBtn.onclick = () => removeImage(index);
     

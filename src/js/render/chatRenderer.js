@@ -1216,7 +1216,7 @@ class ChatRenderer {
                 // Add remove button
                 const removeBtn = document.createElement("button");
                 removeBtn.className = "edit-image-remove";
-                removeBtn.innerHTML = "×";
+                removeBtn.innerHTML = '<span class="x-icon"></span>';
                 removeBtn.title = "Remove this image";
                 removeBtn.addEventListener("click", (e) => {
                     e.preventDefault();
@@ -1316,7 +1316,7 @@ class ChatRenderer {
             const addImageBtn = document.createElement("button");
             addImageBtn.type = "button";
             addImageBtn.className = "edit-add-image-btn";
-            addImageBtn.innerHTML = "📎";
+            addImageBtn.innerHTML = 'Add Files';
             addImageBtn.title = "Add files & images";
             addImageBtn.addEventListener("click", () => {
                 fileInput.click();

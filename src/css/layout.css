@@ -267,77 +267,11 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    opacity: 0.7;
-    transition: opacity 0.2s;
 }
 
-.main-action-bar:hover {
-    opacity: 1;
-}
+/* Old button styles removed - now using unified .btn class */
 
-.add-file-btn {
-    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
-    border: 1px outset #555;
-    padding: 4px 8px;
-    font-family: Tahoma, Arial, sans-serif;
-    font-size: 14px;
-    cursor: pointer;
-    color: #e0e0e0;
-    border-radius: 3px;
-    min-width: 32px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.add-file-btn:hover {
-    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
-}
-
-.add-file-btn:active {
-    border: 1px inset #555;
-    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
-}
-
-/* Tools button - matches add-file-btn styling */
-.tools-btn {
-    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
-    border: 1px outset #555;
-    padding: 4px 8px;
-    font-family: Tahoma, Arial, sans-serif;
-    font-size: 14px;
-    cursor: pointer;
-    color: #e0e0e0;
-    border-radius: 3px;
-    min-width: 32px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.tools-btn:hover {
-    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
-}
-
-.tools-btn:active {
-    border: 1px inset #555;
-    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
-}
-
-.action-hint {
-    font-family: Tahoma, Arial, sans-serif;
-    font-size: 10px;
-    color: #999;
-    font-style: italic;
-    transition: color 0.3s ease;
-}
-
-.action-hint.success {
-    color: #4a9d4a;
-    font-weight: bold;
-}
+/* Removed unused .action-hint styles */
 
 .image-previews {
     display: none; /* Initially hidden */
@@ -462,15 +396,31 @@
     background: #333;
 }
 /* Drag and drop states */
-.image-area.drag-over {
-    background: rgba(74, 106, 154, 0.1);
-    border: 2px dashed #4a6a9a;
-    border-radius: 4px;
+/* Removed image-area drag-over styles - now using messages-container */
+
+/* Input container drag-over state */
+.input-container.drag-over {
+    background: rgba(74, 144, 226, 0.05);
+    border: 2px dashed #4a90e2;
+    border-radius: 8px;
+    position: relative;
 }
 
-.image-area.drag-over .action-hint {
-    color: #4a6a9a;
+.input-container.drag-over::before {
+    content: 'Drop files here';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(74, 144, 226, 0.9);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
     font-weight: bold;
+    z-index: 1000;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* Input container states */

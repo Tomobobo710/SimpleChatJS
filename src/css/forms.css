@@ -7,7 +7,7 @@
     border: 1px inset #555;
     padding: 6px;
     font-family: Tahoma, Arial, sans-serif;
-    font-size: 11px;
+    font-size: 14px;
     resize: vertical;
     min-height: 40px;
     color: #e0e0e0;
@@ -19,85 +19,82 @@
     background: #333;
 }
 
-/* Button Styles */
-.send-button {
+/* Unified Button System */
+.btn {
     background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
     border: 1px outset #555;
     padding: 6px 12px;
     font-family: Tahoma, Arial, sans-serif;
     font-size: 11px;
     cursor: pointer;
-    min-width: 60px;
     color: #e0e0e0;
+    min-width: 60px;
+    outline: none;
 }
 
-.send-button:hover {
+.btn:hover {
     background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
 }
 
-.send-button:active {
+.btn:active {
     border: 1px inset #555;
     background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
 }
 
-.send-button:disabled {
+.btn:disabled {
     background: #2a2a2a;
     color: #666;
     cursor: not-allowed;
     border: 1px outset #444;
 }
 
-.send-button.stop-mode {
+.btn:focus {
+    border: 1px outset #777;
+}
+
+/* Button Color Variants */
+.btn.btn-danger {
+    background: linear-gradient(to bottom, #7a3a3a, #6a2a2a);
+    border-color: #8a4a4a;
+}
+
+.btn.btn-danger:hover {
+    background: linear-gradient(to bottom, #8a4a4a, #7a3a3a);
+}
+
+.btn.btn-success {
+    background: linear-gradient(to bottom, #3a7a3a, #2a6a2a);
+    border-color: #4a8a4a;
+}
+
+.btn.btn-success:hover {
+    background: linear-gradient(to bottom, #4a8a4a, #3a7a3a);
+}
+
+/* Special Button States */
+.btn.btn-stop {
     background: #2a2a2a;
     color: #888;
-    cursor: pointer;
     border: 1px outset #444;
 }
 
-.send-button.stop-mode:hover {
+.btn.btn-stop:hover {
     background: #333;
     color: #aaa;
 }
 
-/* AIM-style Buttons */
-.aim-button {
-    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
-    border: 1px outset #555;
-    padding: 4px 8px;
-    font-family: Tahoma, Arial, sans-serif;
-    font-size: 10px;
-    cursor: pointer;
-    color: #e0e0e0;
+/* Tab Button Variant */
+.btn.btn-tab {
+    border-bottom: none;
+    margin-right: 2px;
+    position: relative;
 }
 
-.aim-button:hover {
-    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
-}
-
-.aim-button:active {
+.btn.btn-tab.active {
+    background: #2c2c2c;
     border: 1px inset #555;
-    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a);
-}
-
-/* Ensure all buttons have consistent styling */
-.aim-button, .aim-button:focus, .aim-button:visited {
-    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a) !important;
-    border: 1px outset #555 !important;
-    color: #e0e0e0 !important;
-    outline: none;
-}
-
-.aim-button:hover {
-    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a) !important;
-}
-
-.aim-button:focus {
-    border: 1px outset #777 !important;
-}
-
-.aim-button:active {
-    border: 1px inset #555 !important;
-    background: linear-gradient(to bottom, #3a3a3a, #4a4a4a) !important;
+    border-bottom: 1px solid #2c2c2c;
+    z-index: 1;
 }
 
 /* Test Connection button */
@@ -358,7 +355,7 @@ input[type="checkbox"]:disabled {
     padding: 0 10px;
 }
 
-.button-group .aim-button {
+.button-group .btn {
     flex: 1;
     padding: 6px 12px;
 }

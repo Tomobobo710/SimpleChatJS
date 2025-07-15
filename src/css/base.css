@@ -80,3 +80,68 @@ body {
     opacity: 0;
     transition: opacity 0.3s ease-out;
 }
+
+/* ==============================================
+   PROGRAMMATIC ICON REPLACEMENTS (No Emojis)
+   ============================================== */
+
+/* Text-based buttons - no complex CSS icons needed */
+
+/* X button replacement - CSS X */
+.x-icon {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    position: relative;
+}
+
+.x-icon::before,
+.x-icon::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 1px;
+}
+
+.x-icon::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.x-icon::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/* Picture/Image icon replacement - CSS picture frame */
+.picture-icon {
+    display: inline-block;
+    width: 14px;
+    height: 12px;
+    position: relative;
+}
+
+.picture-icon::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 14px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-radius: 2px;
+    background: transparent;
+}
+
+.picture-icon::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+}

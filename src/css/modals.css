@@ -90,7 +90,7 @@
 
 /* Adjust for very high zoom levels */
 @media screen and (max-width: 600px) {
-    .tab-button {
+    .btn-tab {
         padding: 4px 8px; /* Smaller padding for tabs */
         font-size: 10px;
     }
@@ -144,34 +144,7 @@
     padding: 0;
 }
 
-.tab-button {
-    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
-    border: 1px outset #555;
-    border-bottom: none;
-    padding: 6px 12px;
-    font-family: Tahoma, Arial, sans-serif;
-    font-size: 11px;
-    cursor: pointer;
-    color: #e0e0e0;
-    margin-right: 2px;
-    position: relative;
-}
-
-.tab-button:hover {
-    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
-}
-
-.tab-button.active {
-    background: #2c2c2c;
-    color: #e0e0e0;
-    border: 1px inset #555;
-    border-bottom: 1px solid #2c2c2c;
-    z-index: 1;
-}
-
-.tab-button:active {
-    border: 1px inset #555;
-}
+/* Tab button styles moved to unified .btn system in forms.css */
 
 /* Tab Content */
 .tab-content {

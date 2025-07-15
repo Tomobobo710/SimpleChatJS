@@ -117,7 +117,7 @@ function addChatToList(chatId, title, lastMessage, lastUpdated) {
             <div class="chat-item-title">${escapeHtml(title)}</div>
             <div class="chat-item-preview">${escapeHtml(getPreviewText(lastMessage, 50))}</div>
         </div>
-        <button class="chat-delete-btn" title="Delete chat">×</button>
+        <button class="chat-delete-btn" title="Delete chat"><span class="x-icon"></span></button>
     `;
     
     // Add click handler for the main chat content

@@ -560,7 +560,7 @@
 }
 
 .editable-message.drag-over::before {
-    content: '🖼️ Drop images here';
+    content: 'Drop files here';
     position: absolute;
     top: 50%;
     left: 50%;
@@ -577,7 +577,7 @@
 
 /* Improved image controls layout */
 .edit-image-controls::before {
-    content: '🖼️ Add images:';
+    content: 'Add files:';
     font-size: 12px;
     color: #ccc;
     white-space: nowrap;

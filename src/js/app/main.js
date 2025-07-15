@@ -91,7 +91,7 @@ async function handleSendMessage() {
     const sendBtn = document.getElementById('sendBtn');
     
     // Check if we're in stop mode
-    if (sendBtn.classList.contains('stop-mode')) {
+    if (sendBtn.classList.contains('btn-stop')) {
         stopGeneration();
         return;
     }
