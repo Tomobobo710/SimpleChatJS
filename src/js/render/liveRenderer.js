@@ -42,6 +42,24 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                             dropdownInner.innerHTML = '<em>Thinking...</em>';
                         }
                     }
+                } else if (currentBlock.type === 'codeblock') {
+                    // Update live streaming code block
+                    const codeElement = blockElement.querySelector('code');
+                    if (codeElement) {
+                        if (currentBlock.metadata.isStreaming) {
+                            // Still streaming - show raw content with cursor
+                            codeElement.innerHTML = escapeHtml(currentBlock.content) + '<span class="code-cursor">|</span>';
+                        } else {
+                            // Streaming finished - use SimpleSyntax highlighting
+                            const language = currentBlock.metadata.language;
+                            codeElement.className = `language-${language}`;
+                            codeElement.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, language) : escapeHtml(currentBlock.content);
+                            logger.debug(`[LIVE-RENDER] Applied SimpleSyntax highlighting to finished code block`);
+                            // Remove cursor when done
+                            const cursor = codeElement.querySelector('.code-cursor');
+                            if (cursor) cursor.remove();
+                        }
+                    }
                 } else {
                     // Regular chat block
                     blockElement.innerHTML = formatMessage(escapeHtml(currentBlock.content));
@@ -72,11 +90,12 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         existingTemp.remove();
     }
     
-    // Add any current buffer content as temporary text
-    if (processor.buffer && processor.buffer.trim()) {
+    // Add any current buffer content as temporary text (only for normal state)
+    const buffer = processor.getBuffer();
+    if (buffer && buffer.trim() && processor.getState() === 'normal') {
         const tempDiv = document.createElement('div');
         tempDiv.className = 'temp-streaming-content';
-        tempDiv.innerHTML = formatMessage(escapeHtml(processor.buffer));
+        tempDiv.innerHTML = formatMessage(escapeHtml(buffer));
         tempContainer.appendChild(tempDiv);
     }
 }

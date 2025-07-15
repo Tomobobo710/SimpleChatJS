@@ -96,7 +96,7 @@ async function handleSendMessage() {
         return;
     }
     
-    const textMessage = messageInput.value.trim();
+    const textMessage = messageInput.value; // Don't trim - preserve user's intentional whitespace
     const images = getSelectedImages();
     const documents = getSelectedDocuments();
     

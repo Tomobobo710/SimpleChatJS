@@ -145,3 +145,127 @@ body {
     border-radius: 50%;
     background: currentColor;
 }
+
+/* Code and whitespace styling */
+code {
+    background: #1a1a1a;
+    color: #f0f0f0;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+    white-space: pre; /* Preserve whitespace including spaces and tabs */
+}
+
+pre {
+    background: #1a1a1a;
+    color: #f0f0f0;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    overflow-x: auto;
+    margin: 4px 0;
+    white-space: pre; /* Preserve all whitespace */
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: inherit;
+    white-space: pre; /* Inherit whitespace preservation */
+}
+
+/* Message content should preserve whitespace for code */
+.chat-block {
+    white-space: pre-wrap; /* Preserve whitespace but allow wrapping */
+    word-wrap: break-word;
+}
+
+/* Tool content should also preserve whitespace */
+.dropdown-content {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Thinking content should preserve formatting */
+.thinking-content {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Code language label */
+.code-lang {
+    background: #333;
+    color: #ccc;
+    padding: 4px 8px;
+    font-size: 0.8em;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    border: 1px solid #444;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    margin-bottom: 0;
+    display: inline-block;
+    text-transform: lowercase;
+}
+
+/* Adjust pre styling when it follows a language label */
+.code-lang + pre {
+    margin-top: 0;
+    border-radius: 0 0 4px 4px;
+    border-top: none;
+}
+
+/* Live streaming code blocks */
+.live-code-block {
+    margin: 4px 0;
+}
+
+.streaming-code {
+    position: relative;
+}
+
+/* Blinking cursor for live code streaming */
+.code-cursor {
+    animation: blink 1s infinite;
+    font-weight: normal;
+    color: #00ff00;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* Code block styling (language-specific classes maintained for future highlighting) */
+pre[class*="language-"] {
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #f0f0f0;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    padding: 8px 12px;
+    margin: 4px 0;
+    overflow-x: auto;
+    white-space: pre;
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+code[class*="language-"] {
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    padding: 0;
+    white-space: pre;
+}
+
+/* Ensure code language labels work with language-specific pre elements */
+.code-lang + pre[class*="language-"] {
+    margin-top: 0;
+    border-radius: 0 0 4px 4px;
+    border-top: none;
+}

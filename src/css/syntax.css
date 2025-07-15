@@ -1,0 +1,67 @@
+/* SimpleSyntax.js - Syntax highlighting colors */
+
+/* Comments - Green */
+.syntax-comment {
+    color: #6a9955;
+    font-style: italic;
+}
+
+/* Strings - Orange */
+.syntax-string {
+    color: #ce9178;
+}
+
+/* Keywords - Blue */
+.syntax-keyword {
+    color: #569cd6;
+    font-weight: bold;
+}
+
+/* Numbers - Light Green */
+.syntax-number {
+    color: #b5cea8;
+}
+
+/* Functions - Yellow */
+.syntax-function {
+    color: #dcdcaa;
+}
+
+/* Operators - Light Gray */
+.syntax-operator {
+    color: #d4d4d4;
+}
+
+/* HTML Tags - Red */
+.syntax-tag {
+    color: #808080;
+}
+
+.syntax-tag-name {
+    color: #569cd6;
+}
+
+/* CSS Properties - Light Blue */
+.syntax-property {
+    color: #9cdcfe;
+}
+
+/* CSS Selectors - Yellow */
+.syntax-selector {
+    color: #d7ba7d;
+}
+
+/* CSS Units - Light Green */
+.syntax-unit {
+    color: #b5cea8;
+}
+
+/* Variables - Light Blue */
+.syntax-variable {
+    color: #9cdcfe;
+}
+
+/* Constants - Purple */
+.syntax-constant {
+    color: #c586c0;
+}

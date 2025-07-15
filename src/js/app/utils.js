@@ -45,14 +45,34 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Simple markdown-like formatting
+// Simple markdown-like formatting with whitespace preservation
 function formatMessage(text) {
-    // Basic markdown support
+    // Basic markdown support with proper whitespace handling
     return text
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        // Handle code blocks (triple backticks) first - preserve whitespace inside
+        .replace(/```(\w+)?\n?([\s\S]*?)```/g, function(match, lang, code) {
+            // Remove the language identifier and any leading newline
+            const cleanCode = code.replace(/^\n/, ''); // Remove leading newline after language
+            const langLabel = lang ? `<div class="code-lang">${lang}</div>` : '';
+            
+            // Use SimpleSyntax for highlighting
+            const highlightedCode = window.SimpleSyntax ? SimpleSyntax.highlight(cleanCode, lang) : escapeHtml(cleanCode);
+            return `${langLabel}<pre><code class="language-${lang}">${highlightedCode}</code></pre>`;
+        })
+        // Handle inline code - preserve spaces
         .replace(/`(.*?)`/g, '<code>$1</code>')
-        .replace(/\n/g, '<br>');
+        // Replace newlines with <br>
+        .replace(/\n/g, '<br>')
+        // Preserve multiple spaces (convert to non-breaking spaces)
+        .replace(/ {2,}/g, function(match) {
+            return '&nbsp;'.repeat(match.length);
+        })
+        // Preserve leading spaces on lines (common in code)
+        .replace(/(^|<br>)( +)/g, function(match, lineStart, spaces) {
+            return lineStart + '&nbsp;'.repeat(spaces.length);
+        });
 }
 
 // Smart auto-scroll tracking

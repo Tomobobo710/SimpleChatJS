@@ -209,6 +209,8 @@ class ChatRenderer {
                 return this.renderThinkingBlock(content, metadata, isOpen);
             case "tool":
                 return this.renderToolBlock(content, metadata, isOpen);
+            case "codeblock":
+                return this.renderCodeBlock(content, metadata);
             case "phase_marker":
                 return this.renderPhaseMarkerBlock(content, metadata);
             case "chat":
@@ -251,6 +253,45 @@ class ChatRenderer {
         return dropdown.element;
     }
     
+    // Render live streaming code block
+    renderCodeBlock(content, metadata) {
+        const div = document.createElement("div");
+        div.className = "live-code-block";
+        
+        // Add language label if present
+        if (metadata.language) {
+            const langLabel = document.createElement("div");
+            langLabel.className = "code-lang";
+            langLabel.textContent = metadata.language;
+            div.appendChild(langLabel);
+        }
+        
+        // Create the code element
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        
+        // Add language class and streaming indicator
+        let codeClass = "";
+        if (metadata.language) {
+            codeClass = `language-${metadata.language}`;
+        }
+        
+        if (metadata.isStreaming) {
+            code.className = `streaming-code ${codeClass}`.trim();
+            // For streaming, escape HTML and add cursor
+            code.innerHTML = escapeHtml(content) + '<span class="code-cursor">|</span>';
+        } else {
+            code.className = codeClass;
+            // For final content, use SimpleSyntax highlighting
+            code.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(content, metadata.language) : escapeHtml(content);
+        }
+        
+        pre.appendChild(code);
+        div.appendChild(pre);
+        
+        return div;
+    }
+    
     // Render regular chat content
     renderChatBlock(content) {
         const div = document.createElement("div");
@@ -273,7 +314,7 @@ class ChatRenderer {
             processedContent.forEach(part => {
                 switch (part.type) {
                     case 'text':
-                        if (part.text && part.text.trim()) {
+                        if (part.text !== undefined && part.text !== null && part.text !== '') {
                             const textDiv = document.createElement('div');
                             textDiv.className = 'content-part text-part';
                             textDiv.innerHTML = formatMessage(escapeHtml(part.text));

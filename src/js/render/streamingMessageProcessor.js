@@ -3,9 +3,10 @@
 class StreamingMessageProcessor {
     constructor() {
         this.buffer = '';
-        this.state = 'normal'; // 'normal', 'thinking'
+        this.state = 'normal'; // 'normal', 'thinking', 'codeblock'
         this.blocks = [];
         this.currentThinkingBlock = null;
+        this.currentCodeBlock = null; // Track current streaming code block
         this.originalResponse = ''; // Track the actual streamed response for saving
     }
     
@@ -18,12 +19,14 @@ class StreamingMessageProcessor {
     
     // Process buffer to identify block boundaries
     processBuffer() {
-        // Check if buffer ends with a potential partial tag - if so, wait for next chunk
+        // Check if buffer ends with a potential partial tag/backticks - if so, wait for next chunk
         const partialTags = [
             // Opening tag partials
             '<', '<t', '<th', '<thi', '<thin', '<think', '<thinki', '<thinkin', '<thinking',
             // Closing tag partials  
-            '</', '</t', '</th', '</thi', '</thin', '</think', '</thinki', '</thinkin', '</thinking'
+            '</', '</t', '</th', '</thi', '</thin', '</think', '</thinki', '</thinkin', '</thinking',
+            // Code block partials
+            '`', '``'
         ];
         const endsWithPartial = partialTags.some(partial => this.buffer.endsWith(partial));
         
@@ -40,9 +43,122 @@ class StreamingMessageProcessor {
     
     processNextPattern() {
         if (this.state === 'normal') {
-            return this.checkForThinkingStart();
+            // Check for both thinking and code block starts
+            return this.checkForThinkingStart() || this.checkForCodeBlockStart();
         } else if (this.state === 'thinking') {
             return this.checkForThinkingEnd();
+        } else if (this.state === 'codeblock') {
+            return this.checkForCodeBlockEnd();
+        }
+        return false;
+    }
+    
+    checkForCodeBlockStart() {
+        // Look for triple backticks (```)
+        const codeStartIndex = this.buffer.indexOf('```');
+        
+        if (codeStartIndex !== -1) {
+            // Look for language identifier after the backticks
+            const afterBackticks = this.buffer.slice(codeStartIndex + 3);
+            const newlineIndex = afterBackticks.indexOf('\n');
+            
+            // If we found backticks but no newline yet, wait for more content
+            // (unless the buffer doesn't look like it will have a language)
+            if (newlineIndex === -1) {
+                // Check if we have enough content to determine there's no language
+                // If we have spaces or non-word chars right after ```, then no language
+                const immediateChar = afterBackticks[0];
+                if (immediateChar && !/\w/.test(immediateChar)) {
+                    // No language, proceed with code block creation
+                } else if (afterBackticks.length < 20) {
+                    // Wait for more content - might be streaming language identifier
+                    return false;
+                }
+            }
+            
+            // Create chat block for any content before code block
+            if (codeStartIndex > 0) {
+                const contentBefore = this.buffer.slice(0, codeStartIndex);
+                if (contentBefore) {
+                    this.createChatBlock(contentBefore);
+                }
+            }
+            
+            let language = '';
+            let startOfCode = codeStartIndex + 3;
+            
+            if (newlineIndex !== -1) {
+                // Extract potential language identifier
+                const potentialLang = afterBackticks.slice(0, newlineIndex).trim();
+                if (potentialLang && /^\w+$/.test(potentialLang)) {
+                    language = potentialLang;
+                    startOfCode = codeStartIndex + 3 + newlineIndex + 1; // Skip past language and newline
+                } else {
+                    startOfCode = codeStartIndex + 3; // No language, start right after backticks
+                }
+            } else {
+                // No newline found, but we're proceeding anyway
+                startOfCode = codeStartIndex + 3;
+            }
+            
+            // Create a live streaming code block
+            const codeBlock = {
+                type: 'codeblock',
+                content: '',
+                metadata: { 
+                    id: `code_${Date.now()}`,
+                    isStreaming: true,
+                    language: language
+                }
+            };
+            
+            logger.debug(`[PROCESSOR] CODE BLOCK CREATED with language: "${language}" from buffer: "${afterBackticks.slice(0, 20)}..."`);
+            this.blocks.push(codeBlock);
+            this.currentCodeBlock = codeBlock;
+            
+            // Switch to code block state and update buffer
+            this.buffer = this.buffer.slice(startOfCode);
+            this.state = 'codeblock';
+            logger.debug(`[PROCESSOR] CODE BLOCK STARTED${language ? ` (${language})` : ''}! Total blocks: ${this.blocks.length}`);
+            return true;
+        }
+        return false;
+    }
+    
+    checkForCodeBlockEnd() {
+        // Look for closing triple backticks
+        const codeEndIndex = this.buffer.indexOf('```');
+        
+        if (codeEndIndex !== -1) {
+            // Update the existing code block with final content
+            const codeContent = this.buffer.slice(0, codeEndIndex);
+            
+            if (this.currentCodeBlock) {
+                this.currentCodeBlock.content += codeContent;
+                this.currentCodeBlock.metadata.isStreaming = false;
+                logger.debug(`[PROCESSOR] Completed code block: ${this.currentCodeBlock.content.length} chars`);
+            }
+            
+            // Continue with normal content after the closing backticks
+            this.buffer = this.buffer.slice(codeEndIndex + 3);
+            this.state = 'normal';
+            this.currentCodeBlock = null;
+            
+            // Process any remaining content
+            if (this.buffer) {
+                logger.debug(`[PROCESSOR] Processing remaining content after code block`);
+                return true; // Continue processing
+            }
+            
+            return true;
+        } else {
+            // Still in code block, accumulate content and update live
+            if (this.currentCodeBlock) {
+                this.currentCodeBlock.content += this.buffer;
+                logger.debug(`[PROCESSOR] Updating code content: ${this.currentCodeBlock.content.length} chars`);
+            }
+            
+            this.buffer = '';
         }
         return false;
     }
@@ -76,8 +192,8 @@ class StreamingMessageProcessor {
         if (startIndex !== -1) {
             // Create chat block for any content before thinking tag
             if (startIndex > 0) {
-                const contentBefore = this.buffer.slice(0, startIndex).trim();
-                if (contentBefore) {
+                const contentBefore = this.buffer.slice(0, startIndex);
+                if (contentBefore) { // Don't trim - preserve whitespace
                     this.createChatBlock(contentBefore);
                 }
             }
@@ -164,10 +280,10 @@ class StreamingMessageProcessor {
     
     // Create a chat block immediately
     createChatBlock(content) {
-        if (content.trim()) {
+        if (content) { // Don't check for trimmed content - preserve whitespace
             const block = {
                 type: 'chat',
-                content: content.trim(),
+                content: content, // Don't trim - preserve whitespace
                 metadata: {}
             };
             this.blocks.push(block);
@@ -187,9 +303,16 @@ class StreamingMessageProcessor {
                 this.currentThinkingBlock.metadata.isStreaming = false;
                 logger.debug(`[PROCESSOR] Finalized existing thinking block`);
             }
+        } else if (this.state === 'codeblock') {
+            // Update existing code block if we have one (incomplete code block)
+            if (this.currentCodeBlock) {
+                this.currentCodeBlock.content += this.buffer;
+                this.currentCodeBlock.metadata.isStreaming = false;
+                logger.debug(`[PROCESSOR] Finalized incomplete code block`);
+            }
         } else if (this.state === 'normal') {
             // Create chat block for any remaining normal content
-            if (this.buffer.trim()) {
+            if (this.buffer) { // Don't trim check - preserve whitespace
                 this.createChatBlock(this.buffer);
             }
         }
@@ -213,5 +336,15 @@ class StreamingMessageProcessor {
         return this.blocks.filter(block => block.type === 'chat')
                           .map(block => block.content)
                           .join(' ');
+    }
+    
+    // Get current state (for live rendering)
+    getState() {
+        return this.state;
+    }
+    
+    // Get current buffer (for live rendering)
+    getBuffer() {
+        return this.buffer;
     }
 }
