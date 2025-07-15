@@ -1159,11 +1159,14 @@ class ChatRenderer {
             // Upload documents to server for processing
             const result = await processDocumentFiles(files);
             
-            // Append document text to textarea content
-            let currentText = textarea.value;
+            // Initialize documents array if it doesn't exist
+            if (!messageContainer._editDocuments) {
+                messageContainer._editDocuments = [];
+            }
             
+            // Add processed documents to the container's document list (like main chat)
             for (const docData of result.results) {
-                currentText += `\n\n\`\`\`userdocument\nFile: ${docData.fileName}\n${docData.extractedText}\n\`\`\``;
+                messageContainer._editDocuments.push(docData);
                 console.log(`[EDIT-DOCUMENTS] Added document: ${docData.fileName} (${(docData.size / 1024).toFixed(1)}KB)`);
             }
             
@@ -1172,7 +1175,8 @@ class ChatRenderer {
                 console.error(`[EDIT-DOCUMENTS] Error processing: ${error.fileName} - ${error.error}`);
             }
             
-            textarea.value = currentText;
+            // Update the documents display (like images)
+            this.updateEditDocumentsDisplay(messageContainer);
             
             // Show completion feedback
             if (result.failed > 0) {
@@ -1192,6 +1196,89 @@ class ChatRenderer {
         }, 3000);
     }
     
+    // Update the documents display in edit modal
+    updateEditDocumentsDisplay(messageContainer) {
+        let documentsContainer = messageContainer.querySelector('.edit-documents-container');
+        
+        const documents = messageContainer._editDocuments || [];
+        
+        if (documents.length === 0) {
+            // Remove container if no documents
+            if (documentsContainer) {
+                documentsContainer.remove();
+            }
+            return;
+        }
+        
+        // Create container if it doesn't exist
+        if (!documentsContainer) {
+            documentsContainer = document.createElement("div");
+            documentsContainer.className = "edit-documents-container";
+            
+            const documentsHeader = document.createElement("div");
+            documentsHeader.className = "edit-documents-header";
+            documentsHeader.textContent = "Documents:";
+            
+            const documentsGrid = document.createElement("div");
+            documentsGrid.className = "edit-documents-grid";
+            
+            documentsContainer.appendChild(documentsHeader);
+            documentsContainer.appendChild(documentsGrid);
+            
+            // Insert before textarea
+            const textarea = messageContainer.querySelector('.message-content-textarea');
+            messageContainer.insertBefore(documentsContainer, textarea);
+        }
+        
+        // Update documents grid
+        const documentsGrid = documentsContainer.querySelector('.edit-documents-grid');
+        documentsGrid.innerHTML = '';
+        
+        documents.forEach((docData, index) => {
+            const docPreview = document.createElement("div");
+            docPreview.className = "edit-document-preview";
+            
+            const icon = document.createElement("span");
+            icon.className = "doc-icon";
+            icon.textContent = getFileIcon(docData.fileName);
+            
+            const info = document.createElement("div");
+            info.className = "doc-info";
+            
+            const name = document.createElement("div");
+            name.className = "doc-name";
+            name.textContent = docData.fileName;
+            name.title = docData.fileName;
+            
+            const size = document.createElement("div");
+            size.className = "doc-size";
+            size.textContent = `${(docData.size / 1024).toFixed(1)}KB`;
+            
+            info.appendChild(name);
+            info.appendChild(size);
+            
+            const removeBtn = document.createElement("button");
+            removeBtn.className = "remove-btn";
+            removeBtn.innerHTML = '×';
+            removeBtn.title = 'Remove document';
+            removeBtn.onclick = () => this.removeEditDocument(messageContainer, index);
+            
+            docPreview.appendChild(icon);
+            docPreview.appendChild(info);
+            docPreview.appendChild(removeBtn);
+            documentsGrid.appendChild(docPreview);
+        });
+    }
+    
+    // Remove a document from edit modal
+    removeEditDocument(messageContainer, index) {
+        if (!messageContainer._editDocuments) return;
+        
+        messageContainer._editDocuments.splice(index, 1);
+        this.updateEditDocumentsDisplay(messageContainer);
+        console.log(`[EDIT-DOCUMENTS] Removed document at index ${index}`);
+    }
+
     // Update the images display in edit modal
     updateImagesDisplay(messageContainer) {
         let imagesContainer = messageContainer.querySelector('.edit-images-container');
@@ -1525,12 +1612,19 @@ class ChatRenderer {
                     if (textarea) {
                         const newTextContent = textarea.value;
                         
+                        // Add documents to text content (like main chat)
+                        let finalTextContent = newTextContent;
+                        const documents = container._editDocuments || [];
+                        documents.forEach(doc => {
+                            finalTextContent += `\n\n\`\`\`userdocument\nFile: ${doc.fileName}\n${doc.extractedText}\n\`\`\``;
+                        });
+                        
                         // Reconstruct content properly - _originalContent is always an array now
                         if (Array.isArray(container._originalContent)) {
                             // Update the text part in the array
                             const reconstructedArray = container._originalContent.map(part => {
                                 if (part.type === 'text') {
-                                    return { ...part, text: newTextContent };
+                                    return { ...part, text: finalTextContent };
                                 }
                                 return part; // Keep images unchanged
                             });
@@ -1540,11 +1634,11 @@ class ChatRenderer {
                             if (hasImages) {
                                 editedContent = reconstructedArray; // Keep as array for multimodal
                             } else {
-                                editedContent = newTextContent; // Text-only for simplicity
+                                editedContent = finalTextContent; // Text-only for simplicity
                             }
                         } else {
                             // Fallback for old format
-                            editedContent = newTextContent;
+                            editedContent = finalTextContent;
                         }
                         break;
                     }
