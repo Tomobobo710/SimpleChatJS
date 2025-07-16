@@ -164,7 +164,11 @@ class OpenAIAdapter extends BaseResponseAdapter {
                     
                     case 'image':
                         // Convert to OpenAI's image_url format with data URL
-                        const mimeType = part.mimeType || 'image/jpeg';
+                        // HACK: Ollama/OpenAI-compatible APIs often support WebP data but expect JPEG/PNG MIME types
+                        let mimeType = part.mimeType || 'image/jpeg';
+                        if (mimeType === 'image/webp') {
+                            mimeType = 'image/jpeg'; // Lie about WebP being JPEG for compatibility
+                        }
                         const dataUrl = `data:${mimeType};base64,${part.imageData}`;
                         
                         return {

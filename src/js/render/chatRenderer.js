@@ -213,6 +213,7 @@ class ChatRenderer {
                 return this.renderCodeBlock(content, metadata);
             case "phase_marker":
                 return this.renderPhaseMarkerBlock(content, metadata);
+
             case "chat":
             default:
                 return this.renderChatBlock(content);
@@ -289,10 +290,93 @@ class ChatRenderer {
         pre.appendChild(code);
         div.appendChild(pre);
         
+        // Add copy button
+        const copyBtn = document.createElement("button");
+        copyBtn.className = "code-copy-btn";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", () => {
+            this.copyCodeToClipboard(content);
+        });
+        div.appendChild(copyBtn);
+        
         return div;
     }
     
+    // Copy code content to clipboard, stripping markdown backticks
+    copyCodeToClipboard(content) {
+        // Remove leading/trailing backticks and language identifier
+        let cleanContent = content;
+        
+        // Remove opening backticks and language (e.g., "```python\n")
+        cleanContent = cleanContent.replace(/^```[a-zA-Z]*\n?/, '');
+        
+        // Remove closing backticks
+        cleanContent = cleanContent.replace(/\n?```$/, '');
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(cleanContent).then(() => {
+            // Provide visual feedback
+            const copyBtns = document.querySelectorAll('.code-copy-btn');
+            copyBtns.forEach(btn => {
+                if (btn.textContent === 'Copy') {
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 1000);
+                }
+            });
+        }).catch(err => {
+            console.error('Failed to copy code:', err);
+        });
+    }
+    
     // Render regular chat content
+
+    showFileContentModal(metadata) {
+        // Create modal
+        const modal = document.createElement("div");
+        modal.className = "file-content-modal";
+        modal.innerHTML = `
+            <div class="modal-overlay">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>${metadata.fileName}</h3>
+                        <button class="modal-close">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <pre class="file-content">${escapeHtml(metadata.extractedText || "No content available")}</pre>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add to body
+        document.body.appendChild(modal);
+        
+        // Close handlers
+        const closeBtn = modal.querySelector(".modal-close");
+        const overlay = modal.querySelector(".modal-overlay");
+        
+        const closeModal = () => {
+            document.body.removeChild(modal);
+        };
+        
+        closeBtn.addEventListener("click", closeModal);
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) closeModal();
+        });
+        
+        // ESC key to close
+        const escHandler = (e) => {
+            if (e.key === "Escape") {
+                closeModal();
+                document.removeEventListener("keydown", escHandler);
+            }
+        };
+        document.addEventListener("keydown", escHandler);
+    }
+    
     renderChatBlock(content) {
         const div = document.createElement("div");
         div.className = "chat-block";
@@ -334,6 +418,55 @@ class ChatRenderer {
                         
                         imageDiv.appendChild(img);
                         div.appendChild(imageDiv);
+                        break;
+                    
+                    case 'files':
+                        if (part.files && Array.isArray(part.files) && part.files.length > 0) {
+                            const filesDiv = document.createElement('div');
+                            filesDiv.className = 'content-part files-part';
+                            
+                            part.files.forEach(file => {
+                                const filePreview = document.createElement('div');
+                                filePreview.className = 'file-attachment';
+                                
+                                const icon = document.createElement('span');
+                                icon.className = 'file-icon';
+                                icon.textContent = getFileIcon(file.fileName);
+                                
+                                const info = document.createElement('div');
+                                info.className = 'file-info';
+                                
+                                const name = document.createElement('div');
+                                name.className = 'file-name';
+                                name.textContent = file.fileName;
+                                name.title = file.fileName;
+                                
+                                const size = document.createElement('div');
+                                size.className = 'file-size';
+                                size.textContent = `${(file.size / 1024).toFixed(1)}KB`;
+                                
+                                info.appendChild(name);
+                                info.appendChild(size);
+                                
+                                filePreview.appendChild(icon);
+                                filePreview.appendChild(info);
+                                
+                                // Add click handler to show file content
+                                filePreview.style.cursor = 'pointer';
+                                filePreview.addEventListener('click', () => {
+                                    this.showFileContentModal({
+                                        fileName: file.fileName,
+                                        extractedText: file.extractedText,
+                                        size: file.size,
+                                        type: file.type
+                                    });
+                                });
+                                
+                                filesDiv.appendChild(filePreview);
+                            });
+                            
+                            div.appendChild(filesDiv);
+                        }
                         break;
                     
                     default:
@@ -740,11 +873,11 @@ class ChatRenderer {
         editControls.className = "edit-controls";
         
         const saveBtn = document.createElement("button");
-        saveBtn.className = "edit-btn-save";
+        saveBtn.className = "btn btn-success edit-btn-save";
         saveBtn.textContent = "Save";
         
         const cancelBtn = document.createElement("button");
-        cancelBtn.className = "edit-btn-cancel";
+        cancelBtn.className = "btn btn-danger edit-btn-cancel";
         cancelBtn.textContent = "Cancel";
         
         // Add event handlers
@@ -1114,7 +1247,7 @@ class ChatRenderer {
         }
     }
     
-    // NEW: Handle file selection in edit modal (images + documents)
+    // Handle file selection in edit modal (images + documents)
     handleEditFileSelect(event, messageContainer) {
         const files = Array.from(event.target.files);
         this.handleEditFiles(files, messageContainer, 'file');
@@ -1122,7 +1255,7 @@ class ChatRenderer {
         event.target.value = '';
     }
     
-    // NEW: Handle all file types in edit modal
+    // Handle all file types in edit modal
     handleEditFiles(files, messageContainer, source = 'file') {
         const imageFiles = files.filter(file => file.type.startsWith('image/'));
         const documentFiles = files.filter(file => !file.type.startsWith('image/'));
@@ -1138,7 +1271,7 @@ class ChatRenderer {
         }
     }
     
-    // NEW: Handle document files in edit modal
+    // Handle document files in edit modal
     async handleEditDocumentFiles(files, messageContainer, source = 'file') {
         if (files.length === 0) {
             console.warn('[EDIT-DOCUMENTS] No document files selected');
@@ -1394,7 +1527,14 @@ class ChatRenderer {
             // Handle multimodal content properly - parse JSON strings if needed
             let textContent = "";
             let images = [];
+            let files = []; // Extract files from separated structure
             let parsedContent = message.content;
+            
+            // Check if we have original_content with separated files
+            if (message.original_content) {
+                parsedContent = message.original_content;
+                console.log(`[EDIT] Using original_content for message ${message.id}:`, parsedContent);
+            }
             
             // Parse JSON string if content is a string that looks like JSON
             if (typeof message.content === 'string' && message.content.startsWith('[')) {
@@ -1407,10 +1547,17 @@ class ChatRenderer {
             }
             
             if (Array.isArray(parsedContent)) {
-                // Multimodal content - extract text and images
+                // Multimodal content - extract text, images, and files
                 const textPart = parsedContent.find(part => part.type === 'text');
                 textContent = textPart ? textPart.text : "";
                 images = parsedContent.filter(part => part.type === 'image');
+                
+                // Extract files from separated structure
+                const filesPart = parsedContent.find(part => part.type === 'files');
+                if (filesPart && filesPart.files && Array.isArray(filesPart.files)) {
+                    files = filesPart.files;
+                    console.log(`[EDIT] Extracted ${files.length} file(s) from message ${message.id}`);
+                }
             } else {
                 // Regular text content
                 textContent = parsedContent || "";
@@ -1423,7 +1570,14 @@ class ChatRenderer {
             textarea.className = "message-content-textarea";
             textarea.value = textContent;
             textarea.rows = Math.max(3, textContent.split("\n").length + 1);
-            textarea.placeholder = images.length > 0 ? "Edit text content (images shown above)" : "Enter message content";
+            // Update placeholder to reflect both images and files
+            const attachmentInfo = [];
+            if (images.length > 0) attachmentInfo.push(`${images.length} image(s)`);
+            if (files.length > 0) attachmentInfo.push(`${files.length} file(s)`);
+            
+            textarea.placeholder = attachmentInfo.length > 0 
+                ? `Edit text content (${attachmentInfo.join(' and ')} shown above)` 
+                : "Enter message content";
             messageContainer.appendChild(textarea);
             
             // Add image controls (file input + paperclip button + drag/drop area) at the bottom
@@ -1443,7 +1597,7 @@ class ChatRenderer {
             // Paperclip button
             const addImageBtn = document.createElement("button");
             addImageBtn.type = "button";
-            addImageBtn.className = "edit-add-image-btn";
+            addImageBtn.className = "btn edit-add-image-btn";
             addImageBtn.innerHTML = 'Add Files';
             addImageBtn.title = "Add files & images";
             addImageBtn.addEventListener("click", () => {
@@ -1463,20 +1617,31 @@ class ChatRenderer {
                 messageContainer._originalContent = [{ type: 'text', text: parsedContent || '' }];
             }
             messageContainer._hasImages = images.length > 0;
+            messageContainer._hasFiles = files.length > 0;
+            
+            // Initialize files for edit modal
+            if (!messageContainer._editDocuments) {
+                messageContainer._editDocuments = [];
+            }
+            // Add extracted files to edit documents
+            messageContainer._editDocuments.push(...files);
             
             console.log(`[EDIT-INIT] Initialized ${message.role} message:`, {
                 originalFormat: typeof message.content,
                 parsedFormat: typeof parsedContent,
                 finalFormat: Array.isArray(messageContainer._originalContent) ? 'array' : typeof messageContainer._originalContent,
                 hasImages: messageContainer._hasImages,
-                imageCount: images.length
+                hasFiles: messageContainer._hasFiles,
+                imageCount: images.length,
+                fileCount: files.length
             });
             
             // Add drag & drop support to this message container
             this.setupEditDragAndDrop(messageContainer);
             
-            // Display any existing images
+            // Display any existing images and files
             this.updateImagesDisplay(messageContainer);
+            this.updateEditDocumentsDisplay(messageContainer); // Display extracted files
             
             editForm.appendChild(messageContainer);
         });
@@ -1488,14 +1653,14 @@ class ChatRenderer {
         buttonContainer.className = "edit-buttons";
         
         const saveBtn = document.createElement("button");
-        saveBtn.className = "edit-btn-save";
+        saveBtn.className = "btn btn-success edit-btn-save";
         saveBtn.textContent = "Save All Messages";
         saveBtn.addEventListener("click", () => {
             this.saveAllMessages(turnDiv, editContainer, turnNumber);
         });
         
         const cancelBtn = document.createElement("button");
-        cancelBtn.className = "edit-btn-cancel";
+        cancelBtn.className = "btn btn-danger edit-btn-cancel";
         cancelBtn.textContent = "Cancel";
         cancelBtn.addEventListener("click", () => {
             this.cancelMessageEdit(turnDiv);
@@ -1534,18 +1699,32 @@ class ChatRenderer {
                         let finalContent;
                         
                         if (Array.isArray(container._originalContent)) {
-                            // Update the text part in the array
-                            const reconstructedArray = container._originalContent.map(part => {
-                                if (part.type === 'text') {
-                                    return { ...part, text: newTextContent };
-                                }
-                                return part; // Keep images unchanged
-                            });
+                            // Reconstruct content with text, images, AND files
+                            const reconstructedArray = [];
                             
-                            // If it's just text (no images), send as string for backend compatibility
-                            const hasImages = reconstructedArray.some(part => part.type === 'image');
-                            if (hasImages) {
-                                finalContent = JSON.stringify(reconstructedArray);
+                            // Add text part
+                            if (newTextContent) {
+                                reconstructedArray.push({ type: 'text', text: newTextContent });
+                            }
+                            
+                            // Add existing images (unchanged)
+                            const images = container._originalContent.filter(part => part.type === 'image');
+                            reconstructedArray.push(...images);
+                            
+                            // Add files from edit documents
+                            if (container._editDocuments && container._editDocuments.length > 0) {
+                                reconstructedArray.push({
+                                    type: 'files',
+                                    files: container._editDocuments
+                                });
+                            }
+                            
+                            // Determine if we need multimodal format
+                            const hasMultipleTypes = reconstructedArray.length > 1 || 
+                                                      reconstructedArray.some(part => part.type !== 'text');
+                            
+                            if (hasMultipleTypes) {
+                                finalContent = reconstructedArray;
                             } else {
                                 finalContent = newTextContent; // Text-only, send as string
                             }
@@ -1553,6 +1732,13 @@ class ChatRenderer {
                             // Fallback for old format
                             finalContent = newTextContent;
                         }
+                        
+                        console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
+                            textContent: newTextContent,
+                            hasFiles: container._editDocuments?.length > 0,
+                            fileCount: container._editDocuments?.length || 0,
+                            finalContent: typeof finalContent === 'string' ? 'string' : 'multimodal'
+                        });
                         
                         return editMessage(messageId, finalContent);
                     }
@@ -1612,33 +1798,39 @@ class ChatRenderer {
                     if (textarea) {
                         const newTextContent = textarea.value;
                         
-                        // Add documents to text content (like main chat)
-                        let finalTextContent = newTextContent;
-                        const documents = container._editDocuments || [];
-                        documents.forEach(doc => {
-                            finalTextContent += `\n\n\`\`\`userdocument\nFile: ${doc.fileName}\n${doc.extractedText}\n\`\`\``;
-                        });
-                        
-                        // Reconstruct content properly - _originalContent is always an array now
+                        // Reconstruct content with separated structure (like main chat)
                         if (Array.isArray(container._originalContent)) {
-                            // Update the text part in the array
-                            const reconstructedArray = container._originalContent.map(part => {
-                                if (part.type === 'text') {
-                                    return { ...part, text: finalTextContent };
-                                }
-                                return part; // Keep images unchanged
-                            });
+                            const reconstructedArray = [];
                             
-                            // Check if it has images to determine format for retry
-                            const hasImages = reconstructedArray.some(part => part.type === 'image');
-                            if (hasImages) {
-                                editedContent = reconstructedArray; // Keep as array for multimodal
+                            // Add text part
+                            if (newTextContent) {
+                                reconstructedArray.push({ type: 'text', text: newTextContent });
+                            }
+                            
+                            // Add existing images (unchanged)
+                            const images = container._originalContent.filter(part => part.type === 'image');
+                            reconstructedArray.push(...images);
+                            
+                            // Add files from edit documents (separated structure)
+                            if (container._editDocuments && container._editDocuments.length > 0) {
+                                reconstructedArray.push({
+                                    type: 'files',
+                                    files: container._editDocuments
+                                });
+                            }
+                            
+                            // Determine if we need multimodal format
+                            const hasMultipleTypes = reconstructedArray.length > 1 || 
+                                                      reconstructedArray.some(part => part.type !== 'text');
+                            
+                            if (hasMultipleTypes) {
+                                editedContent = reconstructedArray;
                             } else {
-                                editedContent = finalTextContent; // Text-only for simplicity
+                                editedContent = newTextContent; // Text-only, send as string
                             }
                         } else {
                             // Fallback for old format
-                            editedContent = finalTextContent;
+                            editedContent = newTextContent;
                         }
                         break;
                     }

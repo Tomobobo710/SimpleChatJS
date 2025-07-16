@@ -77,11 +77,11 @@ async function processImageFile(file) {
 
     return {
         name: file.name,
-        type: file.type,
+        type: resizedBlob.type,
         size: resizedBlob.size,
         originalSize: file.size,
         data: base64Data,
-        mimeType: file.type
+        mimeType: resizedBlob.type
     };
 }
 

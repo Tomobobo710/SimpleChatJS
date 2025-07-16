@@ -1,4 +1,166 @@
 // Chat Service - Handle AI chat logic, streaming, and tool execution with adapters per api
+// ===== NEW FILE HANDLING FUNCTIONS =====
+
+/**
+ * Extract file content from multimodal message content
+ * @param {Array|string} content - Message content (array for multimodal, string for text-only)
+ * @returns {Object} - { textContent, files, images, hasFiles }
+ */
+function extractFilesFromContent(content) {
+    // Initialize return object
+    const result = {
+        textContent: '',
+        files: [],
+        images: [],
+        hasFiles: false
+    };
+    
+    if (typeof content === 'string') {
+        // Simple text content, no files
+        result.textContent = content;
+        return result;
+    }
+    
+    if (!Array.isArray(content)) {
+        // Unknown content type, treat as text
+        result.textContent = String(content || '');
+        return result;
+    }
+    
+    // Process multimodal array content
+    content.forEach(part => {
+        if (part.type === 'text') {
+            result.textContent = part.text || '';
+        } else if (part.type === 'image') {
+            result.images.push(part);
+        } else if (part.type === 'files' && part.files && Array.isArray(part.files)) {
+            // New file structure
+            result.files = part.files;
+            result.hasFiles = true;
+        }
+    });
+    
+    return result;
+}
+
+/**
+ * Concatenate file content to text content for AI processing
+ * @param {string} textContent - Original user text
+ * @param {Array} files - Array of file objects with extractedText
+ * @returns {string} - Concatenated content ready for AI
+ */
+function concatenateFileContent(textContent, files) {
+    let finalText = textContent || '';
+    
+    if (files && Array.isArray(files) && files.length > 0) {
+        files.forEach(file => {
+            if (file.extractedText) {
+                finalText += `\n\n\`\`\`userdocument\nFile: ${file.fileName}\n${file.extractedText}\n\`\`\``;
+            }
+        });
+        
+        log(`[FILE-PROCESSING] Concatenated ${files.length} file(s) to message content`);
+    }
+    
+    return finalText;
+}
+
+/**
+ * Create multimodal content with separated files for storage
+ * This preserves the original structure while also providing concatenated content for AI
+ * @param {string} userText - User's actual text input
+ * @param {Array} files - File objects array
+ * @param {Array} images - Image objects array
+ * @returns {Object} - { originalContent, concatenatedContent }
+ */
+function createSeparatedFileContent(userText, files, images) {
+    const hasFiles = files && files.length > 0;
+    const hasImages = images && images.length > 0;
+    
+    let originalContent, concatenatedContent;
+    
+    if (hasFiles || hasImages) {
+        // Create multimodal array preserving file structure
+        originalContent = [];
+        
+        // Add text part
+        if (userText || hasFiles) {
+            originalContent.push({
+                type: 'text',
+                text: userText || ''
+            });
+        }
+        
+        // Add images
+        if (hasImages) {
+            originalContent.push(...images);
+        }
+        
+        // Add files as separate part
+        if (hasFiles) {
+            originalContent.push({
+                type: 'files',
+                files: files
+            });
+        }
+        
+        // Create concatenated version for AI
+        concatenatedContent = concatenateFileContent(userText, files);
+        
+    } else {
+        // Simple text content
+        originalContent = userText || '';
+        concatenatedContent = userText || '';
+    }
+    
+    return { originalContent, concatenatedContent };
+}
+
+/**
+ * Process message content for AI consumption
+ * Extracts files and creates concatenated content while preserving original structure
+ * @param {Array|string} messageContent - Original message content from frontend
+ * @returns {Object} - { aiContent, originalContent, fileMetadata }
+ */
+function processMessageForAI(messageContent) {
+    const extracted = extractFilesFromContent(messageContent);
+    const { textContent, files, images, hasFiles } = extracted;
+    
+    let aiContent;
+    
+    if (hasFiles || images.length > 0) {
+        // Create multimodal content for AI with concatenated text
+        aiContent = [];
+        
+        // Add concatenated text (user text + file contents)
+        const concatenatedText = concatenateFileContent(textContent, files);
+        if (concatenatedText) {
+            aiContent.push({
+                type: 'text',
+                text: concatenatedText
+            });
+        }
+        
+        // Add images (unchanged)
+        if (images.length > 0) {
+            aiContent.push(...images);
+        }
+    } else {
+        // Simple text content
+        aiContent = textContent;
+    }
+    
+    return {
+        aiContent,
+        originalContent: messageContent,
+        fileMetadata: {
+            hasFiles,
+            fileCount: files.length,
+            imageCount: images.length,
+            files: files
+        }
+    };
+}
 const https = require('https');
 const http = require('http');
 const { log } = require('../utils/logger');
@@ -224,9 +386,9 @@ function getChatHistoryForAPI(chat_id) {
             return [];
         }
         
-        // Get all messages from the active branch
+        // Get all messages from the active branch including new file fields
         const messagesStmt = db.prepare(`
-            SELECT role, content, turn_number, tool_calls, tool_call_id, tool_name
+            SELECT role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata
             FROM branch_messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
@@ -234,15 +396,38 @@ function getChatHistoryForAPI(chat_id) {
         const branchMessages = messagesStmt.all(activeBranch.id);
         
         branchMessages.forEach(row => {
+            // Process saved messages to ensure AI gets correct content
+            let finalContent = row.content;
+            
+            // If this message has original content and file metadata, we need to process it for AI
+            if (row.original_content && row.file_metadata) {
+                try {
+                    const originalContent = typeof row.original_content === 'string' && row.original_content.startsWith('[') 
+                        ? JSON.parse(row.original_content)
+                        : row.original_content;
+                    const fileMetadata = JSON.parse(row.file_metadata);
+                    
+                    // If there are files, re-process for AI to get concatenated content
+                    if (fileMetadata.hasFiles) {
+                        const processedMessage = processMessageForAI(originalContent);
+                        finalContent = processedMessage.aiContent;
+                        log(`[CHAT-HISTORY] Reprocessed message with ${fileMetadata.fileCount} file(s) for AI`);
+                    }
+                } catch (e) {
+                    log(`[CHAT-HISTORY] Error processing file metadata: ${e.message}`);
+                    // Fall back to stored content
+                }
+            }
+            
             // Parse content - handle both string and JSON (multimodal) content
-            let parsedContent = row.content;
-            if (typeof row.content === 'string' && row.content.startsWith('[')) {
+            let parsedContent = finalContent;
+            if (typeof finalContent === 'string' && finalContent.startsWith('[')) {
                 try {
                     // Try to parse as JSON array (multimodal content)
-                    parsedContent = JSON.parse(row.content);
+                    parsedContent = JSON.parse(finalContent);
                 } catch (e) {
                     // If parsing fails, keep as string
-                    parsedContent = row.content;
+                    parsedContent = finalContent;
                 }
             }
             
@@ -310,22 +495,30 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
         const blocksJson = blocks ? JSON.stringify(blocks) : null;
         const debugData = messageData.debug_data ? JSON.stringify(messageData.debug_data) : null;
         
+        // Handle original content and file metadata
+        const originalContent = messageData.originalContent 
+            ? (Array.isArray(messageData.originalContent) 
+                ? JSON.stringify(messageData.originalContent) 
+                : messageData.originalContent)
+            : null;
+        const fileMetadata = messageData.fileMetadata ? JSON.stringify(messageData.fileMetadata) : null;
+        
         // Use turn number or get next
         let finalTurnNumber = turnNumber;
         if (finalTurnNumber === null) {
             finalTurnNumber = getCurrentTurnNumber(chatId);
         }
         
-        // Insert message into branch
+        // Insert message into branch with new file handling fields
         const insertStmt = db.prepare(`
             INSERT INTO branch_messages 
-            (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, original_content, file_metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = insertStmt.run(
             activeBranch.id, role, content, finalTurnNumber,
-            toolCalls, toolCallId, toolName, blocksJson, debugData
+            toolCalls, toolCallId, toolName, blocksJson, debugData, originalContent, fileMetadata
         );
         
         log(`[BRANCHING] Saved ${role} message to branch '${activeBranch.branch_name}' (turn ${finalTurnNumber})`);
@@ -913,35 +1106,13 @@ async function processChatRequest(req, res) {
         // Log what's in history
         log(`[CHAT-DEBUG] Current history count: ${messages.length}`);
         
-        // SIMPLE DEDUPLICATION: Check if user message already exists before adding
-        const role = message_role || 'user';
-        const newMessage = { role: role, content: message };
+        // PROCESS MESSAGE FOR AI: Extract files and create concatenated content
+        const processedMessage = processMessageForAI(message);
+        const { aiContent, originalContent, fileMetadata } = processedMessage;
         
-        // Check if the last message in history is the same user message (avoid duplication)
-        const lastMessage = messages[messages.length - 1];
-        
-        // Enhanced duplicate detection for both string and array content
-        let isDuplicate = false;
-        if (lastMessage && lastMessage.role === role) {
-            // For string content, do direct comparison
-            if (typeof message === 'string' && typeof lastMessage.content === 'string') {
-                isDuplicate = lastMessage.content === message;
-            }
-            // For array content (multimodal), do deep comparison
-            else if (Array.isArray(message) && Array.isArray(lastMessage.content)) {
-                isDuplicate = JSON.stringify(lastMessage.content) === JSON.stringify(message);
-            }
-            // For mixed types, they're different
-            else {
-                isDuplicate = false;
-            }
-        }
-        
-        if (!isDuplicate) {
-            messages.push(newMessage);
-            log(`[CHAT-DEBUG] Added user message to conversation history`);
-        } else {
-            log(`[CHAT-DEBUG] User message already in history, skipping duplicate`);
+        // Log file processing details
+        if (fileMetadata.hasFiles) {
+            log(`[FILE-PROCESSING] Processed message with ${fileMetadata.fileCount} file(s) and ${fileMetadata.imageCount} image(s)`);
         }
         
         // Inject system prompt if this is the first message in the conversation/branch
@@ -1463,6 +1634,69 @@ function setActiveChatBranch(chatId, branchId) {
     }
 }
 
+/**
+ * Utility function to create file-separated content for saving
+ * This helps frontends transition to the new structure
+ * @param {string} userText - User's text input
+ * @param {Array} files - Array of processed file objects
+ * @param {Array} images - Array of image objects
+ * @returns {Object} - { content, originalContent, fileMetadata }
+ */
+function createMessageWithSeparatedFiles(userText, files = [], images = []) {
+    const hasFiles = files && files.length > 0;
+    const hasImages = images && images.length > 0;
+    
+    let content, originalContent;
+    
+    if (hasFiles || hasImages) {
+        // Create multimodal content
+        originalContent = [];
+        
+        // Add text part
+        if (userText || hasFiles) {
+            originalContent.push({
+                type: 'text',
+                text: userText || ''
+            });
+        }
+        
+        // Add images
+        if (hasImages) {
+            originalContent.push(...images);
+        }
+        
+        // Add files as separate part
+        if (hasFiles) {
+            originalContent.push({
+                type: 'files',
+                files: files
+            });
+        }
+        
+        // Process for AI (with concatenated content)
+        const processed = processMessageForAI(originalContent);
+        content = processed.aiContent;
+        
+    } else {
+        // Simple text content
+        content = userText || '';
+        originalContent = userText || '';
+    }
+    
+    const fileMetadata = {
+        hasFiles,
+        fileCount: files.length,
+        imageCount: images.length,
+        files: files
+    };
+    
+    return {
+        content,
+        originalContent,
+        fileMetadata
+    };
+}
+
 module.exports = {
     handleChatWithTools,
     processChatRequest,
@@ -1479,5 +1713,11 @@ module.exports = {
     createChatBranch,
     getChatBranches,
     getActiveChatBranch,
-    setActiveChatBranch
+    setActiveChatBranch,
+    // File handling functions
+    extractFilesFromContent,
+    concatenateFileContent,
+    createSeparatedFileContent,
+    processMessageForAI,
+    createMessageWithSeparatedFiles,
 };

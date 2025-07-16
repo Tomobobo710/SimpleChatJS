@@ -542,6 +542,54 @@
 .content-part:last-child {
     margin-bottom: 0;
 }
+/* File attachments in message content */
+.files-part {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 8px 0;
+}
+
+.file-attachment {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    padding: 8px 12px;
+    max-width: 300px;
+}
+
+.file-attachment .file-icon {
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: bold;
+    color: #4a90e2;
+    margin-right: 10px;
+    min-width: 40px;
+    text-align: center;
+}
+
+.file-attachment .file-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-attachment .file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.file-attachment .file-size {
+    font-size: 11px;
+    color: #999999;
+    font-weight: normal;
+}
 
 .text-part {
     /* Text content styling */

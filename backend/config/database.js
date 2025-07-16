@@ -78,6 +78,27 @@ function initializeDatabase() {
                 FOREIGN KEY (branch_id) REFERENCES chat_branches (id)
             )`);
             
+            // Add new fields for file handling separation
+            try {
+                db.exec(`ALTER TABLE branch_messages ADD COLUMN original_content TEXT`);
+                log('[DB] Added original_content column to branch_messages');
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding original_content:', err.message);
+                }
+            }
+            
+            try {
+                db.exec(`ALTER TABLE branch_messages ADD COLUMN file_metadata TEXT`);
+                log('[DB] Added file_metadata column to branch_messages');
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding file_metadata:', err.message);
+                }
+            }
+            
             // FULL MIGRATION: Move everything to branch-based system and drop old tables
             try {
                 log('[DB] Starting FULL migration to everything-is-a-branch system...');

@@ -481,6 +481,9 @@ async function saveCompleteMessage(chatId, messageData, blocks = null, turnNumbe
         if (messageData.tool_calls) requestData.tool_calls = messageData.tool_calls;
         if (messageData.tool_call_id) requestData.tool_call_id = messageData.tool_call_id;
         if (messageData.tool_name) requestData.tool_name = messageData.tool_name;
+        // Add new file handling fields if present
+        if (messageData.original_content !== undefined) requestData.original_content = messageData.original_content;
+        if (messageData.file_metadata !== undefined) requestData.file_metadata = messageData.file_metadata;
         
         const response = await fetch(`${API_BASE}/api/message`, {
             method: 'POST',
@@ -577,12 +580,33 @@ async function getTurnMessages(chatId, turnNumber) {
 // Edit message content
 async function editMessage(messageId, newContent) {
     try {
+        // Build request data exactly like saveCompleteMessage
+        const requestData = {
+            content: newContent
+        };
+        
+        // Add file handling fields if content is multimodal (like saveCompleteMessage does)
+        if (Array.isArray(newContent)) {
+            requestData.original_content = newContent;
+            
+            // Extract file metadata
+            const filesPart = newContent.find(part => part.type === 'files');
+            if (filesPart && filesPart.files) {
+                requestData.file_metadata = {
+                    hasFiles: true,
+                    fileCount: filesPart.files.length,
+                    imageCount: newContent.filter(part => part.type === 'image').length,
+                    files: filesPart.files
+                };
+            }
+        }
+        
         const response = await fetch(`${API_BASE}/api/message/${messageId}`, {
             method: 'PATCH',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ content: newContent })
+            body: JSON.stringify(requestData)
         });
         
         if (!response.ok) {

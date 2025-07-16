@@ -6,6 +6,63 @@ const { log } = require('../utils/logger');
 
 const router = express.Router();
 
+// Utility function to extract preview text from multimodal content
+function extractPreviewText(content) {
+    if (typeof content === 'string') {
+        return content;
+    }
+    if (Array.isArray(content)) {
+        // Extract text from multimodal array
+        const textPart = content.find(part => part.type === 'text');
+        const filesPart = content.find(part => part.type === 'files');
+        const imageParts = content.filter(part => part.type === 'image');
+        
+        // Priority: text content first
+        if (textPart && textPart.text) {
+            // If there's text plus other content, show text with indicators
+            const extras = [];
+            if (filesPart && filesPart.files && filesPart.files.length > 0) {
+                if (filesPart.files.length === 1) {
+                    extras.push(`[File] ${filesPart.files[0].fileName}`);
+                } else {
+                    extras.push(`[${filesPart.files.length} files]`);
+                }
+            }
+            if (imageParts.length > 0) {
+                if (imageParts.length === 1) {
+                    extras.push('[Image]');
+                } else {
+                    extras.push(`[${imageParts.length} images]`);
+                }
+            }
+            
+            if (extras.length > 0) {
+                return `${textPart.text} + ${extras.join(' + ')}`;
+            }
+            return textPart.text;
+        } 
+        // No text content, show files/images only
+        else if (filesPart && filesPart.files && filesPart.files.length > 0) {
+            if (filesPart.files.length === 1) {
+                return `[File] ${filesPart.files[0].fileName}`;
+            } else {
+                return `[${filesPart.files.length} files]`;
+            }
+        } 
+        else if (imageParts.length > 0) {
+            if (imageParts.length === 1) {
+                return '[Image]';
+            } else {
+                return `[${imageParts.length} images]`;
+            }
+        } 
+        else {
+            return '[Multimodal content]';
+        }
+    }
+    return String(content || '');
+}
+
 // Get all chats (everything-is-a-branch system)
 router.get('/chats', (req, res) => {
     // Get chats with their last message content from active branches
@@ -33,12 +90,27 @@ router.get('/chats', (req, res) => {
         const rows = db.prepare(query).all();
         log(`[CHATS] Found ${rows ? rows.length : 0} chats:`, rows);
         // Transform the data to match frontend expectations
-        const chats = (rows || []).map(row => ({
-            chat_id: row.id,
-            title: row.title,
-            last_message: row.last_message || '',
-            last_updated: row.updated_at || row.created_at
-        }));
+        const chats = (rows || []).map(row => {
+            let processedLastMessage = row.last_message || '';
+            
+            // Process multimodal content for preview
+            if (processedLastMessage && (processedLastMessage.startsWith('[') || processedLastMessage.startsWith('{'))) {
+                try {
+                    const parsed = JSON.parse(processedLastMessage);
+                    processedLastMessage = extractPreviewText(parsed);
+                } catch (e) {
+                    // If parsing fails, keep original
+                    processedLastMessage = row.last_message || '';
+                }
+            }
+            
+            return {
+                chat_id: row.id,
+                title: row.title,
+                last_message: processedLastMessage,
+                last_updated: row.updated_at || row.created_at
+            };
+        });
         res.json(chats);
     } catch (err) {
         log('[CHATS] List error:', err);
@@ -105,9 +177,9 @@ router.get('/chat/:id/history', (req, res) => {
             return res.json({ messages: [] });
         }
         
-        // Get all messages from the active branch (debug data is now stored directly in branch_messages)
+        // Get all messages from the active branch (including new file handling fields)
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp
+            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
             FROM branch_messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
@@ -116,7 +188,28 @@ router.get('/chat/:id/history', (req, res) => {
         
         const messages = branchMessages.map(row => {
             const parsedBlocks = row.blocks ? JSON.parse(row.blocks) : null;
-            const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;
+            const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;            
+            // Parse new file handling fields
+            let originalContent = null;
+            let fileMetadata = null;
+            
+            if (row.original_content) {
+                try {
+                    originalContent = typeof row.original_content === 'string' && row.original_content.startsWith('[')
+                        ? JSON.parse(row.original_content)
+                        : row.original_content;
+                } catch (e) {
+                    log(`[HISTORY] Error parsing original_content: ${e.message}`);
+                }
+            }
+            
+            if (row.file_metadata) {
+                try {
+                    fileMetadata = JSON.parse(row.file_metadata);
+                } catch (e) {
+                    log(`[HISTORY] Error parsing file_metadata: ${e.message}`);
+                }
+            }
             
             // Parse content - handle both string and JSON (multimodal) content
             let parsedContent = row.content;
@@ -143,6 +236,14 @@ router.get('/chat/:id/history', (req, res) => {
                 debug_data: debugData,
                 blocks: parsedBlocks
             };
+            
+            // Add new file handling fields if present
+            if (originalContent !== null) {
+                message.original_content = originalContent;
+            }
+            if (fileMetadata !== null) {
+                message.file_metadata = fileMetadata;
+            }
             
             // Add tool data if present
             if (row.tool_calls) {
@@ -212,7 +313,7 @@ router.delete('/chat/:id', (req, res) => {
 // Save message using unified approach
 router.post('/message', async (req, res) => {
     try {
-        const { chat_id, role, content, turn_number, blocks, tool_calls, tool_call_id, tool_name } = req.body;
+        const { chat_id, role, content, turn_number, blocks, tool_calls, tool_call_id, tool_name, original_content, file_metadata } = req.body;
         
         if (!chat_id || !role || content === null || content === undefined) {
             return res.status(400).json({ error: 'chat_id, role, and content are required' });
@@ -228,6 +329,10 @@ router.post('/message', async (req, res) => {
         if (tool_calls) completeMessage.tool_calls = tool_calls;
         if (tool_call_id) completeMessage.tool_call_id = tool_call_id;
         if (tool_name) completeMessage.tool_name = tool_name;
+        
+        // Add new file handling fields if present
+        if (original_content !== undefined) completeMessage.originalContent = original_content;
+        if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
         
         // Use the unified save function
         const { saveCompleteMessageToDatabase, incrementTurnNumber } = require('../services/chatService');
@@ -539,13 +644,13 @@ module.exports = router;
 router.patch('/message/:id', async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
-        const { content } = req.body;
+        const { content, original_content, file_metadata } = req.body;
         
         if (isNaN(messageId)) {
             return res.status(400).json({ error: 'Invalid message ID' });
         }
         
-        if (!content || content.trim() === '') {
+        if (!content || (typeof content === 'string' && content.trim() === '')) {
             return res.status(400).json({ error: 'Content is required' });
         }
         
@@ -582,11 +687,19 @@ router.patch('/message/:id', async (req, res) => {
             const updateBranchStmt = db.prepare(`
                 UPDATE branch_messages 
                 SET content = ?, 
+                    original_content = ?,
+                    file_metadata = ?,
                     edit_count = ?, 
                     edited_at = CURRENT_TIMESTAMP 
                 WHERE id = ?
             `);
-            result = updateBranchStmt.run(content, newEditCount, messageId);
+            result = updateBranchStmt.run(
+                Array.isArray(content) ? JSON.stringify(content) : content,
+                original_content ? JSON.stringify(original_content) : null,
+                file_metadata ? JSON.stringify(file_metadata) : null,
+                newEditCount,
+                messageId
+            );
         } else {
             // Update message in original messages table (has original_content column)
             log(`[EDIT] Updating message ${messageId} in original messages table`);
@@ -599,7 +712,12 @@ router.patch('/message/:id', async (req, res) => {
                     edited_at = CURRENT_TIMESTAMP 
                 WHERE id = ?
             `);
-            result = updateOriginalStmt.run(content, originalContent, newEditCount, messageId);
+            result = updateOriginalStmt.run(
+                Array.isArray(content) ? JSON.stringify(content) : content,
+                originalContent,
+                newEditCount,
+                messageId
+            );
         }
         
         if (result.changes === 0) {

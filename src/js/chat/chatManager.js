@@ -3,12 +3,66 @@
 // Utility function to safely extract text content from multimodal or string content
 function getTextContent(content) {
     if (typeof content === 'string') {
+        // Check if it's a JSON string that needs parsing
+        if (content.startsWith('[') || content.startsWith('{')) {
+            try {
+                const parsed = JSON.parse(content);
+                return getTextContent(parsed); // Recursively process parsed content
+            } catch (e) {
+                // If parsing fails, return the string as-is
+                return content;
+            }
+        }
         return content;
     }
     if (Array.isArray(content)) {
         // Extract text from multimodal array
         const textPart = content.find(part => part.type === 'text');
-        return textPart ? textPart.text : '[Images only]';
+        const filesPart = content.find(part => part.type === 'files');
+        const imageParts = content.filter(part => part.type === 'image');
+        
+        // Priority: text content first
+        if (textPart && textPart.text) {
+            // If there's text plus other content, show text with indicators
+            const extras = [];
+            if (filesPart && filesPart.files && filesPart.files.length > 0) {
+                if (filesPart.files.length === 1) {
+                    extras.push(`[File] ${filesPart.files[0].fileName}`);
+                } else {
+                    extras.push(`[${filesPart.files.length} files]`);
+                }
+            }
+            if (imageParts.length > 0) {
+                if (imageParts.length === 1) {
+                    extras.push('[Image]');
+                } else {
+                    extras.push(`[${imageParts.length} images]`);
+                }
+            }
+            
+            if (extras.length > 0) {
+                return `${textPart.text} + ${extras.join(' + ')}`;
+            }
+            return textPart.text;
+        } 
+        // No text content, show files/images only
+        else if (filesPart && filesPart.files && filesPart.files.length > 0) {
+            if (filesPart.files.length === 1) {
+                return `[File] ${filesPart.files[0].fileName}`;
+            } else {
+                return `[${filesPart.files.length} files]`;
+            }
+        } 
+        else if (imageParts.length > 0) {
+            if (imageParts.length === 1) {
+                return '[Image]';
+            } else {
+                return `[${imageParts.length} images]`;
+            }
+        } 
+        else {
+            return '[Multimodal content]';
+        }
     }
     return String(content || '');
 }
@@ -534,14 +588,25 @@ async function loadChatHistory(chatId) {
 
 // Update chat title
 async function updateChatTitle(title) {
-    chatTitle.textContent = title;
+    // Safeguard against invalid titles
+    let cleanTitle = title;
+    if (!title || title === '[object Object]' || title === 'undefined' || title === 'null') {
+        cleanTitle = 'Chat';
+    }
+    
+    // If title is an object/array, extract text content
+    if (typeof title === 'object') {
+        cleanTitle = getTextContent(title) || 'Chat';
+    }
+    
+    chatTitle.textContent = cleanTitle;
     
     // Update the chat item in the list too
     const chatItem = document.querySelector(`[data-chat-id="${currentChatId}"]`);
     if (chatItem) {
         const titleEl = chatItem.querySelector('.chat-item-title');
         if (titleEl) {
-            titleEl.textContent = title;
+            titleEl.textContent = cleanTitle;
             
             // Update the title in the database
             try {
@@ -560,7 +625,9 @@ function updateChatPreview(chatId, message) {
     if (chatItem) {
         const previewEl = chatItem.querySelector('.chat-item-preview');
         if (previewEl) {
-            previewEl.textContent = getPreviewText(message, 50);
+            // Process the message through getTextContent first to handle multimodal content
+            const processedText = getTextContent(message);
+            previewEl.textContent = getPreviewText(processedText, 50);
         }
         
         // Update timestamp

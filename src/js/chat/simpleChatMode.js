@@ -24,9 +24,26 @@ async function handleSimpleChat(message, conversationHistory) {
         turn_number: userTurnNumber
     }, true);
     
-    // Save user message to database
+    // Save user message with separated file structure
     try {
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, null, userTurnNumber);
+        // Extract file metadata from the message for storage
+        const messageForSaving = { role: 'user', content: message };
+        
+        // If message contains files, store original content and file metadata
+        if (Array.isArray(message)) {
+            const filesPart = message.find(part => part.type === 'files');
+            if (filesPart && filesPart.files) {
+                messageForSaving.original_content = message;
+                messageForSaving.file_metadata = {
+                    hasFiles: true,
+                    fileCount: filesPart.files.length,
+                    imageCount: message.filter(part => part.type === 'image').length,
+                    files: filesPart.files
+                };
+            }
+        }
+        
+        await saveCompleteMessage(currentChatId, messageForSaving, null, userTurnNumber);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
     }
@@ -289,7 +306,17 @@ async function handleSimpleChat(message, conversationHistory) {
                 logger.info(`[TURN-DEBUG] Saved assistant debug data for turn ${assistantTurnNumber}`);
             }
             
-            updateChatPreview(currentChatId, processor.getDisplayContent()); // Use display content for preview
+            // For chat preview, use assistant response for preview (like before)
+            const assistantContent = processor.getRawContent() || '';
+            updateChatPreview(currentChatId, assistantContent);
+            
+            // Auto-generate title from first user message if still "New Chat"
+            const currentTitle = document.getElementById('chatTitle').textContent;
+            if (currentTitle === 'New Chat' || currentTitle === 'Chat') {
+                const titleFromMessage = getTextContent(message);
+                const shortTitle = titleFromMessage.length > 30 ? titleFromMessage.substring(0, 30) + '...' : titleFromMessage;
+                updateChatTitle(shortTitle);
+            }
         } catch (error) {
             logger.error('Failed to save assistant message or debug data:', error);
         }
@@ -364,7 +391,17 @@ async function handleSimpleChat(message, conversationHistory) {
                     logger.info(`[TURN-DEBUG] Saved stopped debug data for turn ${assistantTurnNumber}`);
                 }
                 
-                updateChatPreview(currentChatId, processor.getDisplayContent()); // Use display content for preview
+                // For chat preview, use assistant response for preview (like before)
+                const assistantContent = processor.getRawContent() || '';
+                updateChatPreview(currentChatId, assistantContent);
+                
+                // Auto-generate title from first user message if still "New Chat"
+                const currentTitle = document.getElementById('chatTitle').textContent;
+                if (currentTitle === 'New Chat' || currentTitle === 'Chat') {
+                    const titleFromMessage = getTextContent(message);
+                    const shortTitle = titleFromMessage.length > 30 ? titleFromMessage.substring(0, 30) + '...' : titleFromMessage;
+                    updateChatTitle(shortTitle);
+                }
             } catch (saveError) {
                 logger.warn('Failed to save stopped message:', saveError);
             }

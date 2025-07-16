@@ -15,7 +15,7 @@ const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
         fileSize: 10 * 1024 * 1024, // 10MB limit
-        files: 5 // Max 5 files at once
+        files: 99 // Max 99 files at once
     },
     fileFilter: (req, file, cb) => {
         // Allow all files except images (images are handled separately)
@@ -30,7 +30,7 @@ const upload = multer({
 // Supported office document formats
 const SUPPORTED_OFFICE_FORMATS = ['.docx', '.pptx', '.xlsx', '.odt', '.odp', '.ods'];
 const SUPPORTED_PDF_FORMATS = ['.pdf'];
-const MAX_TEXT_LENGTH = 100000; // 100KB of text
+
 
 /**
  * Process a single document file
@@ -68,11 +68,7 @@ async function processDocumentFile(buffer, filename, mimetype) {
             log(`[DOCUMENT-API] Used text reader for ${ext} file: ${filename}`);
         }
 
-        // Truncate if too long
-        if (extractedText.length > MAX_TEXT_LENGTH) {
-            extractedText = extractedText.substring(0, MAX_TEXT_LENGTH) + '\n\n[Content truncated due to length]';
-            log(`[DOCUMENT-API] Truncated ${filename} text from ${extractedText.length} to ${MAX_TEXT_LENGTH} characters`);
-        }
+        // No truncation - keep full file content
 
         return {
             fileName: filename,
@@ -93,7 +89,7 @@ async function processDocumentFile(buffer, filename, mimetype) {
  * POST /api/process-documents
  * Upload and process document files
  */
-router.post('/process-documents', upload.array('documents', 5), async (req, res) => {
+router.post('/process-documents', upload.array('documents', 99), async (req, res) => {
     try {
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({ error: 'No files uploaded' });
@@ -138,7 +134,7 @@ router.post('/process-documents', upload.array('documents', 5), async (req, res)
                 return res.status(413).json({ error: 'File too large (max 10MB)' });
             }
             if (error.code === 'LIMIT_FILE_COUNT') {
-                return res.status(413).json({ error: 'Too many files (max 5)' });
+                return res.status(413).json({ error: 'Too many files (max 99)' });
             }
         }
         

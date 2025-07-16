@@ -103,23 +103,17 @@ async function handleSendMessage() {
     // Need either text, images, or documents
     if (!textMessage && images.length === 0 && documents.length === 0) return;
     
-    // Build final text content with document content appended
-    let finalText = textMessage || '';
-    documents.forEach(doc => {
-        finalText += `\n\n\`\`\`userdocument\nFile: ${doc.fileName}\n${doc.extractedText}\n\`\`\``;
-    });
-    
-    // Create message content (string for text-only, array for multimodal)
+    // Create separated file content (no frontend concatenation)
     let messageContent;
     if (images.length > 0 || documents.length > 0) {
-        // Multimodal content or documents
+        // Multimodal content with separated files
         messageContent = [];
         
-        // Add text part (including document content)
-        if (finalText || documents.length > 0) {
+        // Add text part (user text only, no document content)
+        if (textMessage) {
             messageContent.push({
                 type: 'text',
-                text: finalText
+                text: textMessage
             });
         }
         
@@ -132,14 +126,27 @@ async function handleSendMessage() {
             });
         });
         
+        // Add files as separate part (NEW STRUCTURE)
+        if (documents.length > 0) {
+            messageContent.push({
+                type: 'files',
+                files: documents.map(doc => ({
+                    fileName: doc.fileName,
+                    extractedText: doc.extractedText,
+                    size: doc.size,
+                    type: doc.type || 'application/octet-stream'
+                }))
+            });
+        }
+        
         const parts = [];
         if (textMessage) parts.push('text');
-        if (documents.length > 0) parts.push(`${documents.length} document(s)`);
+        if (documents.length > 0) parts.push(`${documents.length} file(s)`);
         if (images.length > 0) parts.push(`${images.length} image(s)`);
-        logger.info(`Sending multimodal message: ${parts.join(' + ')}`);
+        logger.info(`Sending separated multimodal message: ${parts.join(' + ')}`);
     } else {
-        // Text-only content (backward compatible)
-        messageContent = finalText;
+        // Text-only content
+        messageContent = textMessage || '';
         logger.info('Sending text-only message');
     }
     
@@ -235,8 +242,24 @@ async function handleConductorChat(message, conversationHistory) {
     
     // Save user message and debug data separately (turn-based approach)
     try {
-        // Save user message without debug data
-        await saveCompleteMessage(currentChatId, { role: 'user', content: message }, null, userTurnNumber);
+        // Save user message with separated file structure
+        const messageForSaving = { role: 'user', content: message };
+        
+        // If message contains files, store original content and file metadata
+        if (Array.isArray(message)) {
+            const filesPart = message.find(part => part.type === 'files');
+            if (filesPart && filesPart.files) {
+                messageForSaving.original_content = message;
+                messageForSaving.file_metadata = {
+                    hasFiles: true,
+                    fileCount: filesPart.files.length,
+                    imageCount: message.filter(part => part.type === 'image').length,
+                    files: filesPart.files
+                };
+            }
+        }
+        
+        await saveCompleteMessage(currentChatId, messageForSaving, null, userTurnNumber);
         
         // Save debug data to turn-based storage
         if (userDebugData) {

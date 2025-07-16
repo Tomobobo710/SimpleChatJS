@@ -38,44 +38,6 @@
     justify-content: flex-end;
 }
 
-/* Edit control buttons */
-.edit-btn-save,
-.edit-btn-cancel {
-    padding: 4px 12px;
-    font-size: 10px;
-    font-weight: bold;
-    border: 1px outset #666;
-    cursor: pointer;
-    background: #444;
-    color: #e0e0e0;
-}
-
-.edit-btn-save {
-    background: #2a5a2a;
-    border-color: #4a8a4a;
-}
-
-.edit-btn-save:hover {
-    background: #3a7a3a;
-    border: 1px inset #4a8a4a;
-}
-
-.edit-btn-save:disabled {
-    background: #333;
-    color: #999;
-    cursor: not-allowed;
-    border: 1px inset #555;
-}
-
-.edit-btn-cancel {
-    background: #5a2a2a;
-    border-color: #8a4a4a;
-}
-
-.edit-btn-cancel:hover {
-    background: #7a3a3a;
-    border: 1px inset #8a4a4a;
-}
 
 /* Edit indicator */
 .edit-indicator {
@@ -275,43 +237,6 @@
     border: 1px inset #333;
 }
 
-.turn-edit-btn-save,
-.turn-edit-btn-cancel {
-    padding: 6px 16px;
-    font-size: 11px;
-    font-weight: bold;
-    border: 1px outset #666;
-    cursor: pointer;
-    background: #444;
-    color: #e0e0e0;
-}
-
-.turn-edit-btn-save {
-    background: #2a5a2a;
-    border-color: #4a8a4a;
-}
-
-.turn-edit-btn-save:hover {
-    background: #3a7a3a;
-    border: 1px inset #4a8a4a;
-}
-
-.turn-edit-btn-save:disabled {
-    background: #333;
-    color: #999;
-    cursor: not-allowed;
-    border: 1px inset #555;
-}
-
-.turn-edit-btn-cancel {
-    background: #5a2a2a;
-    border-color: #8a4a4a;
-}
-
-.turn-edit-btn-cancel:hover {
-    background: #7a3a3a;
-    border: 1px inset #8a4a4a;
-}
 
 /* Turn editing state */
 .turn.editing {
@@ -410,37 +335,6 @@
     justify-content: flex-end;
 }
 
-.edit-btn-save,
-.edit-btn-cancel {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.edit-btn-save {
-    background: #4CAF50;
-    color: white;
-}
-
-.edit-btn-save:hover {
-    background: #45a049;
-}
-
-.edit-btn-save:disabled {
-    background: #666;
-    cursor: not-allowed;
-}
-
-.edit-btn-cancel {
-    background: #f44336;
-    color: white;
-}
-
-.edit-btn-cancel:hover {
-    background: #da190b;
-}
 
 /* Image preview styles for edit mode */
 .edit-images-container {
@@ -528,25 +422,6 @@
     border-radius: 4px;
 }
 
-.edit-add-image-btn {
-    background: #444;
-    border: 1px solid #666;
-    border-radius: 4px;
-    color: #fff;
-    cursor: pointer;
-    padding: 6px 10px;
-    font-size: 16px;
-    transition: background-color 0.2s ease;
-}
-
-.edit-add-image-btn:hover {
-    background: #555;
-    border-color: #4a90e2;
-}
-
-.edit-add-image-btn:active {
-    background: #333;
-}
 
 /* Drag and drop styling for edit containers */
 .editable-message {
@@ -575,13 +450,6 @@
     pointer-events: none;
 }
 
-/* Improved image controls layout */
-.edit-image-controls::before {
-    content: 'Add files:';
-    font-size: 12px;
-    color: #ccc;
-    white-space: nowrap;
-}
 
 /* Enhanced textarea styling when images are present */
 .message-content-textarea:focus {
