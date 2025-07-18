@@ -8,7 +8,7 @@ const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. If the previous q
 
 // Current settings in memory
 let currentSettings = {
-    apiUrl: 'http://localhost:11434/v1',
+    apiUrl: 'http://127.0.0.1:11434/v1',
     apiKey: '',
     modelName: ''
 };
@@ -20,13 +20,18 @@ function getSettingsPath() {
 
 // Get profiles path
 function getProfilesPath() {
-    return path.join(__dirname, '..', '..', 'userdata', 'profiles.json');
+    // For portable mode, use the path set by Electron
+    if (process.env.PORTABLE_USERDATA_PATH) {
+        return path.join(process.env.PORTABLE_USERDATA_PATH, 'profiles.json');
+    } else {
+        return path.join(__dirname, '..', '..', 'userdata', 'profiles.json');
+    }
 }
 
 // Get default profile settings
 function getDefaultProfileSettings() {
     return {
-        apiUrl: 'http://localhost:11434/v1',
+        apiUrl: 'http://127.0.0.1:11434/v1',
         apiKey: '',
         modelName: '',
         debugPanels: true,
@@ -47,7 +52,7 @@ function getDefaultProfiles() {
         profiles: {
             'Default': {
                 ...getDefaultProfileSettings(),
-                apiUrl: 'http://localhost:11434/v1',
+                apiUrl: 'http://127.0.0.1:11434/v1',
                 modelName: '',
                 enableSystemPrompt: true,
                 systemPrompt: DEFAULT_SYSTEM_PROMPT

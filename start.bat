@@ -1,6 +1,6 @@
 @echo off
 
-echo [STARTING] Simple Chat JS...
+echo [STARTING] SimpleChatJS...
 echo Chat will be available at: http://localhost:50505
 echo Browser will open automatically.
 echo.

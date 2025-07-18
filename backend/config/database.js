@@ -5,7 +5,14 @@ const { log } = require('../utils/logger');
 const fs = require('fs');
 
 // Ensure userdata directory exists
-const userdataDir = path.join(__dirname, '..', '..', 'userdata');
+let userdataDir;
+if (process.env.PORTABLE_USERDATA_PATH) {
+    // Electron portable mode - use path set by main process
+    userdataDir = process.env.PORTABLE_USERDATA_PATH;
+} else {
+    // Running as normal Node.js - use project directory
+    userdataDir = path.join(__dirname, '..', '..', 'userdata');
+}
 if (!fs.existsSync(userdataDir)) {
     fs.mkdirSync(userdataDir, { recursive: true });
 }

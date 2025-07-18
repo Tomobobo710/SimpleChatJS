@@ -6,7 +6,7 @@ A lightweight, no-frills AI chat application built with pure JavaScript and Node
 
 ## Philosophy
 
-SimpleChat JS embraces a back-to-basics approach:
+SimpleChatJS embraces a back-to-basics approach:
 
 - **Pure JavaScript Frontend** - No React, Vue, or complex frameworks. Just vanilla JS, HTML, and CSS that any developer can understand and modify.
 - **Clean Architecture** - Well-organized backend with clear separation of concerns. Easy to extend and maintain.

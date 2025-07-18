@@ -1,4 +1,4 @@
-// Simple Chat JS Server - Slim main entry point
+// SimpleChatJS Server - Main entry point
 const express = require('express');
 const path = require('path');
 const open = require('open');
@@ -43,15 +43,19 @@ async function startServer() {
         // Start server
         app.listen(PORT, async () => {
             const url = `http://localhost:${PORT}`;
-            log(`[SERVER] Simple Chat JS server running at ${url}`);
+            log(`[SERVER] SimpleChatJS server running at ${url}`);
             await loadSettingsOnStartup();
             
-            // Open browser automatically
-            try {
-                await open(url);
-                log('[BROWSER] Opened browser automatically');
-            } catch (error) {
-                log('[BROWSER] Failed to open browser:', error);
+            // Skip opening browser when running in Electron
+            if (!process.env.PORTABLE_USERDATA_PATH) {
+                try {
+                    await open(url);
+                    log('[BROWSER] Opened browser automatically');
+                } catch (error) {
+                    log('[BROWSER] Failed to open browser:', error);
+                }
+            } else {
+                log('[BROWSER] Running in Electron, skipping browser launch');
             }
         });
     } catch (error) {

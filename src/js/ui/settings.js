@@ -19,7 +19,7 @@ async function loadInitialSettings() {
         window.setCachedSettings(settings);
         
         // If settings are empty/default, save them to backend to ensure persistence
-        if (!settings.apiUrl || settings.apiUrl === 'http://localhost:11434/v1') {
+        if (!settings.apiUrl || settings.apiUrl === 'http://127.0.0.1:11434/v1') {
             logger.info('Saving default settings to backend for first-time setup');
             await saveSettingsToBackend(settings);
         }

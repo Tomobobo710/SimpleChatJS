@@ -18,7 +18,7 @@ window.setCachedSettings = (settings) => { cachedSettings = settings; };
 function loadSettings() {
     // Return cached settings if available, otherwise defaults
     return window.cachedSettings() || {
-        apiUrl: 'http://localhost:11434/v1',
+        apiUrl: 'http://127.0.0.1:11434/v1',
         apiKey: '',
         modelName: '',
         debugPanels: false,

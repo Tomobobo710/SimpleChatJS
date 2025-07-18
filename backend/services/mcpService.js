@@ -23,12 +23,22 @@ async function initMCP() {
 
 // Get MCP config path
 function getMcpConfigPath() {
-    return path.join(__dirname, '..', '..', 'userdata', 'mcp_config.json');
+    // For portable mode, use the path set by Electron
+    if (process.env.PORTABLE_USERDATA_PATH) {
+        return path.join(process.env.PORTABLE_USERDATA_PATH, 'mcp_config.json');
+    } else {
+        return path.join(__dirname, '..', '..', 'userdata', 'mcp_config.json');
+    }
 }
 
 // Get enabled tools path
 function getEnabledToolsPath() {
-    return path.join(__dirname, '..', '..', 'userdata', 'enabled_tools.json');
+    // For portable mode, use the path set by Electron
+    if (process.env.PORTABLE_USERDATA_PATH) {
+        return path.join(process.env.PORTABLE_USERDATA_PATH, 'enabled_tools.json');
+    } else {
+        return path.join(__dirname, '..', '..', 'userdata', 'enabled_tools.json');
+    }
 }
 
 // Get MCP status
@@ -64,10 +74,21 @@ async function connectMcp() {
             return { success: false, error: 'MCP SDK not available' };
         }
         
-        // Load config
+        // Load config - create default if it doesn't exist
         const configPath = getMcpConfigPath();
         if (!fs.existsSync(configPath)) {
-            return { success: false, error: 'No mcp_config.json found' };
+            // Create default config
+            const defaultConfig = {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-filesystem", "./"],
+                        "env": {}
+                    }
+                }
+            };
+            fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2), 'utf8');
+            log('[MCP] Created default config file');
         }
         
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -84,7 +105,7 @@ async function connectMcp() {
         // Connect to servers
         for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
             try {
-                const client = new mcpClient.Client({ name: 'simple-chat-js', version: '1.0.0' });
+                const client = new mcpClient.Client({ name: 'SimpleChatJS', version: '1.0.0' });
                 const transport = new mcpClient.StdioClientTransport({
                     command: serverConfig.command,
                     args: serverConfig.args || [],
