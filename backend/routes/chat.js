@@ -83,7 +83,7 @@ router.get('/chats', (req, res) => {
             FROM branch_messages
             WHERE role = 'user'
         ) bm ON cb.id = bm.branch_id AND bm.rn = 1
-        ORDER BY c.updated_at DESC
+        ORDER BY c.created_at DESC
     `;
     
     try {
@@ -108,7 +108,7 @@ router.get('/chats', (req, res) => {
                 chat_id: row.id,
                 title: row.title,
                 last_message: processedLastMessage,
-                last_updated: row.updated_at || row.created_at
+                last_updated: row.created_at
             };
         });
         res.json(chats);

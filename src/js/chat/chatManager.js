@@ -388,7 +388,7 @@ async function loadChatHistory(chatId) {
         // Update chat info
         const chatItem = document.querySelector(`[data-chat-id="${chatId}"]`);
         const title = chatItem ? chatItem.querySelector('.chat-item-title').textContent : 'Chat';
-        updateChatTitle(title);
+        chatTitle.textContent = title; // Just update the UI title, don't save to database
         chatInfo.textContent = `Chat ID: ${chatId} | ${history.messages.length} messages`;
         
         // Using proper SSE simulation without content injection
@@ -637,8 +637,7 @@ function updateChatPreview(chatId, message) {
             timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
         
-        // Move to top of list
-        chatList.insertBefore(chatItem, chatList.firstChild);
+        // Keep chat in its original position (ordered by creation time)
     }
 }
 
