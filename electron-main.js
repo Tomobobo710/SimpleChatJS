@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
 
 // Set Chromium user-data-dir BEFORE app initialization
@@ -77,11 +77,13 @@ function createWindow() {
         height: 900,
         minWidth: 800,
         minHeight: 600,
-        icon: path.join(__dirname, 'assets/icon.png'), // Add an icon if you have one
+        icon: path.join(__dirname, 'simplechatjs.ico'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            enableRemoteModule: false
+            enableRemoteModule: false,
+            spellcheck: true,
+            preload: path.join(__dirname, 'electron-preload.js')
         },
         show: false // Don't show until ready
     });
@@ -107,6 +109,43 @@ function createWindow() {
         event.preventDefault();
         require('electron').shell.openExternal(navigationUrl);
     });
+    
+    // Enable context menu (right-click menu)
+    mainWindow.webContents.on('context-menu', (event, params) => {
+        // Build menu items array
+        const menuItems = [];
+        
+        // Add copy menu item if there is text selection
+        if (params.selectionText) {
+            menuItems.push({ action: 'copy', label: 'Copy' });
+        }
+        
+        // Add paste menu item if we're in an editable field
+        if (params.isEditable) {
+            if (params.selectionText) {
+                menuItems.push({ action: 'cut', label: 'Cut' });
+            }
+            menuItems.push({ action: 'paste', label: 'Paste' });
+        }
+        
+        // Add inspect element in development mode
+        if (process.argv.includes('--dev')) {
+            if (menuItems.length > 0) {
+                menuItems.push({ action: 'separator' });
+            }
+            menuItems.push({ action: 'inspect', label: 'Inspect Element' });
+        }
+        
+        // Send context menu data to renderer if we have items
+        if (menuItems.length > 0) {
+            mainWindow.webContents.send('show-context-menu', {
+                x: params.x,
+                y: params.y,
+                items: menuItems
+            });
+        }
+    });
+
 }
 
 // Remove default menu bar
@@ -166,6 +205,13 @@ app.whenReady().then(() => {
     startServer();         // Start server directly
     createWindow();        // Create window
     Menu.setApplicationMenu(null); // Remove menu bar completely
+    
+    // Handle inspect element IPC
+    ipcMain.on('inspect-element', () => {
+        if (mainWindow) {
+            mainWindow.webContents.toggleDevTools();
+        }
+    });
     
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

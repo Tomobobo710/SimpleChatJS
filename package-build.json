@@ -39,13 +39,16 @@
       "!package-build.json"
     ],
     "win": {
-      "target": "dir"
+      "target": "dir",
+      "icon": "simplechatjs.ico"
     },
     "linux": {
-      "target": "dir"
+      "target": "dir",
+      "icon": "simplechatjs.ico"
     },
     "mac": {
-      "target": "dir"
+      "target": "dir",
+      "icon": "simplechatjs.ico"
     },
     "forceCodeSigning": false
   }
