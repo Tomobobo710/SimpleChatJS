@@ -521,6 +521,10 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
             toolCalls, toolCallId, toolName, blocksJson, debugData, originalContent, fileMetadata
         );
         
+        // Update chat's updated_at timestamp
+        const updateChatStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        updateChatStmt.run(chatId);
+        
         log(`[BRANCHING] Saved ${role} message to branch '${activeBranch.branch_name}' (turn ${finalTurnNumber})`);
         return result.lastInsertRowid;
         

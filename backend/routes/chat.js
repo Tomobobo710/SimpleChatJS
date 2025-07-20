@@ -83,7 +83,7 @@ router.get('/chats', (req, res) => {
             FROM branch_messages
             WHERE role = 'user'
         ) bm ON cb.id = bm.branch_id AND bm.rn = 1
-        ORDER BY c.created_at DESC
+        ORDER BY c.updated_at DESC
     `;
     
     try {
@@ -104,11 +104,15 @@ router.get('/chats', (req, res) => {
                 }
             }
             
+            // Convert SQLite timestamp to ISO string for consistent parsing
+            const timestamp = row.updated_at || row.created_at;
+            const isoTimestamp = timestamp ? new Date(timestamp + 'Z').toISOString() : new Date().toISOString();
+            
             return {
                 chat_id: row.id,
                 title: row.title,
                 last_message: processedLastMessage,
-                last_updated: row.created_at
+                last_updated: isoTimestamp
             };
         });
         res.json(chats);

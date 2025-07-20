@@ -127,7 +127,7 @@ async function loadChatList() {
             currentChatId = generateId();
             try {
                 await createNewChatInDatabase(currentChatId, 'New Chat');
-                addChatToList(currentChatId, 'New Chat', '', new Date());
+                addChatToList(currentChatId, 'New Chat', '', new Date()); // This is already local time
                 selectChat(currentChatId);
                 updateChatTitle('New Chat');
                 chatInfo.textContent = `Chat ID: ${currentChatId}`;
@@ -138,9 +138,10 @@ async function loadChatList() {
             return;
         }
         
-        // Add each chat to the list
+        // Add each chat to the list (backend returns newest-first, so append to maintain order)
         chats.forEach(chat => {
-            addChatToList(chat.chat_id, chat.title, chat.last_message, new Date(chat.last_updated));
+            // Backend now returns ISO timestamp, parse normally
+            addChatToListAtEnd(chat.chat_id, chat.title, chat.last_message, new Date(chat.last_updated));
         });
         
         // Auto-select the most recent chat
@@ -158,26 +159,58 @@ async function loadChatList() {
 }
 
 // Add chat to the sidebar list
+// Helper function to format date/time smartly
+function formatChatDateTime(date) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const chatDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    
+    const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    
+    if (chatDate.getTime() === today.getTime()) {
+        return `Today ${timeStr}`;
+    } else if (chatDate.getTime() === yesterday.getTime()) {
+        return `Yesterday ${timeStr}`;
+    } else {
+        const dateStr = date.toLocaleDateString('en-US', { 
+            month: 'numeric', 
+            day: 'numeric', 
+            year: 'numeric' 
+        });
+        return `${dateStr} ${timeStr}`;
+    }
+}
+
 function addChatToList(chatId, title, lastMessage, lastUpdated) {
     const chatItem = document.createElement('div');
     chatItem.className = 'chat-item';
     chatItem.dataset.chatId = chatId;
     
-    const timeStr = lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dateTimeStr = formatChatDateTime(lastUpdated);
     
     chatItem.innerHTML = `
+        <div class="chat-item-header">
+            <div class="chat-item-datetime">${dateTimeStr}</div>
+            <button class="chat-delete-btn" title="Delete chat"><span class="x-icon"></span></button>
+        </div>
         <div class="chat-item-content">
-            <div class="chat-item-time">${timeStr}</div>
             <div class="chat-item-title">${escapeHtml(title)}</div>
             <div class="chat-item-preview">${escapeHtml(getPreviewText(lastMessage, 50))}</div>
         </div>
-        <button class="chat-delete-btn" title="Delete chat"><span class="x-icon"></span></button>
     `;
     
-    // Add click handler for the main chat content
+    // Add click handler for the main chat content (but not the header)
     const chatContent = chatItem.querySelector('.chat-item-content');
     chatContent.addEventListener('click', () => {
         switchToChat(chatId);
+    });
+    
+    // Also allow clicking the main chat item (but not header or delete button)
+    chatItem.addEventListener('click', (e) => {
+        if (!e.target.closest('.chat-item-header')) {
+            switchToChat(chatId);
+        }
     });
     
     // Add click handler for the delete button
@@ -189,6 +222,48 @@ function addChatToList(chatId, title, lastMessage, lastUpdated) {
     
     // Insert at the top (most recent first)
     chatList.insertBefore(chatItem, chatList.firstChild);
+}
+// Add chat to the sidebar list at the end (for loading from database)
+function addChatToListAtEnd(chatId, title, lastMessage, lastUpdated) {
+    const chatItem = document.createElement('div');
+    chatItem.className = 'chat-item';
+    chatItem.dataset.chatId = chatId;
+    
+    const dateTimeStr = formatChatDateTime(lastUpdated);
+    
+    chatItem.innerHTML = `
+        <div class="chat-item-header">
+            <div class="chat-item-datetime">${dateTimeStr}</div>
+            <button class="chat-delete-btn" title="Delete chat"><span class="x-icon"></span></button>
+        </div>
+        <div class="chat-item-content">
+            <div class="chat-item-title">${escapeHtml(title)}</div>
+            <div class="chat-item-preview">${escapeHtml(getPreviewText(lastMessage, 50))}</div>
+        </div>
+    `;
+    
+    // Add click handler for the main chat content (but not the header)
+    const chatContent = chatItem.querySelector('.chat-item-content');
+    chatContent.addEventListener('click', () => {
+        switchToChat(chatId);
+    });
+    
+    // Also allow clicking the main chat item (but not header or delete button)
+    chatItem.addEventListener('click', (e) => {
+        if (!e.target.closest('.chat-item-header')) {
+            switchToChat(chatId);
+        }
+    });
+    
+    // Add click handler for the delete button
+    const deleteBtn = chatItem.querySelector('.chat-delete-btn');
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent chat selection
+        handleDeleteChat(chatId, title);
+    });
+    
+    // Append at the end (maintain backend order)
+    chatList.appendChild(chatItem);
 }
 
 // Handle chat deletion with confirmation
