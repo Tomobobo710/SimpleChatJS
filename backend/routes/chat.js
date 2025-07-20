@@ -23,7 +23,9 @@ function extractPreviewText(content) {
             const extras = [];
             if (filesPart && filesPart.files && filesPart.files.length > 0) {
                 if (filesPart.files.length === 1) {
-                    extras.push(`[File] ${filesPart.files[0].fileName}`);
+                    const file = filesPart.files[0];
+                    const fileName = file.fileName || file.name || file.originalName || 'Unknown file';
+                    extras.push(`[File] ${fileName}`);
                 } else {
                     extras.push(`[${filesPart.files.length} files]`);
                 }
@@ -42,23 +44,34 @@ function extractPreviewText(content) {
             return textPart.text;
         } 
         // No text content, show files/images only
-        else if (filesPart && filesPart.files && filesPart.files.length > 0) {
-            if (filesPart.files.length === 1) {
-                return `[File] ${filesPart.files[0].fileName}`;
-            } else {
-                return `[${filesPart.files.length} files]`;
-            }
-        } 
-        else if (imageParts.length > 0) {
-            if (imageParts.length === 1) {
-                return '[Image]';
-            } else {
-                return `[${imageParts.length} images]`;
-            }
-        } 
         else {
-            return '[Multimodal content]';
+            const parts = [];
+            if (filesPart && filesPart.files && filesPart.files.length > 0) {
+                if (filesPart.files.length === 1) {
+                    const file = filesPart.files[0];
+                    const fileName = file.fileName || file.name || file.originalName || 'Unknown file';
+                    parts.push(`[File] ${fileName}`);
+                } else {
+                    parts.push(`[${filesPart.files.length} files]`);
+                }
+            }
+            if (imageParts.length > 0) {
+                if (imageParts.length === 1) {
+                    parts.push('[Image]');
+                } else {
+                    parts.push(`[${imageParts.length} images]`);
+                }
+            }
+            if (parts.length > 0) {
+                return parts.join(' + ');
+            } else {
+                return '[Multimodal content]';
+            }
         }
+    }
+    // Handle any other data types gracefully
+    if (typeof content === 'object' && content !== null) {
+        return '[Complex content]';
     }
     return String(content || '');
 }

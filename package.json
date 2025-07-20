@@ -6,9 +6,7 @@
   "main": "electron-main.js",
   "scripts": {
     "start": "node backend/server.js",
-    "dev": "node backend/server.js",
-    "electron": "electron .",
-    "electron-dev": "electron . --dev"
+    "dev": "node backend/server.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -17,8 +15,7 @@
     "multer": "^2.0.1",
     "officeparser": "^4.0.4",
     "open": "^8.4.2",
-    "pdf-parse": "^1.1.1",
-    "electron": "^32.0.0"
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {}
 }

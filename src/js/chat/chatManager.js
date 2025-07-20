@@ -27,7 +27,9 @@ function getTextContent(content) {
             const extras = [];
             if (filesPart && filesPart.files && filesPart.files.length > 0) {
                 if (filesPart.files.length === 1) {
-                    extras.push(`[File] ${filesPart.files[0].fileName}`);
+                    const file = filesPart.files[0];
+                    const fileName = file.fileName || file.name || file.originalName || 'Unknown file';
+                    extras.push(`[File] ${fileName}`);
                 } else {
                     extras.push(`[${filesPart.files.length} files]`);
                 }
@@ -46,25 +48,51 @@ function getTextContent(content) {
             return textPart.text;
         } 
         // No text content, show files/images only
-        else if (filesPart && filesPart.files && filesPart.files.length > 0) {
-            if (filesPart.files.length === 1) {
-                return `[File] ${filesPart.files[0].fileName}`;
-            } else {
-                return `[${filesPart.files.length} files]`;
-            }
-        } 
-        else if (imageParts.length > 0) {
-            if (imageParts.length === 1) {
-                return '[Image]';
-            } else {
-                return `[${imageParts.length} images]`;
-            }
-        } 
         else {
-            return '[Multimodal content]';
+            const parts = [];
+            if (filesPart && filesPart.files && filesPart.files.length > 0) {
+                if (filesPart.files.length === 1) {
+                    const file = filesPart.files[0];
+                    const fileName = file.fileName || file.name || file.originalName || 'Unknown file';
+                    parts.push(`[File] ${fileName}`);
+                } else {
+                    parts.push(`[${filesPart.files.length} files]`);
+                }
+            }
+            if (imageParts.length > 0) {
+                if (imageParts.length === 1) {
+                    parts.push('[Image]');
+                } else {
+                    parts.push(`[${imageParts.length} images]`);
+                }
+            }
+            if (parts.length > 0) {
+                return parts.join(' + ');
+            } else {
+                return '[Multimodal content]';
+            }
         }
     }
-    return String(content || '');
+    // Handle any other data types gracefully
+    if (typeof content === 'object' && content !== null) {
+        // Try to extract something meaningful from unknown objects
+        if (content.type) {
+            return `[${content.type}]`;
+        }
+        if (content.name || content.fileName) {
+            return `[File] ${content.name || content.fileName}`;
+        }
+        if (Array.isArray(content)) {
+            return content.map(item => getTextContent(item)).join(' + ');
+        }
+        return '[Content]';
+    }
+    const result = String(content || '');
+    // Prevent [object Object] from ever appearing
+    if (result === '[object Object]') {
+        return '[Content]';
+    }
+    return result;
 }
 
 // Utility function to get preview text with length limit
@@ -140,7 +168,6 @@ async function loadChatList() {
         
         // Add each chat to the list (backend returns newest-first, so append to maintain order)
         chats.forEach(chat => {
-            // Backend now returns ISO timestamp, parse normally
             addChatToListAtEnd(chat.chat_id, chat.title, chat.last_message, new Date(chat.last_updated));
         });
         
@@ -663,15 +690,17 @@ async function loadChatHistory(chatId) {
 
 // Update chat title
 async function updateChatTitle(title) {
-    // Safeguard against invalid titles
+    // Convert objects properly using text extraction
     let cleanTitle = title;
-    if (!title || title === '[object Object]' || title === 'undefined' || title === 'null') {
-        cleanTitle = 'Chat';
-    }
     
     // If title is an object/array, extract text content
     if (typeof title === 'object') {
-        cleanTitle = getTextContent(title) || 'Chat';
+        cleanTitle = getTextContent(title) || 'New Chat';
+    }
+    
+    // Fallback for invalid strings
+    if (!cleanTitle || cleanTitle === 'undefined' || cleanTitle === 'null' || cleanTitle.includes('[object Object]')) {
+        cleanTitle = 'New Chat';
     }
     
     chatTitle.textContent = cleanTitle;
@@ -685,7 +714,7 @@ async function updateChatTitle(title) {
             
             // Update the title in the database
             try {
-                await updateChatTitleInDatabase(currentChatId, title);
+                await updateChatTitleInDatabase(currentChatId, cleanTitle);
             } catch (error) {
                 logger.error('Error updating chat title in database:', error);
                 // Continue anyway - UI is updated even if DB update fails
