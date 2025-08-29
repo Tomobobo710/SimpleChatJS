@@ -313,6 +313,23 @@ async function getChatHistory(chatId = null) {
     }
 }
 
+// Get complete chat history including error messages (for UI display)
+async function getCompleteChatHistory(chatId = null) {
+    try {
+        const url = chatId ? `${API_BASE}/api/chat/${chatId}/history-complete` : `${API_BASE}/api/chat/${currentChatId}/history-complete`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting complete chat history:', error, true);
+        throw error;
+    }
+}
+
 // Get available MCP servers status
 async function getMCPStatus() {
     try {

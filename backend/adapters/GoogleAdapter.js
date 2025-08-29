@@ -122,13 +122,73 @@ class GoogleAdapter extends BaseResponseAdapter {
         try {
             context.buffer += chunk.toString();
             
-            // Try to parse complete JSON response
-            try {
-                const parsed = JSON.parse(context.buffer);
+            // Google sends streaming JSON in various formats - handle them all
+            let remainingBuffer = context.buffer;
+            let processedAny = false;
+            
+            // Keep trying to parse complete JSON chunks from the buffer
+            while (remainingBuffer.trim()) {
+                let parsed;
+                let jsonEndIndex = -1;
                 
-                // Handle array of responses or single response
+                try {
+                    // Find complete JSON boundaries (objects or arrays)
+                    let bracketCount = 0;
+                    let inString = false;
+                    let escaping = false;
+                    let foundStart = false;
+                    
+                    for (let i = 0; i < remainingBuffer.length; i++) {
+                        const char = remainingBuffer[i];
+                        
+                        if (escaping) {
+                            escaping = false;
+                            continue;
+                        }
+                        
+                        if (char === '\\') {
+                            escaping = true;
+                            continue;
+                        }
+                        
+                        if (char === '"') {
+                            inString = !inString;
+                            continue;
+                        }
+                        
+                        if (!inString) {
+                            if (char === '[' || char === '{') {
+                                bracketCount++;
+                                foundStart = true;
+                            } else if (char === ']' || char === '}') {
+                                bracketCount--;
+                                if (bracketCount === 0 && foundStart) {
+                                    jsonEndIndex = i + 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (jsonEndIndex === -1) {
+                        break; // Wait for more data
+                    }
+                    
+                    const jsonString = remainingBuffer.substring(0, jsonEndIndex).trim();
+                    parsed = JSON.parse(jsonString);
+                    
+                    // Update remaining buffer
+                    remainingBuffer = remainingBuffer.substring(jsonEndIndex).trim();
+                    remainingBuffer = remainingBuffer.replace(/^[,\s]+/, '');
+                    
+                } catch (parseError) {
+                    break; // Wait for more data
+                }
+                
+                // Process each response immediately for proper streaming
                 const responses = Array.isArray(parsed) ? parsed : [parsed];
                 
+                // Process each response object normally for streaming
                 for (const responseObj of responses) {
                     const candidate = responseObj.candidates?.[0];
                     if (!candidate) continue;
@@ -141,40 +201,43 @@ class GoogleAdapter extends BaseResponseAdapter {
                     const thinkingBudget = this.getThinkingBudget();
                     const hasThoughts = parts.some(part => part.thought);
                     
-                    if (isThinkingModel && isThinkingEnabled && thinkingBudget !== 0 && hasThoughts) {
+                    if (isThinkingModel && isThinkingEnabled && thinkingBudget !== 0) {
+                        // Use thinking mode processing if thinking is enabled for this model
+                        // This handles both chunks with thoughts AND regular text in thinking conversations
                         // Process each part according to Google's format
                         for (const part of parts) {
-                            if (!part.text) continue;
-                            
-                            // If this part has thought=true, it's thinking content
-                            if (part.thought) {
-                                // Parse Gemini thinking content to separate summary from detailed thoughts
-                                const lines = part.text.split('\n');
-                                const summaryLine = lines[0] || ''; // "**Summary Title**"
-                                const summary = summaryLine.replace(/\*\*/g, '').trim(); // Remove markdown bold
-                                const detailedThoughts = lines.slice(2).join('\n').trim(); // Skip title and empty line
-                                
-                                // Use summary as dropdown title, detailed thoughts as content
-                                if (summary && detailedThoughts) {
-                                    response.addContent(`<thinking title="${summary}">`);
-                                    response.addContent(detailedThoughts);
-                                    response.addContent('</thinking>');
-                                    response.addDebugData('thinkingContent', detailedThoughts);
-                                    response.addDebugData('thinkingSummary', summary);
-                                } else {
-                                    // Fallback: use original format if parsing fails
-                                    response.addContent('<thinking>');
+                            // Handle text content (thinking or regular)
+                            if (part.text) {
+                                // If this part has thought=true, it's thinking content
+                                if (part.thought) {
+                                    // Parse Gemini thinking content to separate summary from detailed thoughts
+                                    const lines = part.text.split('\n');
+                                    const summaryLine = lines[0] || ''; // "**Summary Title**"
+                                    const summary = summaryLine.replace(/\*\*/g, '').trim(); // Remove markdown bold
+                                    const detailedThoughts = lines.slice(2).join('\n').trim(); // Skip title and empty line
+                                    
+                                    // Use summary as dropdown title, detailed thoughts as content
+                                    if (summary && detailedThoughts) {
+                                        response.addContent(`<thinking title="${summary}">`);
+                                        response.addContent(detailedThoughts);
+                                        response.addContent('</thinking>');
+                                        response.addDebugData('thinkingContent', detailedThoughts);
+                                        response.addDebugData('thinkingSummary', summary);
+                                    } else {
+                                        // Fallback: use original format if parsing fails
+                                        response.addContent('<thinking>');
+                                        response.addContent(part.text);
+                                        response.addContent('</thinking>');
+                                        response.addDebugData('thinkingContent', part.text);
+                                    }
+                                }
+                                // Otherwise it's the regular response
+                                else {
                                     response.addContent(part.text);
-                                    response.addContent('</thinking>');
-                                    response.addDebugData('thinkingContent', part.text);
                                 }
                             }
-                            // Otherwise it's the regular response
-                            else {
-                                response.addContent(part.text);
-                            }
                             
-                            // Handle function calls
+                            // Handle function calls (can exist with or without text)
                             if (part.functionCall) {
                                 const toolCall = {
                                     id: `call_${Date.now()}_${response.toolCalls.length}`,
@@ -245,19 +308,22 @@ class GoogleAdapter extends BaseResponseAdapter {
                     }
                 }
                 
-                // Clear buffer after successful parse
-                context.buffer = '';
-                
-            } catch (parseError) {
-                // Incomplete JSON, keep buffering
-                // Reset buffer if it gets too large to prevent memory issues
-                if (context.buffer.length > 10000) {
-                    context.buffer = '';
-                }
+                processedAny = true;
             }
             
+            // Update buffer with remaining unparsed content
+            if (processedAny) {
+                context.buffer = remainingBuffer;
+            }
+                
         } catch (error) {
+            // If any error occurs (parsing, processing, etc.), log and continue
             console.error('[GOOGLE-ADAPTER] Error processing chunk:', error.message);
+            
+            // Reset buffer if it gets too large to prevent memory issues
+            if (context.buffer.length > 10000) {
+                context.buffer = '';
+            }
         }
         
         return { events, context };

@@ -387,13 +387,16 @@ function getChatHistoryForAPI(chat_id) {
         }
         
         // Get all messages from the active branch including new file fields
+        // FILTER OUT ERROR MESSAGES: Only include successful messages in AI history
         const messagesStmt = db.prepare(`
             SELECT role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata
             FROM branch_messages
-            WHERE branch_id = ?
+            WHERE branch_id = ? AND error_state IS NULL
             ORDER BY timestamp ASC
         `);
         const branchMessages = messagesStmt.all(activeBranch.id);
+        
+        log(`[CHAT-HISTORY] Retrieved ${branchMessages.length} successful messages (errors filtered out)`);
         
         branchMessages.forEach(row => {
             // Process saved messages to ensure AI gets correct content
@@ -464,13 +467,13 @@ function getChatHistoryForAPI(chat_id) {
     }
 }
 // Save complete message structure to database (everything-is-a-branch system)
-async function saveCompleteMessageToDatabase(chatId, messageData, blocks = null, turnNumber = null) {
+async function saveCompleteMessageToDatabase(chatId, messageData, blocks = null, turnNumber = null, errorState = null) {
     // Everything goes through branches now - this is just a wrapper for saveMessageToBranch
-    return await saveMessageToBranch(chatId, messageData, blocks, turnNumber);
+    return await saveMessageToBranch(chatId, messageData, blocks, turnNumber, errorState);
 }
 
 // Save message to current active branch (everything-is-a-branch system)
-async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumber = null) {
+async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumber = null, errorState = null) {
     const { db } = require('../config/database');
     
     try {
@@ -509,16 +512,16 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
             finalTurnNumber = getCurrentTurnNumber(chatId);
         }
         
-        // Insert message into branch with new file handling fields
+        // Insert message into branch with new file handling fields and error_state
         const insertStmt = db.prepare(`
             INSERT INTO branch_messages 
-            (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, original_content, file_metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, original_content, file_metadata, error_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = insertStmt.run(
             activeBranch.id, role, content, finalTurnNumber,
-            toolCalls, toolCallId, toolName, blocksJson, debugData, originalContent, fileMetadata
+            toolCalls, toolCallId, toolName, blocksJson, debugData, originalContent, fileMetadata, errorState
         );
         
         // Update chat's updated_at timestamp
@@ -726,6 +729,23 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                     }
                 }
                 
+                // IMPROVED ERROR HANDLING: Save error message and burn the turn
+                if (chatId && currentTurn) {
+                    const errorMessage = {
+                        role: 'assistant',
+                        content: userErrorMessage,
+                        debug_data: collectedDebugData
+                    };
+                    saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn, 'api_error')
+                        .then(() => {
+                            incrementTurnNumber(chatId); // Burn the turn
+                            log(`[ERROR-HANDLING] Saved API error message and burned turn ${currentTurn}`);
+                        })
+                        .catch(saveError => {
+                            log(`[ERROR-HANDLING] Failed to save error message: ${saveError.message}`);
+                        });
+                }
+                
                 res.write(userErrorMessage);
                 res.end();
             });
@@ -920,6 +940,24 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
             collectedDebugData.rawData.errors.push({ type: 'request_error', message: error.message });
         }
+        
+        // IMPROVED ERROR HANDLING: Save connection error and burn the turn
+        if (chatId && currentTurn) {
+            const errorMessage = {
+                role: 'assistant',
+                content: `Connection error: ${error.message}`,
+                debug_data: collectedDebugData
+            };
+            saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn, 'connection_error')
+                .then(() => {
+                    incrementTurnNumber(chatId); // Burn the turn
+                    log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
+                })
+                .catch(saveError => {
+                    log(`[ERROR-HANDLING] Failed to save connection error: ${saveError.message}`);
+                });
+        }
+        
         res.write(`Connection error: ${error.message}`);
         res.end();
     });
@@ -1176,6 +1214,24 @@ async function processChatRequest(req, res) {
         
     } catch (error) {
         log('[CHAT] Error:', error);
+        
+        // IMPROVED ERROR HANDLING: Save processing error and burn the turn
+        if (chat_id && user_turn_number) {
+            const errorMessage = {
+                role: 'assistant',
+                content: `Processing error: ${error.message}`,
+                debug_data: { error: error.message, stack: error.stack }
+            };
+            saveCompleteMessageToDatabase(chat_id, errorMessage, null, user_turn_number, 'processing_error')
+                .then(() => {
+                    incrementTurnNumber(chat_id); // Burn the turn
+                    log(`[ERROR-HANDLING] Saved processing error and burned turn ${user_turn_number}`);
+                })
+                .catch(saveError => {
+                    log(`[ERROR-HANDLING] Failed to save processing error: ${saveError.message}`);
+                });
+        }
+        
         // Only send error response if headers haven't been sent yet
         if (!res.headersSent) {
             res.status(500).json({ error: error.message });

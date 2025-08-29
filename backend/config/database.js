@@ -106,6 +106,17 @@ function initializeDatabase() {
                 }
             }
             
+            // Add error_state column for tracking errored messages
+            try {
+                db.exec(`ALTER TABLE branch_messages ADD COLUMN error_state TEXT DEFAULT NULL`);
+                log('[DB] Added error_state column to branch_messages');
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding error_state:', err.message);
+                }
+            }
+            
             // FULL MIGRATION: Move everything to branch-based system and drop old tables
             try {
                 log('[DB] Starting FULL migration to everything-is-a-branch system...');

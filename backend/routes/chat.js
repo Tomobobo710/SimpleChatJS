@@ -172,7 +172,121 @@ router.post('/chats', async (req, res) => {
     }
 });
 
-// Get chat history (everything-is-a-branch system)
+// Get chat history including errored messages for UI display
+router.get('/chat/:id/history-complete', (req, res) => {
+    const chatId = req.params.id;
+    
+    try {
+        log(`[HISTORY-COMPLETE] Getting complete history including errors for chat ${chatId}`);
+        
+        // Get the active branch
+        const activeBranchStmt = db.prepare(`
+            SELECT id, branch_name
+            FROM chat_branches
+            WHERE chat_id = ? AND is_active = TRUE
+            LIMIT 1
+        `);
+        const activeBranch = activeBranchStmt.get(chatId);
+        
+        if (!activeBranch) {
+            log(`[HISTORY-COMPLETE] No active branch found for chat ${chatId}`);
+            return res.json({ messages: [] });
+        }
+        
+        // Get ALL messages including errored ones
+        const messagesStmt = db.prepare(`
+            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            FROM branch_messages
+            WHERE branch_id = ?
+            ORDER BY timestamp ASC
+        `);
+        const branchMessages = messagesStmt.all(activeBranch.id);
+        
+        const messages = branchMessages.map(row => {
+            const parsedBlocks = row.blocks ? JSON.parse(row.blocks) : null;
+            const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;
+            
+            // Parse file metadata
+            let originalContent = null;
+            let fileMetadata = null;
+            
+            if (row.original_content) {
+                try {
+                    originalContent = typeof row.original_content === 'string' && row.original_content.startsWith('[')
+                        ? JSON.parse(row.original_content)
+                        : row.original_content;
+                } catch (e) {
+                    log(`[HISTORY-COMPLETE] Error parsing original_content: ${e.message}`);
+                }
+            }
+            
+            if (row.file_metadata) {
+                try {
+                    fileMetadata = JSON.parse(row.file_metadata);
+                } catch (e) {
+                    log(`[HISTORY-COMPLETE] Error parsing file_metadata: ${e.message}`);
+                }
+            }
+            
+            // Parse content
+            let parsedContent = row.content;
+            if (typeof row.content === 'string' && row.content.startsWith('[')) {
+                try {
+                    parsedContent = JSON.parse(row.content);
+                } catch (e) {
+                    parsedContent = row.content;
+                }
+            }
+            
+            const message = {
+                id: row.original_message_id || row.id,
+                role: row.role,
+                content: parsedContent,
+                timestamp: row.timestamp,
+                turn_number: row.turn_number,
+                edit_count: row.edit_count || 0,
+                edited_at: row.edited_at,
+                debug_data: debugData,
+                blocks: parsedBlocks,
+                error_state: row.error_state // Include error state for UI
+            };
+            
+            // Add file handling fields if present
+            if (originalContent !== null) {
+                message.original_content = originalContent;
+            }
+            if (fileMetadata !== null) {
+                message.file_metadata = fileMetadata;
+            }
+            
+            // Add tool data if present
+            if (row.tool_calls) {
+                try {
+                    message.tool_calls = JSON.parse(row.tool_calls);
+                } catch (e) {
+                    log(`[HISTORY-COMPLETE] Error parsing tool_calls: ${e.message}`);
+                }
+            }
+            if (row.tool_call_id) {
+                message.tool_call_id = row.tool_call_id;
+            }
+            if (row.tool_name) {
+                message.tool_name = row.tool_name;
+            }
+            
+            return message;
+        });
+        
+        log(`[HISTORY-COMPLETE] Retrieved ${messages.length} messages (including errors) from branch '${activeBranch.branch_name}'`);
+        res.json({ messages });
+        
+    } catch (err) {
+        log('[HISTORY-COMPLETE] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get chat history (everything-is-a-branch system) - FILTERED for AI
 router.get('/chat/:id/history', (req, res) => {
     const chatId = req.params.id;
     
@@ -280,7 +394,7 @@ router.get('/chat/:id/history', (req, res) => {
             return message;
         });
         
-        log(`[HISTORY] Retrieved ${messages.length} messages from branch '${activeBranch.branch_name}'`);
+        log(`[HISTORY] Retrieved ${messages.length} successful messages from branch '${activeBranch.branch_name}' (errors filtered out)`);
         res.json({ messages });
         
     } catch (err) {

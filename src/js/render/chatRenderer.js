@@ -7,18 +7,25 @@ class ChatRenderer {
     
     // Main render method - handles only blocks - no more content parsing
     renderTurn(turnData, shouldScroll = true) {
-        const {
-            id,
-            role,
-            blocks,
-            content,
-            debug_data,
-            dropdownStates = {},
-            original_content,
-            turn_number,
-            edit_count,
-            edited_at
-        } = turnData;
+        try {
+            const {
+                id,
+                role,
+                blocks,
+                content,
+                debug_data,
+                dropdownStates = {},
+                original_content,
+                turn_number,
+                edit_count,
+                edited_at
+            } = turnData;
+            
+            // Validate required data
+            if (!role || turn_number === undefined) {
+                console.error('[RENDER-ERROR] Missing required turn data:', { role, turn_number, turnData });
+                return null;
+            }
         
         // Check if this turn already exists in DOM
         const existingTurns = document.querySelectorAll(`[data-turn-number="${turn_number}"]`);
@@ -119,6 +126,20 @@ class ChatRenderer {
         );
         
         return turnDiv;
+            
+        } catch (error) {
+            console.error('[RENDER-ERROR] Error rendering turn:', error, turnData);
+            
+            // Create a simple error message instead of crashing
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'turn assistant-turn error';
+            errorDiv.innerHTML = `
+                <div class="turn-content">
+                    <div class="error-message">Error rendering message: ${error.message}</div>
+                </div>
+            `;
+            return errorDiv;
+        }
     }
     
     // Create message element without appending to container (for seamless replacement)
@@ -213,6 +234,8 @@ class ChatRenderer {
                 return this.renderCodeBlock(content, metadata);
             case "phase_marker":
                 return this.renderPhaseMarkerBlock(content, metadata);
+            case "error":
+                return this.renderErrorBlock(content, metadata);
 
             case "chat":
             default:
@@ -300,6 +323,39 @@ class ChatRenderer {
         div.appendChild(copyBtn);
         
         return div;
+    }
+    
+    // Render error block as dropdown with debug information
+    renderErrorBlock(content, metadata, isOpen = false) {
+        const dropdownId = `error-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const errorType = metadata?.error_type || 'unknown_error';
+        const title = `Error: ${errorType.replace('_', ' ').toUpperCase()}`;
+        
+        // Create error dropdown with red styling
+        const dropdown = new StreamingDropdown(dropdownId, title, "error", !isOpen);
+        
+        // Format error content with debug information
+        let errorContent = `**Error Message:**\n${content}\n\n`;
+        
+        if (metadata?.debug_data) {
+            errorContent += `**Debug Information:**\n\`\`\`json\n${JSON.stringify(metadata.debug_data, null, 2)}\n\`\`\``;
+        }
+        
+        dropdown.setContent(errorContent);
+        
+        // Add error-specific styling
+        dropdown.element.classList.add('error-dropdown');
+        dropdown.element.style.borderLeft = '4px solid #ff4444';
+        
+        // Style the dropdown toggle (header) - use correct selector and add null check
+        const dropdownToggle = dropdown.element.querySelector('.dropdown-toggle');
+        if (dropdownToggle) {
+            dropdownToggle.style.backgroundColor = '#4a1a1a'; // Dark red background
+            dropdownToggle.style.color = '#ff9999'; // Light red text
+            dropdownToggle.style.borderLeft = '3px solid #cc0000';
+        }
+        
+        return dropdown.element;
     }
     
     // Copy code content to clipboard, stripping markdown backticks

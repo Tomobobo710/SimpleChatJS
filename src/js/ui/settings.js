@@ -317,12 +317,32 @@ function populateModelDropdown(models) {
     });
     
     // If current model name matches one in the dropdowns, select it
-    const currentModel = modelNameInput.value.trim();
+    // Check loaded settings first, then fall back to input field
+    const settings = loadSettings();
+    const currentModel = settings.modelName || modelNameInput.value.trim();
     if (currentModel) {
         const matchingOption = [...modelSelectDropdown.options].find(opt => opt.value === currentModel);
         if (matchingOption) {
             modelSelectDropdown.value = currentModel;
             if (mainModelSelect) {
+                mainModelSelect.value = currentModel;
+            }
+        } else {
+            // Model exists in settings but not in dropdown - add it as an option
+            logger.warn(`Saved model '${currentModel}' not found in available models, adding it to dropdown`);
+            
+            // Add the saved model as an option to both dropdowns
+            const option1 = document.createElement('option');
+            option1.value = currentModel;
+            option1.textContent = currentModel + ' (saved)';
+            modelSelectDropdown.appendChild(option1);
+            modelSelectDropdown.value = currentModel;
+            
+            if (mainModelSelect) {
+                const option2 = document.createElement('option');
+                option2.value = currentModel;
+                option2.textContent = currentModel + ' (saved)';
+                mainModelSelect.appendChild(option2);
                 mainModelSelect.value = currentModel;
             }
         }

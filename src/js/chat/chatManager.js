@@ -476,7 +476,29 @@ async function loadChatHistory(chatId) {
     try {
         setLoading(true);
         
-        const history = await getChatHistory(chatId);
+        const history = await getCompleteChatHistory(chatId);
+        
+        // Validate history data
+        if (!history || !history.messages || !Array.isArray(history.messages)) {
+            console.error('[LOAD-HISTORY] Invalid history data received:', history);
+            throw new Error('Invalid chat history data received from server');
+        }
+        
+        // Filter out any malformed messages
+        const validMessages = history.messages.filter(msg => {
+            if (!msg || !msg.role || msg.turn_number === undefined) {
+                console.warn('[LOAD-HISTORY] Skipping malformed message:', msg);
+                return false;
+            }
+            return true;
+        });
+        
+        if (validMessages.length !== history.messages.length) {
+            console.warn(`[LOAD-HISTORY] Filtered out ${history.messages.length - validMessages.length} malformed messages`);
+        }
+        
+        // Replace with filtered messages
+        history.messages = validMessages;
         
         // Initialize turn tracking for this chat
         await initializeTurnTrackingForChat(chatId);
@@ -510,6 +532,10 @@ async function loadChatHistory(chatId) {
             const userMessages = turnMessages.filter(msg => msg.role === 'user');
             const assistantMessages = turnMessages.filter(msg => msg.role === 'assistant');
             
+            // Check if any messages in this turn are errored
+            const hasErrors = turnMessages.some(msg => msg.error_state);
+            const errorMessages = turnMessages.filter(msg => msg.error_state);
+            
             // Check for duplicate assistant messages in the same turn
             if (assistantMessages.length > 1) {
                 console.warn(`[LOAD-HISTORY] WARNING: Turn ${turnNumber} has ${assistantMessages.length} assistant messages!`);
@@ -529,8 +555,33 @@ async function loadChatHistory(chatId) {
                 }, false);
             });
             
+            // Handle error messages - render them with special error styling
+            if (hasErrors && errorMessages.length > 0) {
+                errorMessages.forEach(errorMsg => {
+                    // Create error message with debug panel
+                    chatRenderer.renderTurn({
+                        id: errorMsg.id,
+                        role: 'assistant',
+                        content: errorMsg.content,
+                        turn_number: turnNumber,
+                        error_state: errorMsg.error_state,
+                        debug_data: errorMsg.debug_data,
+                        edit_count: errorMsg.edit_count,
+                        edited_at: errorMsg.edited_at,
+                        blocks: [{
+                            type: 'error',
+                            content: errorMsg.content,
+                            metadata: {
+                                error_type: errorMsg.error_state,
+                                debug_data: errorMsg.debug_data
+                            }
+                        }]
+                    }, false);
+                });
+            }
+            
             // Process assistant messages separately (exactly like live rendering)
-            if (assistantMessages.length > 0) {
+            if (assistantMessages.length > 0 && !hasErrors) {
                 
                 // Create a processor only for assistant content
                 const processor = new StreamingMessageProcessor();
@@ -756,6 +807,21 @@ async function getChatHistory(chatId) {
         return await response.json();
     } catch (error) {
         logger.error('Error fetching chat history:', error);
+        throw error;
+    }
+}
+
+// Get complete chat history including error messages (for UI display)
+async function getCompleteChatHistory(chatId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/history-complete`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error fetching complete chat history:', error);
         throw error;
     }
 }
