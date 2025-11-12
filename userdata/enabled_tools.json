@@ -1,0 +1,15 @@
+{
+  "filesystem.read_file": false,
+  "filesystem.read_text_file": false,
+  "filesystem.read_media_file": false,
+  "filesystem.read_multiple_files": false,
+  "filesystem.write_file": false,
+  "filesystem.edit_file": false,
+  "filesystem.create_directory": false,
+  "filesystem.list_directory": false,
+  "filesystem.list_directory_with_sizes": false,
+  "filesystem.directory_tree": false,
+  "filesystem.move_file": false,
+  "filesystem.search_files": false,
+  "filesystem.get_file_info": false
+}

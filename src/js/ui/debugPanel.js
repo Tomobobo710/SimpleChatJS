@@ -151,7 +151,7 @@ class SequentialDebugPanel {
             content += `</div>`;  // Close message-history-section
         }
         
-        // Still show complete history (collapsed by default)
+        // Still show complete history (collapsed by default) - guard for non-array values
         if (debugData.completeMessageHistory) {
             content += `<div class="message-history-section">`;
             content += `<h4>Complete Message History</h4>`;
@@ -159,14 +159,17 @@ class SequentialDebugPanel {
             
             if (debugData.completeMessageHistory.error) {
                 content += `<div class="debug-error">Error: ${debugData.completeMessageHistory.error}</div>`;
-            } else {
-                const messageCount = Array.isArray(debugData.completeMessageHistory) ? debugData.completeMessageHistory.length : 0;
+            } else if (Array.isArray(debugData.completeMessageHistory)) {
+                const messageCount = debugData.completeMessageHistory.length;
                 content += this.createDropdown(
                     `Complete Message History (${messageCount} messages)`,
                     JSON.stringify(debugData.completeMessageHistory, null, 2),
                     false, // Collapsed by default
                     'json'
                 );
+            } else {
+                // If backend sent non-array, avoid breaking UI
+                content += `<div class="debug-note">Complete message history unavailable in expected format.</div>`;
             }
             
             content += `</div>`;  // Close message-history-section
@@ -335,8 +338,11 @@ class SequentialDebugPanel {
         `;
     }
     
-    // Get messages for a specific turn
+    // Get messages for a specific turn - defensive against non-array
     getMessagesForTurn(messages, turnNumber) {
+        if (!Array.isArray(messages)) {
+            return [];
+        }
         return messages.filter(msg => msg.turn_number === turnNumber);
     }
 }

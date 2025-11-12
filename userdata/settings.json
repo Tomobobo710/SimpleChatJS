@@ -1,0 +1,8 @@
+{
+  "apiUrl": "http://localhost:11434/v1",
+  "apiKey": "",
+  "modelName": "deepseek-v3.1:671b-cloud",
+  "debugPanels": true,
+  "showPhaseMarkers": false,
+  "logLevel": "ERROR"
+}
