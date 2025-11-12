@@ -3,6 +3,5 @@
   "apiKey": "",
   "modelName": "deepseek-v3.1:671b-cloud",
   "debugPanels": true,
-  "showPhaseMarkers": false,
-  "logLevel": "ERROR"
+  "showPhaseMarkers": false
 }

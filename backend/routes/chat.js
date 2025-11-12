@@ -501,116 +501,88 @@ router.post('/chat/:id/branch/:branchId/activate', async (req, res) => {
 });
 
 module.exports = router;
-// Edit message content
+
+// Edit message content (libsql + branch_messages only)
 router.patch('/message/:id', async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
         const { content } = req.body;
-        
+
         if (isNaN(messageId)) {
             return res.status(400).json({ error: 'Invalid message ID' });
         }
-        
+
         if (!content || content.trim() === '') {
             return res.status(400).json({ error: 'Content is required' });
         }
-        
-        // Try to find the message in branch_messages first (for branching system)
-        let currentMessage = null;
-        let isInBranch = false;
-        
-        // First, try to find in branch_messages table
-        const getBranchMessageStmt = db.prepare(`
-            SELECT content, edit_count, edited_at, branch_id 
-            FROM branch_messages 
-            WHERE id = ?
-        `);
-        currentMessage = getBranchMessageStmt.get(messageId);
-        
-        if (currentMessage) {
-            isInBranch = true;
-            log(`[EDIT] Found message ${messageId} in branch_messages table`);
-        } else {
-            // Everything-is-a-branch: All messages should be in branch_messages
-            log(`[EDIT] Message ${messageId} not found in branch_messages - this shouldn't happen in everything-is-a-branch system`);
-        }
-        
+
+        const { get, exec } = require('../config/database');
+
+        // Look up message in branch_messages (everything-is-a-branch)
+        const currentMessage = await get(
+            `SELECT id, edit_count
+             FROM branch_messages
+             WHERE id = ?`,
+            [messageId]
+        );
+
         if (!currentMessage) {
+            log(`[EDIT] Message ${messageId} not found in branch_messages`);
             return res.status(404).json({ error: 'Message not found' });
         }
-        
+
         const newEditCount = (currentMessage.edit_count || 0) + 1;
-        let result;
-        
-        if (isInBranch) {
-            // Update message in branch_messages table (no original_content column here)
-            log(`[EDIT] Updating message ${messageId} in branch_messages table`);
-            const updateBranchStmt = db.prepare(`
-                UPDATE branch_messages 
-                SET content = ?, 
-                    edit_count = ?, 
-                    edited_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            `);
-            result = updateBranchStmt.run(content, newEditCount, messageId);
-        } else {
-            // Update message in original messages table (has original_content column)
-            log(`[EDIT] Updating message ${messageId} in original messages table`);
-            const originalContent = currentMessage.original_content || currentMessage.content;
-            const updateOriginalStmt = db.prepare(`
-                UPDATE messages 
-                SET content = ?, 
-                    original_content = ?, 
-                    edit_count = ?, 
-                    edited_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            `);
-            result = updateOriginalStmt.run(content, originalContent, newEditCount, messageId);
-        }
-        
-        if (result.changes === 0) {
-            return res.status(404).json({ error: 'Message not found' });
-        }
-        
+
+        // Update message in branch_messages
+        await exec(
+            `UPDATE branch_messages
+             SET content = ?,
+                 edit_count = ?,
+                 edited_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [content, newEditCount, messageId]
+        );
+
         log(`[EDIT] Updated message ${messageId}, edit count: ${newEditCount}`);
-        
-        res.json({ 
-            success: true, 
-            message_id: messageId, 
-            edit_count: newEditCount,
-            edited_at: new Date().toISOString()
+
+        res.json({
+            success: true,
+            message_id: messageId,
+            edit_count: newEditCount
         });
-        
+
     } catch (error) {
         log('[EDIT] Error updating message:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Failed to update message' });
     }
 });
 
-// Get message by ID for editing
-router.get('/message/:id', (req, res) => {
+// Get message by ID for editing (from branch_messages)
+router.get('/message/:id', async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
-        
+
         if (isNaN(messageId)) {
             return res.status(400).json({ error: 'Invalid message ID' });
         }
-        
-        const stmt = db.prepare(`
-            SELECT id, chat_id, role, content, original_content, 
-                   edit_count, edited_at, timestamp, turn_number 
-            FROM messages WHERE id = ?
-        `);
-        const message = stmt.get(messageId);
-        
+
+        const { get } = require('../config/database');
+
+        const message = await get(
+            `SELECT id, role, content, edit_count, edited_at, turn_number, branch_id
+             FROM branch_messages
+             WHERE id = ?`,
+            [messageId]
+        );
+
         if (!message) {
             return res.status(404).json({ error: 'Message not found' });
         }
-        
+
         res.json(message);
-        
+
     } catch (error) {
         log('[GET-MESSAGE] Error:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Failed to get message' });
     }
 });
