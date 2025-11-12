@@ -1,4 +1,4 @@
-# Milestone: Node 25 + SQLite + Ollama (No Tools) Working in SimpleChatJS
+# Milestone: Node 25 + libSQL (file:// SQLite) + Ollama (No Tools) Working in SimpleChatJS
 
 This document summarizes what changed, why replies were disappearing before, and the current stable setup.
 
@@ -46,7 +46,7 @@ Initial symptoms:
 Goal: minimal, surgical changes to make SimpleChatJS:
 
 - run under Node 25
-- use SQLite with `better-sqlite3`
+- use SQLite via `@libsql/client` against a local `file:` URL (no native addons)
 - talk to Ollama via OpenAI-compatible API
 - not break UI when debug data is slightly off
 - avoid tools for incompatible models
@@ -55,15 +55,19 @@ Summary of edits:
 
 1) Dependencies:
 - [`package.json`](package.json:1)
-  - `"better-sqlite3": "^9.6.0"`
+  - `"@libsql/client": "^0.11.0"`
   - `"engines": { "node": ">=18.0.0" }`
-- This aligns with Node 25 and keeps the existing DB API valid.
+- This aligns with Node 25 and removes the need for native SQLite addons.
 
 2) Database module:
 - [`backend/config/database.js`](backend/config/database.js:1)
-  - Keeps synchronous `better-sqlite3` connection and migration logic.
-  - Exports stable DB interface used by services.
-- No schema changes; the branch-based schema is preserved.
+  - Uses `@libsql/client.createClient` with:
+    - `url: file:.../userdata/chats.db`
+  - Provides async helpers:
+    - `exec(sql, args)`, `all(sql, args)`, `get(sql, args)`
+    - `initializeDatabase()`, `closeDatabase()`
+  - Runs the same branch-based schema and migrations on top of a local SQLite file via libSQL.
+- No logical schema changes; the everything-is-a-branch model is preserved.
 
 3) Chat+branch services:
 - [`backend/services/chatService.js`](backend/services/chatService.js:1)
@@ -146,7 +150,7 @@ With the current code:
 
 - Requirements:
   - Node 18+ (you’re on Node 25): ok.
-  - `npm install` succeeds with `better-sqlite3@^9.6.0`.
+  - `npm install` installs `@libsql/client` (no native build step needed).
 
 - Start:
   - `npm start`
@@ -185,4 +189,4 @@ Future iterative improvements (not required for current milestone):
 
 But as of this milestone, the essential stack is working:
 
-Node 25 + better-sqlite3 + SQLite branch persistence + Ollama chat (no tools) + stable UI rendering of assistant replies.
+Node 25 + libSQL client (local file-backed SQLite) + branch persistence + Ollama chat (no tools) + stable UI rendering of assistant replies.
