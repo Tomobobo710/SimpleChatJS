@@ -1,0 +1,8 @@
+# Dependencies
+/node_modules
+
+# User Data
+/userdata
+
+# Build output
+/dist-electron

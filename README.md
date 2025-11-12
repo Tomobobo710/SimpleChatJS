@@ -17,7 +17,7 @@ SimpleChatJS embraces a back-to-basics approach:
 ## Features
 
 ### Core Chat Functionality
-- Multiple persistent chat sessions with SQLite storage
+- Multiple persistent chat sessions with libSQL (SQLite fork)
 - Real-time streaming responses
 - Clean, dark-mode interface
 - Message history and chat management
@@ -50,7 +50,7 @@ You'll need an AI API server running before starting SimpleChat JS. This could b
 
 ### Requiremnets not currently installed/included
 
-- Node.js
+- Node.js (v18+ recommended, tested on v25)
 
 ### Simple setup
 

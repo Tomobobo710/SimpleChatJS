@@ -6,7 +6,7 @@ Electron builds require `electron` and `electron-builder` as dependencies, but t
 ## The Solution
 This build pipeline keeps your development environment completely clean by:
 
-1. **Installing your main app dependencies** (Express, SQLite, etc.)
+1. **Installing your main app dependencies** (Express, libSQL, etc.)
 2. **Temporarily switching** to a build-specific `package.json` 
 3. **Building the Electron app** with isolated build dependencies
 4. **Restoring your clean development environment** automatically

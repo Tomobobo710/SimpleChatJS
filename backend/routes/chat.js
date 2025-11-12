@@ -1,6 +1,6 @@
 // Chat routes - Handle chat operations and messaging
 const express = require('express');
-const { db } = require('../config/database');
+const { prepare } = require('../config/database');
 const { processChatRequest, saveTurnDebugData, getTurnDebugData, getAllTurnDebugData, createChatBranch, getChatBranches, getActiveChatBranch, setActiveChatBranch } = require('../services/chatService');
 const { log } = require('../utils/logger');
 
@@ -77,7 +77,7 @@ function extractPreviewText(content) {
 }
 
 // Get all chats (everything-is-a-branch system)
-router.get('/chats', (req, res) => {
+router.get('/chats', async (req, res) => {
     // Get chats with their last message content from active branches
     const query = `
         SELECT 
@@ -100,7 +100,7 @@ router.get('/chats', (req, res) => {
     `;
     
     try {
-        const rows = db.prepare(query).all();
+        const rows = await prepare(query).all();
         log(`[CHATS] Found ${rows ? rows.length : 0} chats:`, rows);
         // Transform the data to match frontend expectations
         const chats = (rows || []).map(row => {
@@ -145,18 +145,18 @@ router.post('/chats', async (req, res) => {
     
     try {
         // Create chat in chats table
-        const stmt = db.prepare('INSERT OR REPLACE INTO chats (id, title, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)');
-        const result = stmt.run(chat_id, title || 'New Chat');
+        const stmt = prepare('INSERT OR REPLACE INTO chats (id, title, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)');
+        await stmt.run(chat_id, title || 'New Chat');
         
         // ALWAYS create a main branch for every new chat (everything-is-a-branch)
         const { createChatBranch, setActiveChatBranch } = require('../services/chatService');
         
         // Check if main branch already exists
-        const existingBranchStmt = db.prepare(`
-            SELECT id FROM chat_branches 
+        const existingBranchStmt = prepare(`
+            SELECT id FROM chat_branches
             WHERE chat_id = ? AND branch_name = 'main'
         `);
-        const existingBranch = existingBranchStmt.get(chat_id);
+        const existingBranch = await existingBranchStmt.get(chat_id);
         
         if (!existingBranch) {
             // Create main branch for this chat
@@ -173,20 +173,20 @@ router.post('/chats', async (req, res) => {
 });
 
 // Get chat history including errored messages for UI display
-router.get('/chat/:id/history-complete', (req, res) => {
+router.get('/chat/:id/history-complete', async (req, res) => {
     const chatId = req.params.id;
     
     try {
         log(`[HISTORY-COMPLETE] Getting complete history including errors for chat ${chatId}`);
         
         // Get the active branch
-        const activeBranchStmt = db.prepare(`
+        const activeBranchStmt = prepare(`
             SELECT id, branch_name
             FROM chat_branches
             WHERE chat_id = ? AND is_active = TRUE
             LIMIT 1
         `);
-        const activeBranch = activeBranchStmt.get(chatId);
+        const activeBranch = await activeBranchStmt.get(chatId);
         
         if (!activeBranch) {
             log(`[HISTORY-COMPLETE] No active branch found for chat ${chatId}`);
@@ -194,13 +194,13 @@ router.get('/chat/:id/history-complete', (req, res) => {
         }
         
         // Get ALL messages including errored ones
-        const messagesStmt = db.prepare(`
+        const messagesStmt = prepare(`
             SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM branch_messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
         `);
-        const branchMessages = messagesStmt.all(activeBranch.id);
+        const branchMessages = await messagesStmt.all(activeBranch.id);
         
         const messages = branchMessages.map(row => {
             const parsedBlocks = row.blocks ? JSON.parse(row.blocks) : null;
@@ -287,7 +287,7 @@ router.get('/chat/:id/history-complete', (req, res) => {
 });
 
 // Get chat history (everything-is-a-branch system) - FILTERED for AI
-router.get('/chat/:id/history', (req, res) => {
+router.get('/chat/:id/history', async (req, res) => {
     const chatId = req.params.id;
     
     try {
@@ -295,13 +295,13 @@ router.get('/chat/:id/history', (req, res) => {
         log(`[HISTORY] Getting history from active branch for chat ${chatId}`);
         
         // Get the active branch
-        const activeBranchStmt = db.prepare(`
+        const activeBranchStmt = prepare(`
             SELECT id, branch_name
             FROM chat_branches
             WHERE chat_id = ? AND is_active = TRUE
             LIMIT 1
         `);
-        const activeBranch = activeBranchStmt.get(chatId);
+        const activeBranch = await activeBranchStmt.get(chatId);
         
         if (!activeBranch) {
             log(`[HISTORY] No active branch found for chat ${chatId} - this shouldn't happen in everything-is-a-branch system`);
@@ -309,13 +309,13 @@ router.get('/chat/:id/history', (req, res) => {
         }
         
         // Get all messages from the active branch (including new file handling fields)
-        const messagesStmt = db.prepare(`
+        const messagesStmt = prepare(`
             SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
             FROM branch_messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
         `);
-        const branchMessages = messagesStmt.all(activeBranch.id);
+        const branchMessages = await messagesStmt.all(activeBranch.id);
         
         const messages = branchMessages.map(row => {
             const parsedBlocks = row.blocks ? JSON.parse(row.blocks) : null;
@@ -404,37 +404,37 @@ router.get('/chat/:id/history', (req, res) => {
 });
 
 // Delete chat
-router.delete('/chat/:id', (req, res) => {
+router.delete('/chat/:id', async (req, res) => {
     const chatId = req.params.id;
     
     try {
         // Begin transaction
-        db.prepare('BEGIN TRANSACTION').run();
+        await prepare('BEGIN TRANSACTION').run();
         
         // Everything-is-a-branch: Delete all branch messages and branches for this chat
         // First delete all branch messages
-        const deleteBranchMessages = db.prepare(`
+        const deleteBranchMessages = prepare(`
             DELETE FROM branch_messages 
             WHERE branch_id IN (SELECT id FROM chat_branches WHERE chat_id = ?)
         `);
-        deleteBranchMessages.run(chatId);
+        await deleteBranchMessages.run(chatId);
         
         // Then delete all branches for this chat
-        const deleteBranches = db.prepare('DELETE FROM chat_branches WHERE chat_id = ?');
-        deleteBranches.run(chatId);
+        const deleteBranches = prepare('DELETE FROM chat_branches WHERE chat_id = ?');
+        await deleteBranches.run(chatId);
         
         // Finally delete the chat itself
-        const deleteChat = db.prepare('DELETE FROM chats WHERE id = ?');
-        deleteChat.run(chatId);
+        const deleteChat = prepare('DELETE FROM chats WHERE id = ?');
+        await deleteChat.run(chatId);
         
         // Commit transaction
-        db.prepare('COMMIT').run();
+        await prepare('COMMIT').run();
         
         log(`[CHAT] Deleted chat: ${chatId}`);
         res.json({ success: true });
     } catch (err) {
         // Rollback on error
-        try { db.prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
+        try { await prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
         
         log('[CHAT] Error deleting chat:', err);
         res.status(500).json({ error: err.message });
@@ -472,7 +472,7 @@ router.post('/message', async (req, res) => {
         
         // Increment turn number when user sends a message (starts new conversation turn)
         if (role === 'user') {
-            incrementTurnNumber(chat_id);
+            await incrementTurnNumber(chat_id);
         }
         
         res.json({ success: true });
@@ -484,7 +484,7 @@ router.post('/message', async (req, res) => {
 });
 
 // Update chat title
-router.patch('/chat/:id/title', (req, res) => {
+router.patch('/chat/:id/title', async (req, res) => {
     const chatId = req.params.id;
     const { title } = req.body;
     
@@ -493,8 +493,8 @@ router.patch('/chat/:id/title', (req, res) => {
     }
     
     try {
-        const stmt = db.prepare('UPDATE chats SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-        const result = stmt.run(title, chatId);
+        const stmt = prepare('UPDATE chats SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        const result = await stmt.run(title, chatId);
         
         if (result.changes === 0) {
             return res.status(404).json({ error: 'Chat not found' });
@@ -509,12 +509,12 @@ router.patch('/chat/:id/title', (req, res) => {
 });
 
 // Get clean chat history in API format (for user debug panels)
-router.get('/chat/:id/api-history', (req, res) => {
+router.get('/chat/:id/api-history', async (req, res) => {
     const chatId = req.params.id;
     
     try {
         const { getChatHistoryForAPI } = require('../services/chatService');
-        const apiHistory = getChatHistoryForAPI(chatId);
+        const apiHistory = await getChatHistoryForAPI(chatId);
         res.json(apiHistory);
     } catch (err) {
         log('[API-HISTORY] Error:', err);
@@ -523,12 +523,12 @@ router.get('/chat/:id/api-history', (req, res) => {
 });
 
 // Get current turn number for a chat
-router.get('/chat/:id/current-turn', (req, res) => {
+router.get('/chat/:id/current-turn', async (req, res) => {
     const { id: chatId } = req.params;
     
     try {
         const { getCurrentTurnNumber } = require('../services/chatService');
-        const turnNumber = getCurrentTurnNumber(chatId);
+        const turnNumber = await getCurrentTurnNumber(chatId);
         res.json({ turn_number: turnNumber });
     } catch (err) {
         log('[CURRENT-TURN] Error:', err);
@@ -582,7 +582,7 @@ router.post('/chat/:id/turns/:turnNumber', async (req, res) => {
 });
 
 // Get turn data
-router.get('/chat/:id/turns/:turnNumber', (req, res) => {
+router.get('/chat/:id/turns/:turnNumber', async (req, res) => {
     try {
         const { id: chatId, turnNumber } = req.params;
         const turnNum = parseInt(turnNumber, 10);
@@ -591,7 +591,7 @@ router.get('/chat/:id/turns/:turnNumber', (req, res) => {
             return res.status(400).json({ error: 'Invalid turn number' });
         }
         
-        const turnData = getTurnDebugData(chatId, turnNum);
+        const turnData = await getTurnDebugData(chatId, turnNum);
         
         if (turnData) {
             res.json(turnData);
@@ -606,7 +606,7 @@ router.get('/chat/:id/turns/:turnNumber', (req, res) => {
 });
 
 // Get messages for a specific turn
-router.get('/chat/:id/turn/:turnNumber', (req, res) => {
+router.get('/chat/:id/turn/:turnNumber', async (req, res) => {
     try {
         const { id: chatId, turnNumber } = req.params;
         const turnNum = parseInt(turnNumber, 10);
@@ -617,26 +617,26 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
         
         // Get all messages for this turn from the current active branch
         // First, get the active branch for this chat
-        const activeBranchStmt = db.prepare(`
+        const activeBranchStmt = prepare(`
             SELECT id FROM chat_branches 
             WHERE chat_id = ? AND is_active = TRUE 
             LIMIT 1
         `);
-        const activeBranch = activeBranchStmt.get(chatId);
+        const activeBranch = await activeBranchStmt.get(chatId);
         
         let messages = [];
         
         if (activeBranch) {
             // Get messages from the active branch
             log(`[TURN-MESSAGES] Getting messages from active branch ${activeBranch.id} for turn ${turnNum}`);
-            const stmt = db.prepare(`
+            const stmt = prepare(`
                 SELECT id, role, content, timestamp, blocks, turn_number, 
                        edit_count, edited_at 
                 FROM branch_messages 
                 WHERE branch_id = ? AND turn_number = ? 
                 ORDER BY timestamp ASC
             `);
-            messages = stmt.all(activeBranch.id, turnNum);
+            messages = await stmt.all(activeBranch.id, turnNum);
         } else {
             // Everything-is-a-branch: No active branch should never happen
             log(`[TURN-MESSAGES] ERROR: No active branch found for chat ${chatId} - this violates everything-is-a-branch principle`);
@@ -676,11 +676,11 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
 });
 
 // Get all turn data for a chat
-router.get('/chat/:id/turns', (req, res) => {
+router.get('/chat/:id/turns', async (req, res) => {
     try {
         const { id: chatId } = req.params;
         
-        const turnDataMap = getAllTurnDebugData(chatId);
+        const turnDataMap = await getAllTurnDebugData(chatId);
         res.json(turnDataMap);
         
     } catch (error) {
@@ -709,26 +709,28 @@ router.post('/chat/:id/turn/:turnNumber/retry', async (req, res) => {
         // Set the new branch as active
         await setActiveChatBranch(chatId, branchInfo.branchId);
         
-        res.json({ 
-            success: true, 
-            branchId: branchInfo.branchId,
+        // Convert BigInt properties to string before sending JSON response
+        const responsePayload = {
+            success: true,
+            branchId: branchInfo.branchId ? String(branchInfo.branchId) : null,
             branchName: branchInfo.branchName,
             branchPoint: branchInfo.branchPoint
-        });
+        };
+        res.json(responsePayload);
         
     } catch (error) {
         log('[RETRY] Error:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Failed to retry turn', details: { message: String(error.message) } });
     }
 });
 
 // Get all branches for a chat
-router.get('/chat/:id/branches', (req, res) => {
+router.get('/chat/:id/branches', async (req, res) => {
     try {
         const { id: chatId } = req.params;
         
-        const branches = getChatBranches(chatId);
-        const activeBranch = getActiveChatBranch(chatId);
+        const branches = await getChatBranches(chatId);
+        const activeBranch = await getActiveChatBranch(chatId);
         
         const responseData = { 
             branches,
@@ -747,7 +749,7 @@ router.get('/chat/:id/branches', (req, res) => {
 });
 
 // Switch to a specific branch
-router.post('/chat/:id/branch/:branchId/activate', (req, res) => {
+router.post('/chat/:id/branch/:branchId/activate', async (req, res) => {
     try {
         const { id: chatId, branchId } = req.params;
         const branchIdNum = parseInt(branchId, 10);
@@ -756,7 +758,7 @@ router.post('/chat/:id/branch/:branchId/activate', (req, res) => {
             return res.status(400).json({ error: 'Invalid branch ID' });
         }
         
-        const success = setActiveChatBranch(chatId, branchIdNum);
+        const success = await setActiveChatBranch(chatId, branchIdNum);
         
         if (success) {
             res.json({ success: true });
@@ -790,12 +792,12 @@ router.patch('/message/:id', async (req, res) => {
         let isInBranch = false;
         
         // First, try to find in branch_messages table
-        const getBranchMessageStmt = db.prepare(`
+        const getBranchMessageStmt = prepare(`
             SELECT content, edit_count, edited_at, branch_id 
             FROM branch_messages 
             WHERE id = ?
         `);
-        currentMessage = getBranchMessageStmt.get(messageId);
+        currentMessage = await getBranchMessageStmt.get(messageId);
         
         if (currentMessage) {
             isInBranch = true;
@@ -815,7 +817,7 @@ router.patch('/message/:id', async (req, res) => {
         if (isInBranch) {
             // Update message in branch_messages table (no original_content column here)
             log(`[EDIT] Updating message ${messageId} in branch_messages table`);
-            const updateBranchStmt = db.prepare(`
+            const updateBranchStmt = prepare(`
                 UPDATE branch_messages 
                 SET content = ?, 
                     original_content = ?,
@@ -824,7 +826,7 @@ router.patch('/message/:id', async (req, res) => {
                     edited_at = CURRENT_TIMESTAMP 
                 WHERE id = ?
             `);
-            result = updateBranchStmt.run(
+            result = await updateBranchStmt.run(
                 Array.isArray(content) ? JSON.stringify(content) : content,
                 original_content ? JSON.stringify(original_content) : null,
                 file_metadata ? JSON.stringify(file_metadata) : null,
@@ -835,7 +837,7 @@ router.patch('/message/:id', async (req, res) => {
             // Update message in original messages table (has original_content column)
             log(`[EDIT] Updating message ${messageId} in original messages table`);
             const originalContent = currentMessage.original_content || currentMessage.content;
-            const updateOriginalStmt = db.prepare(`
+            const updateOriginalStmt = prepare(`
                 UPDATE messages 
                 SET content = ?, 
                     original_content = ?, 
@@ -843,7 +845,7 @@ router.patch('/message/:id', async (req, res) => {
                     edited_at = CURRENT_TIMESTAMP 
                 WHERE id = ?
             `);
-            result = updateOriginalStmt.run(
+            result = await updateOriginalStmt.run(
                 Array.isArray(content) ? JSON.stringify(content) : content,
                 originalContent,
                 newEditCount,
@@ -871,7 +873,7 @@ router.patch('/message/:id', async (req, res) => {
 });
 
 // Get message by ID for editing
-router.get('/message/:id', (req, res) => {
+router.get('/message/:id', async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
         
@@ -879,12 +881,12 @@ router.get('/message/:id', (req, res) => {
             return res.status(400).json({ error: 'Invalid message ID' });
         }
         
-        const stmt = db.prepare(`
-            SELECT id, chat_id, role, content, original_content, 
-                   edit_count, edited_at, timestamp, turn_number 
+        const stmt = prepare(`
+            SELECT id, chat_id, role, content, original_content,
+                   edit_count, edited_at, timestamp, turn_number
             FROM messages WHERE id = ?
         `);
-        const message = stmt.get(messageId);
+        const message = await stmt.get(messageId);
         
         if (!message) {
             return res.status(404).json({ error: 'Message not found' });

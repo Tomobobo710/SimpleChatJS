@@ -164,6 +164,7 @@ function processMessageForAI(messageContent) {
 const https = require('https');
 const http = require('http');
 const { log } = require('../utils/logger');
+const { prepare, get, all, run } = require('../config/database');
 
 // Simple debug flag for adapter logs - set DEBUG=1 to enable
 const DEBUG_ADAPTERS = process.env.DEBUG === '1';
@@ -173,23 +174,27 @@ const { addToolEvent, storeDebugData } = require('./toolEventService');
 
 // Update debug data for the most recent message of a specific role in a turn
 async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
-    const { db } = require('../config/database');
-    
     try {
         const debugDataJson = debugData ? JSON.stringify(debugData) : null;
-        
-        // Update the most recent message of the specified role in the specified turn
-        const updateStmt = db.prepare(
+
+        const updateStmt = prepare(
             'UPDATE messages SET debug_data = ? WHERE chat_id = ? AND role = ? AND turn_number = ? AND id = (SELECT MAX(id) FROM messages WHERE chat_id = ? AND role = ? AND turn_number = ?)'
         );
-        const result = updateStmt.run(debugDataJson, chatId, role, turnNumber, chatId, role, turnNumber);
-        
+        const result = await updateStmt.run(
+            debugDataJson,
+            chatId,
+            role,
+            turnNumber,
+            chatId,
+            role,
+            turnNumber
+        );
+
         if (result.changes > 0) {
             log(`[CHAT-UPDATE] Updated debug data for ${role} message in turn ${turnNumber}`);
         } else {
             log(`[CHAT-UPDATE] No message found to update for ${role} in turn ${turnNumber}`);
         }
-        
     } catch (err) {
         log('[CHAT-UPDATE] Error updating message debug data:', err);
         throw err;
@@ -198,42 +203,40 @@ async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
 
 // Turn-based debug data functions
 async function saveTurnDebugData(chatId, turnNumber, debugData) {
-    const { db } = require('../config/database');
-    
     try {
         const debugDataJson = JSON.stringify(debugData);
         
         // Get active branch for this chat
-        const activeBranch = getActiveChatBranch(chatId);
+        const activeBranch = await getActiveChatBranch(chatId);
         if (!activeBranch) {
             log(`[TURN-DEBUG] No active branch found for chat ${chatId}, cannot save debug data`);
             return null;
         }
         
         // First check if a message exists for this turn
-        const checkStmt = db.prepare(`
-            SELECT id FROM branch_messages 
+        const checkStmt = prepare(`
+            SELECT id FROM branch_messages
             WHERE branch_id = ? AND turn_number = ?
             LIMIT 1
         `);
-        const existing = checkStmt.get(activeBranch.id, turnNumber);
+        const existing = await checkStmt.get(activeBranch.id, turnNumber);
         
         let result;
         if (existing) {
             // Update existing message
-            const updateStmt = db.prepare(`
-                UPDATE branch_messages 
+            const updateStmt = prepare(`
+                UPDATE branch_messages
                 SET debug_data = ?
                 WHERE branch_id = ? AND turn_number = ?
             `);
-            result = updateStmt.run(debugDataJson, activeBranch.id, turnNumber);
+            result = await updateStmt.run(debugDataJson, activeBranch.id, turnNumber);
         } else {
             // Insert placeholder message with debug data
-            const insertStmt = db.prepare(`
+            const insertStmt = prepare(`
                 INSERT INTO branch_messages (branch_id, turn_number, role, content, debug_data, timestamp)
                 VALUES (?, ?, 'user', '', ?, datetime('now'))
             `);
-            result = insertStmt.run(activeBranch.id, turnNumber, debugDataJson);
+            result = await insertStmt.run(activeBranch.id, turnNumber, debugDataJson);
         }
         
         log(`[TURN-DEBUG] Updated debug data for turn ${turnNumber} in chat ${chatId} (branch: ${activeBranch.branch_name})`);
@@ -245,25 +248,23 @@ async function saveTurnDebugData(chatId, turnNumber, debugData) {
     }
 }
 
-function getTurnDebugData(chatId, turnNumber) {
-    const { db } = require('../config/database');
-    
+async function getTurnDebugData(chatId, turnNumber) {
     try {
         // Get active branch for this chat
-        const activeBranch = getActiveChatBranch(chatId);
+        const activeBranch = await getActiveChatBranch(chatId);
         if (!activeBranch) {
             log(`[TURN-DEBUG] No active branch found for chat ${chatId}`);
             return null;
         }
         
         // Get debug data from branch_messages for the specific turn
-        const stmt = db.prepare(`
-            SELECT debug_data 
-            FROM branch_messages 
+        const stmt = prepare(`
+            SELECT debug_data
+            FROM branch_messages
             WHERE branch_id = ? AND turn_number = ? AND debug_data IS NOT NULL
             LIMIT 1
         `);
-        const result = stmt.get(activeBranch.id, turnNumber);
+        const result = await stmt.get(activeBranch.id, turnNumber);
         
         if (result && result.debug_data) {
             const debugData = JSON.parse(result.debug_data);
@@ -280,34 +281,32 @@ function getTurnDebugData(chatId, turnNumber) {
     }
 }
 
-function getAllTurnDebugData(chatId) {
-    const { db } = require('../config/database');
-    
+async function getAllTurnDebugData(chatId) {
     try {
         // Get active branch for this chat
-        const activeBranch = getActiveChatBranch(chatId);
+        const activeBranch = await getActiveChatBranch(chatId);
         if (!activeBranch) {
             log(`[TURN-DEBUG] No active branch found for chat ${chatId}`);
             return {};
         }
         
         // Get all debug data from branch_messages
-        const stmt = db.prepare(`
-            SELECT turn_number, debug_data 
-            FROM branch_messages 
+        const stmt = prepare(`
+            SELECT turn_number, debug_data
+            FROM branch_messages
             WHERE branch_id = ? AND debug_data IS NOT NULL
             ORDER BY turn_number ASC
         `);
-        const rows = stmt.all(activeBranch.id);
+        const rows = await stmt.all(activeBranch.id);
         
         const turnDebugMap = {};
-        rows.forEach(row => {
+        for (const row of rows) {
             try {
                 turnDebugMap[row.turn_number] = JSON.parse(row.debug_data);
             } catch (parseError) {
                 log(`[TURN-DEBUG] Error parsing debug data for turn ${row.turn_number}:`, parseError);
             }
-        });
+        }
         
         log(`[TURN-DEBUG] Retrieved debug data for ${rows.length} turns in chat ${chatId} (branch: ${activeBranch.branch_name})`);
         return turnDebugMap;
@@ -319,38 +318,32 @@ function getAllTurnDebugData(chatId) {
 }
 
 // Get current turn number for a chat
-function getCurrentTurnNumber(chat_id) {
+async function getCurrentTurnNumber(chat_id) {
     if (!chat_id) {
-        return 0; // Default to turn 0
+        return 0;
     }
     
-    const { db } = require('../config/database');
-    
     try {
-        const stmt = db.prepare('SELECT turn_number FROM chats WHERE id = ?');
-        const result = stmt.get(chat_id);
+        const stmt = prepare('SELECT turn_number FROM chats WHERE id = ?');
+        const result = await stmt.get(chat_id);
         const currentTurn = result ? (result.turn_number || 0) : 0;
         log(`[CURRENT-TURN] Chat ${chat_id}: current turn = ${currentTurn}`);
         return currentTurn;
     } catch (err) {
         log('[CHAT-TURN] Error getting current turn:', err);
-        return 0; // Default to turn 0 on error
+        return 0;
     }
 }
 
-function incrementTurnNumber(chat_id) {
-    if (!chat_id) {
-        return;
-    }
-    
-    const { db } = require('../config/database');
+async function incrementTurnNumber(chat_id) {
+    if (!chat_id) return;
     
     try {
-        const stmt = db.prepare('UPDATE chats SET turn_number = turn_number + 1 WHERE id = ?');
-        const result = stmt.run(chat_id);
+        const stmt = prepare('UPDATE chats SET turn_number = turn_number + 1 WHERE id = ?');
+        const result = await stmt.run(chat_id);
         
         if (result.changes > 0) {
-            const newTurn = getCurrentTurnNumber(chat_id);
+            const newTurn = await getCurrentTurnNumber(chat_id);
             log(`[INCREMENT-TURN] Chat ${chat_id}: incremented to turn ${newTurn}`);
         } else {
             log(`[INCREMENT-TURN] Chat ${chat_id}: no chat found to increment`);
@@ -360,12 +353,11 @@ function incrementTurnNumber(chat_id) {
     }
 }
 
-function getChatHistoryForAPI(chat_id) {
+async function getChatHistoryForAPI(chat_id) {
     if (!chat_id) {
         return [];
     }
     
-    const { db } = require('../config/database');
     const messages = [];
     
     try {
@@ -373,13 +365,13 @@ function getChatHistoryForAPI(chat_id) {
         log(`[CHAT-HISTORY] Getting history from active branch for chat ${chat_id}`);
         
         // Get the active branch
-        const activeBranchStmt = db.prepare(`
+        const activeBranchStmt = prepare(`
             SELECT id, branch_name
             FROM chat_branches
             WHERE chat_id = ? AND is_active = TRUE
             LIMIT 1
         `);
-        const activeBranch = activeBranchStmt.get(chat_id);
+        const activeBranch = await activeBranchStmt.get(chat_id);
         
         if (!activeBranch) {
             log(`[CHAT-HISTORY] No active branch found for chat ${chat_id} - this shouldn't happen in everything-is-a-branch system`);
@@ -388,17 +380,17 @@ function getChatHistoryForAPI(chat_id) {
         
         // Get all messages from the active branch including new file fields
         // FILTER OUT ERROR MESSAGES: Only include successful messages in AI history
-        const messagesStmt = db.prepare(`
+        const messagesStmt = prepare(`
             SELECT role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata
             FROM branch_messages
             WHERE branch_id = ? AND error_state IS NULL
             ORDER BY timestamp ASC
         `);
-        const branchMessages = messagesStmt.all(activeBranch.id);
+        const branchMessages = await messagesStmt.all(activeBranch.id);
         
         log(`[CHAT-HISTORY] Retrieved ${branchMessages.length} successful messages (errors filtered out)`);
         
-        branchMessages.forEach(row => {
+        for (const row of branchMessages) {
             // Process saved messages to ensure AI gets correct content
             let finalContent = row.content;
             
@@ -456,7 +448,7 @@ function getChatHistoryForAPI(chat_id) {
             }
             
             messages.push(message);
-        });
+        }
         
         log(`[CHAT-HISTORY] Retrieved ${messages.length} messages from branch '${activeBranch.branch_name}'`);
         return messages;
@@ -468,23 +460,22 @@ function getChatHistoryForAPI(chat_id) {
 }
 // Save complete message structure to database (everything-is-a-branch system)
 async function saveCompleteMessageToDatabase(chatId, messageData, blocks = null, turnNumber = null, errorState = null) {
-    // Everything goes through branches now - this is just a wrapper for saveMessageToBranch
     return await saveMessageToBranch(chatId, messageData, blocks, turnNumber, errorState);
 }
 
 // Save message to current active branch (everything-is-a-branch system)
 async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumber = null, errorState = null) {
-    const { db } = require('../config/database');
-    
     try {
-        // Get active branch
-        const activeBranch = getActiveChatBranch(chatId);
+        // Ensure we have an active branch
+        let activeBranch = await getActiveChatBranch(chatId);
         if (!activeBranch) {
-            // No branches exist, create main branch first
             log(`[BRANCHING] No active branch for chat ${chatId}, creating main branch`);
             const newBranch = await createChatBranch(chatId);
             await setActiveChatBranch(chatId, newBranch.branchId);
-            return saveMessageToBranch(chatId, messageData, blocks, turnNumber);
+            activeBranch = await getActiveChatBranch(chatId);
+            if (!activeBranch) {
+                throw new Error(`Failed to establish active branch for chat ${chatId}`);
+            }
         }
         
         // Prepare message data
@@ -509,24 +500,24 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
         // Use turn number or get next
         let finalTurnNumber = turnNumber;
         if (finalTurnNumber === null) {
-            finalTurnNumber = getCurrentTurnNumber(chatId);
+            finalTurnNumber = await getCurrentTurnNumber(chatId);
         }
         
         // Insert message into branch with new file handling fields and error_state
-        const insertStmt = db.prepare(`
-            INSERT INTO branch_messages 
+        const insertStmt = prepare(`
+            INSERT INTO branch_messages
             (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, original_content, file_metadata, error_state)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
-        const result = insertStmt.run(
+        const result = await insertStmt.run(
             activeBranch.id, role, content, finalTurnNumber,
             toolCalls, toolCallId, toolName, blocksJson, debugData, originalContent, fileMetadata, errorState
         );
         
         // Update chat's updated_at timestamp
-        const updateChatStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-        updateChatStmt.run(chatId);
+        const updateChatStmt = prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        await updateChatStmt.run(chatId);
         
         log(`[BRANCHING] Saved ${role} message to branch '${activeBranch.branch_name}' (turn ${finalTurnNumber})`);
         return result.lastInsertRowid;
@@ -597,7 +588,15 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         currentTurn = collectedDebugData.currentTurn;
     } else {
         // Use the turn number from frontend, or calculate if not provided
-        currentTurn = userTurnNumber || (chatId ? getCurrentTurnNumber(chatId) + 1 : 1);
+        // IMPORTANT: ensure we await async helper so we never get "[object Promise]" turns
+        if (userTurnNumber) {
+            currentTurn = userTurnNumber;
+        } else if (chatId) {
+            const existingTurn = await getCurrentTurnNumber(chatId);
+            currentTurn = existingTurn + 1;
+        } else {
+            currentTurn = 1;
+        }
     }
     
     // Calculate next sequence step from existing debug data to maintain sequential order across recursive calls
@@ -647,7 +646,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
     // Store the REAL request data in the user's debug data    
     if (chatId && currentTurn) {
         try {
-            const userDebugData = getTurnDebugData(chatId, currentTurn);
+            const userDebugData = await getTurnDebugData(chatId, currentTurn);
             
             if (userDebugData) {
                 // Store the ACTUAL request that gets sent to AI with real tool definitions
@@ -737,8 +736,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                         debug_data: collectedDebugData
                     };
                     saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn, 'api_error')
-                        .then(() => {
-                            incrementTurnNumber(chatId); // Burn the turn
+                        .then(async () => {
+                            await incrementTurnNumber(chatId); // Burn the turn
                             log(`[ERROR-HANDLING] Saved API error message and burned turn ${currentTurn}`);
                         })
                         .catch(saveError => {
@@ -884,7 +883,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 
                 // Increment turn number now that conversation is complete
                 if (chatId) {
-                    incrementTurnNumber(chatId);
+                    await incrementTurnNumber(chatId);
                 }
                 
                 // Save final assistant response to history before ending
@@ -915,11 +914,11 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                     if (chatId) {
                         try {
                             // Get the complete history
-                            collectedDebugData.completeMessageHistory = getChatHistoryForAPI(chatId);
+                            collectedDebugData.completeMessageHistory = await getChatHistoryForAPI(chatId);
                             
                             // Get the current turn number for debug panel consistency
                             // This ensures "Messages In This Turn" works when reloading saved chats
-                            collectedDebugData.currentTurnNumber = getCurrentTurnNumber(chatId);
+                            collectedDebugData.currentTurnNumber = await getCurrentTurnNumber(chatId);
                             collectedDebugData.currentTurnMessages = null; // Will be fetched by frontend as needed
                         } catch (error) {
                             collectedDebugData.completeMessageHistory = { error: error.message };
@@ -949,8 +948,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 debug_data: collectedDebugData
             };
             saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn, 'connection_error')
-                .then(() => {
-                    incrementTurnNumber(chatId); // Burn the turn
+                .then(async () => {
+                    await incrementTurnNumber(chatId); // Burn the turn
                     log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
                 })
                 .catch(saveError => {
@@ -1143,7 +1142,7 @@ async function processChatRequest(req, res) {
         }
                 
         // Build messages for API - get chat history first
-        const messages = getChatHistoryForAPI(chat_id);
+        const messages = await getChatHistoryForAPI(chat_id);
 
         // Log what's in history
         log(`[CHAT-DEBUG] Current history count: ${messages.length}`);
@@ -1223,8 +1222,8 @@ async function processChatRequest(req, res) {
                 debug_data: { error: error.message, stack: error.stack }
             };
             saveCompleteMessageToDatabase(chat_id, errorMessage, null, user_turn_number, 'processing_error')
-                .then(() => {
-                    incrementTurnNumber(chat_id); // Burn the turn
+                .then(async () => {
+                    await incrementTurnNumber(chat_id); // Burn the turn
                     log(`[ERROR-HANDLING] Saved processing error and burned turn ${user_turn_number}`);
                 })
                 .catch(saveError => {
@@ -1476,129 +1475,110 @@ async function saveMessagesToVersion(versionId, messages) {
 
 // Create a new branch from a specific turn point (for retry)
 async function createChatBranch(chatId, branchPoint = null) {
-    const { db } = require('../config/database');
-    
     try {
-        db.prepare('BEGIN TRANSACTION').run();
-        
+        await prepare('BEGIN TRANSACTION').run();
+
         // Get the next branch name (Branch 1, Branch 2, etc.)
-        const getBranchCountStmt = db.prepare(`
+        const getBranchCountStmt = prepare(`
             SELECT COUNT(*) as count
-            FROM chat_branches 
+            FROM chat_branches
             WHERE chat_id = ?
         `);
-        const { count } = getBranchCountStmt.get(chatId) || { count: 0 };
+        const countRow = await getBranchCountStmt.get(chatId);
+        const count = countRow ? countRow.count : 0;
         const branchName = count === 0 ? 'main' : `Branch ${count + 1}`;
-        
+
         // Get the currently active branch
-        const getActiveBranchStmt = db.prepare(`
+        const getActiveBranchStmt = prepare(`
             SELECT id, branch_name
-            FROM chat_branches 
+            FROM chat_branches
             WHERE chat_id = ? AND is_active = TRUE
             LIMIT 1
         `);
-        const activeBranch = getActiveBranchStmt.get(chatId);
-        
+        const activeBranch = await getActiveBranchStmt.get(chatId);
+
         // Create new branch
-        const insertBranchStmt = db.prepare(`
+        const insertBranchStmt = prepare(`
             INSERT INTO chat_branches (chat_id, branch_name, parent_branch_id, branch_point_turn, is_active)
             VALUES (?, ?, ?, ?, ?)
         `);
-        const branchResult = insertBranchStmt.run(
-            chatId, 
-            branchName, 
-            activeBranch ? activeBranch.id : null, 
+        const branchResult = await insertBranchStmt.run(
+            chatId,
+            branchName,
+            activeBranch ? activeBranch.id : null,
             branchPoint,
-            count === 0 ? 1 : 0 // First branch (main) should be active (1=TRUE, 0=FALSE)
+            count === 0 ? 1 : 0 // First branch (main) should be active
         );
         const newBranchId = branchResult.lastInsertRowid;
-        
-        // Copy messages up to the branch point
+
+        // Copy messages up to the branch point (for retry branches)
         let messagesToCopy = [];
-        
-        if (activeBranch) {
-            // Get messages from active branch up to branch point
-            if (branchPoint !== null) {
-                // Copy messages before the branch point
-                const getMessagesStmt = db.prepare(`
-                    SELECT original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at
-                    FROM branch_messages 
-                    WHERE branch_id = ? AND turn_number < ?
-                    ORDER BY timestamp ASC
-                `);
-                messagesToCopy = getMessagesStmt.all(activeBranch.id, branchPoint);
-            }
-        } else {
-            // No active branch found
-            if (count === 0) {
-                // This is normal when creating the very first main branch
-                log(`[BRANCHING] Creating first main branch for chat ${chatId} - no active branch expected`);
-                // No messages to copy for the first branch
-            } else {
-                // This shouldn't happen for non-main branches - they should have a parent
-                log(`[BRANCHING] ERROR: No active branch found for chat ${chatId} when creating branch ${count + 1} - this violates everything-is-a-branch principle`);
-                throw new Error(`No active branch found for chat ${chatId}. Every chat must have a main branch before creating additional branches.`);
-            }
+        if (activeBranch && branchPoint !== null) {
+            const getMessagesStmt = prepare(`
+                SELECT original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at
+                FROM branch_messages
+                WHERE branch_id = ? AND turn_number < ?
+                ORDER BY timestamp ASC
+            `);
+            messagesToCopy = await getMessagesStmt.all(activeBranch.id, branchPoint);
         }
-        
-        // Copy messages to new branch
+
         if (messagesToCopy.length > 0) {
-            const insertMessageStmt = db.prepare(`
-                INSERT INTO branch_messages 
+            const insertMessageStmt = prepare(`
+                INSERT INTO branch_messages
                 (branch_id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
-            
-            messagesToCopy.forEach(msg => {
-                insertMessageStmt.run(
-                    newBranchId, msg.original_message_id, msg.role, msg.content, msg.turn_number,
-                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.blocks, msg.debug_data,
-                    msg.edit_count || 0, msg.edited_at
+
+            for (const msg of messagesToCopy) {
+                await insertMessageStmt.run(
+                    newBranchId,
+                    msg.original_message_id,
+                    msg.role,
+                    msg.content,
+                    msg.turn_number,
+                    msg.tool_calls,
+                    msg.tool_call_id,
+                    msg.tool_name,
+                    msg.blocks,
+                    msg.debug_data,
+                    msg.edit_count || 0,
+                    msg.edited_at
                 );
-            });
+            }
         }
-        
-        // CRITICAL FIX: Reset chat turn number to branch point for retry
-        // This ensures new messages use the retry turn number instead of creating new turns
+
+        // For retry branches, reset chat turn and clean future messages
         if (branchPoint !== null) {
-            const updateTurnStmt = db.prepare(`
+            const updateTurnStmt = prepare(`
                 UPDATE chats SET turn_number = ? WHERE id = ?
             `);
-            updateTurnStmt.run(branchPoint - 1, chatId); // Set to branchPoint - 1 so next increment makes it branchPoint
-            log(`[BRANCHING] Reset chat ${chatId} turn number to ${branchPoint - 1} for retry`);
-            
-            // CRITICAL FIX #2: Delete any existing messages for the retry turn in the new branch
-            // This prevents duplicate content when retrying
-            const deleteRetryTurnStmt = db.prepare(`
-                DELETE FROM branch_messages 
+            await updateTurnStmt.run(branchPoint - 1, chatId);
+
+            const deleteRetryTurnStmt = prepare(`
+                DELETE FROM branch_messages
                 WHERE branch_id = ? AND turn_number >= ?
             `);
-            const deletedCount = deleteRetryTurnStmt.run(newBranchId, branchPoint).changes;
-            log(`[BRANCHING] Deleted ${deletedCount} existing messages for turn ${branchPoint}+ in new branch for clean retry`);
+            const deleted = await deleteRetryTurnStmt.run(newBranchId, branchPoint);
+            log(`[BRANCHING] Deleted ${deleted.changes || 0} messages at/after turn ${branchPoint} in new branch for clean retry`);
         }
-        
-        db.prepare('COMMIT').run();
-        
+
+        await prepare('COMMIT').run();
+
         log(`[BRANCHING] Created branch '${branchName}' for chat ${chatId} with ${messagesToCopy.length} messages (branch point: ${branchPoint})`);
-        return {
-            branchId: newBranchId,
-            branchName: branchName,
-            branchPoint: branchPoint
-        };
-        
+        return { branchId: newBranchId, branchName, branchPoint };
+
     } catch (error) {
-        try { db.prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
+        try { await prepare('ROLLBACK').run(); } catch (_) {}
         log('[BRANCHING] Error creating chat branch:', error);
         throw error;
     }
 }
 
 // Get all branches for a chat
-function getChatBranches(chatId) {
-    const { db } = require('../config/database');
-    
+async function getChatBranches(chatId) {
     try {
-        const stmt = db.prepare(`
+        const stmt = prepare(`
             SELECT cb.id, cb.branch_name, cb.parent_branch_id, cb.branch_point_turn, cb.is_active, cb.created_at,
                    COUNT(bm.id) as message_count,
                    pcb.branch_name as parent_branch_name
@@ -1610,7 +1590,7 @@ function getChatBranches(chatId) {
             ORDER BY cb.created_at ASC
         `);
         
-        const branches = stmt.all(chatId);
+        const branches = await stmt.all(chatId);
         log(`[BRANCHING] Found ${branches.length} branches for chat ${chatId}:`, branches.map(b => `${b.branch_name}(active:${b.is_active})`));
         return branches;
         
@@ -1621,18 +1601,16 @@ function getChatBranches(chatId) {
 }
 
 // Get active branch for a chat
-function getActiveChatBranch(chatId) {
-    const { db } = require('../config/database');
-    
+async function getActiveChatBranch(chatId) {
     try {
-        const stmt = db.prepare(`
+        const stmt = prepare(`
             SELECT id, branch_name
             FROM chat_branches 
             WHERE chat_id = ? AND is_active = TRUE
             LIMIT 1
         `);
         
-        const result = stmt.get(chatId);
+        const result = await stmt.get(chatId);
         if (result) {
             log(`[BRANCHING] Active branch for chat ${chatId}: ${result.branch_name}`);
             return result;
@@ -1648,47 +1626,45 @@ function getActiveChatBranch(chatId) {
 }
 
 // Set active branch for a chat
-function setActiveChatBranch(chatId, branchId) {
-    const { db } = require('../config/database');
-    
+async function setActiveChatBranch(chatId, branchId) {
     try {
-        db.prepare('BEGIN TRANSACTION').run();
+        await prepare('BEGIN TRANSACTION').run();
         
         // Deactivate all branches for this chat
-        const deactivateStmt = db.prepare(`
+        const deactivateStmt = prepare(`
             UPDATE chat_branches 
             SET is_active = FALSE 
             WHERE chat_id = ?
         `);
-        deactivateStmt.run(chatId);
+        await deactivateStmt.run(chatId);
         
         // Activate the specified branch
-        const activateStmt = db.prepare(`
+        const activateStmt = prepare(`
             UPDATE chat_branches 
             SET is_active = TRUE 
             WHERE id = ? AND chat_id = ?
         `);
-        const result = activateStmt.run(branchId, chatId);
+        const result = await activateStmt.run(branchId, chatId);
         
         if (result.changes === 0) {
             throw new Error(`Branch ${branchId} not found for chat ${chatId}`);
         }
         
-        db.prepare('COMMIT').run();
+        await prepare('COMMIT').run();
         
         // Get branch name for logging
-        const getBranchStmt = db.prepare(`
+        const getBranchStmt = prepare(`
             SELECT branch_name 
             FROM chat_branches 
             WHERE id = ?
         `);
-        const branch = getBranchStmt.get(branchId);
+        const branch = await getBranchStmt.get(branchId);
         
         log(`[BRANCHING] Activated branch '${branch?.branch_name}' (${branchId}) for chat ${chatId}`);
         return true;
         
     } catch (error) {
-        try { db.prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
+        try { await prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
         log('[BRANCHING] Error setting active branch:', error);
         throw error;
     }
