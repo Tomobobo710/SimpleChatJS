@@ -1,2 +1,10 @@
-node_modules
-userdata
+node_modules/
+userdata/
+dist_electron/
+
+# Ignore all .txt and .md except specific ones
+*.txt
+*.md
+!LICENSE.txt
+!BUILD.md
+!README.md
