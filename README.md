@@ -1,189 +1,78 @@
 # SimpleChatJS
 
-A lightweight, no-frills AI chat application built with pure JavaScript and Node.js. Designed for developers who appreciate simple architecture, and direct transparency with their chat interface.
+An Electron desktop AI chat application with MCP (Model Context Protocol) support.
 
 ![image](https://github.com/user-attachments/assets/da1e06d8-a8d1-4ec4-84de-fb105be1f13c)
 
-## Philosophy
+## Tech Stack
 
-SimpleChatJS embraces a back-to-basics approach:
-
-- **Pure JavaScript Frontend** - No React, Vue, or complex frameworks. Just vanilla JS, HTML, and CSS that any developer can understand and modify.
-- **Clean Architecture** - Well-organized backend with clear separation of concerns. Easy to extend and maintain.
-- **OpenAI Compatible** - Works with any OpenAI-compatible API including Ollama, providing flexibility in your AI provider choice.
-- **MCP Integration** - Built-in support for Model Context Protocol, enabling powerful tool integrations.
-- **1998-Style Simplicity** - Edit files, reload the app. No complex build tools or compilation step.
+- **Frontend:** Vanilla JS, HTML, CSS (no frameworks)
+- **Backend:** Node.js + Express
+- **Desktop:** Electron
+- **Database:** SQLite (better-sqlite3)
+- **MCP:** @modelcontextprotocol/sdk
 
 ## Features
 
-### Core Chat Functionality
 - Multiple persistent chat sessions with SQLite storage
-- Real-time streaming responses
-- Clean, dark-mode interface
-- Message history and chat management
-
-### Model Context Protocol (MCP) Support
-- Connect to MCP servers for enhanced AI capabilities
-- Tool execution with real-time feedback
-- Configurable tool enabling/disabling
-- Server-sent events for live tool status updates
-
-### Developer-Friendly
-- **No Build Tools** - Direct file editing with immediate app reload
-- **Clear Code Organization** - Frontend and backend properly separated into logical modules
-- **Comprehensive Logging** - Built-in debug panels and structured logging
-- **Simple Deployment** - Single command build with `npm run build`
-
-### Advanced Features
-
-- **Debug Data Separation** - Technical debugging information separate from chat content
-- **Flexible API Configuration** - Easy switching between different AI providers
+- Real-time streaming responses from AI providers
+- Model Context Protocol (MCP) integration for tool execution
+- Chat branching and turn-based history
+- Multimodal messages (images, documents)
+- Debug panels with API request/response inspection
+- Settings profiles for different AI providers
+- Anthropic thinking mode and Google Gemini thinking support
 
 ## Quick Start
 
 ### Prerequisites
 
-You'll need an AI API server running before starting SimpleChat JS. This could be:
-- **Ollama** running locally (`ollama serve`)
-- **OpenAI API** with your API key
-- **Any OpenAI-compatible API** (LM Studio, vLLM, etc.)
-
-### Requirements
-
 - Node.js
+- An AI API (Ollama, OpenAI, or any OpenAI-compatible endpoint)
 
 ### Installation
 
-1. Clone or download this repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the app:
-   ```bash
-   npm run dev
-   ```
+```bash
+npm install
+npm run dev
+```
 
-4. Configure your API settings in the Settings panel:
-   - Set your API URL (e.g., `http://localhost:11434/v1` for Ollama)
-   - Add your API key if required
-   - Select your model
-
-## Building
+### Build
 
 ```bash
 npm run build
 ```
 
-## MCP Setup (Optional)
-
-To enable tool integrations:
-
-1. Click the "MCP Config" button in the interface
-2. Configure your MCP servers in the JSON editor
-3. Click "Connect MCP Servers"
-4. Enable specific tools in the Settings panel
-
-Example MCP configuration:
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./"],
-      "env": {}
-    }
-  }
-}
-```
-
 ## Architecture
 
-### Frontend Structure
 ```
 src/js/
-├── app/          # Core application logic
-├── chat/         # Chat functionality
-├── tools/        # Tool handling and MCP integration
+├── app/          # Core logic (message sending, API calls, settings)
+├── chat/         # Chat modes and history management
+├── tools/        # MCP server management and tool handling
 ├── render/       # Message rendering and streaming
-└── ui/           # User interface components
-```
+└── ui/           # Settings, debug panels, context menus
 
-### Backend Structure
-```
 backend/
-├── server.js           # Main entry point
-├── config/             # Database and configuration
+├── server.js           # Express server (runs inside Electron)
+├── config/             # Database initialization
 ├── routes/             # API endpoints
-├── services/           # Business logic
-└── utils/              # Shared utilities
+├── services/           # Chat, MCP, settings, tool events
+└── utils/              # Logging
 ```
-
-### Data Flow
-1. **Frontend** sends requests to REST API endpoints
-2. **Chat Service** processes requests and streams responses
-3. **MCP Service** handles tool execution when needed
-4. **Tool Events** provide real-time updates via Server-Sent Events
-5. **Database** persists chat history and settings
 
 ## API Compatibility
 
-SimpleChat JS works with any API that follows OpenAI's chat completions format:
+Works with any OpenAI-compatible API:
 
 - **Ollama** - Local AI models
-- **OpenAI API** - GPT models with API key
-- **LM Studio** - Local API server
-- **vLLM** - High-performance inference server
-- **Anthropic Claude** - Via compatible proxies
-- **Custom APIs** - Any service implementing the OpenAI format
+- **OpenAI API** - GPT models
+- **Anthropic** - Claude (via proxy or direct)
+- **Google Gemini** - Gemini models
+- **LM Studio / vLLM** - Local inference servers
 
 ## Development
 
-### Making Changes
-
-1. **Frontend Changes** - Edit files in `src/js/`, reload the app (Ctrl+R)
-2. **Backend Changes** - Edit files in `backend/`, restart the app
-3. **Styling** - Edit `src/css/style.css`, reload the app (Ctrl+R)
-
-### Adding Features
-
-- **New API Endpoints** - Add to appropriate route file in `backend/routes/`
-- **New Services** - Create service files in `backend/services/`
-- **Frontend Components** - Add to appropriate directory in `src/js/`
-
-### Debugging
-
-- Enable debug panels in Settings
-- Check browser console for frontend logs
-- Monitor server terminal for backend logs
-- Use the debug data viewer for AI request/response analysis
-
-## Known Limitations
-
-
-- **Tool Execution** timing can vary significantly based on tool complexity
-- **Browser Compatibility** focused on modern browsers (Chrome, Firefox, Safari)
-
-## Contributing
-
-SimpleChat JS values clean, readable code over complex frameworks. When contributing:
-
-- Keep the vanilla JavaScript approach
-- Maintain clear separation between frontend and backend
-- Add appropriate logging for debugging
-- Test with multiple AI providers when possible
-
-## License
-
-MIT License - Feel free to use, modify, and distribute as needed.
-
-## Why SimpleChat JS?
-
-In a world of complex frameworks and build tools, SimpleChat JS proves that powerful AI applications can be built with fundamental web technologies. It's designed for developers who want:
-
-- **Direct Control** - No black-box frameworks
-- **Easy Customization** - Modify any aspect without fighting abstractions
-- **Learning Clarity** - Understand exactly how AI chat applications work
-- **Rapid Development** - Change code, refresh browser, see results
-
-SimpleChat JS is a workhorse, not a show pony. It gets the job done efficiently and lets you focus on what matters: building great AI experiences.
+- Edit files in `src/js/` or `backend/`
+- Reload the app (Ctrl+R) for frontend changes
+- Restart the app for backend changes
