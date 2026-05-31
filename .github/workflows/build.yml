@@ -26,17 +26,22 @@ jobs:
           fi
 
   build:
-    needs: check-version
-    if: needs.check-version.outputs.changed == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install Linux deps
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon0 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgbm1 libasound2 libpangocairo-1.0-0 libgtk-3-0 libxcomposite1 libxrandr2 libxdamage2 libxfixes3 libwayland-client0 libx11-xcb1
+      - name: Install macOS deps
+        if: matrix.os == 'macos-latest'
+        run: brew install create-dmg
       - run: npm ci
       - run: npm run build
       - name: Upload Windows build
