@@ -97,7 +97,7 @@ class Logger {
         this._log('ERROR', message, data, sendToServer);
     }
     
-    // Special method for conductor phases (always goes to server)
+    // Special method for phase logging (always goes to server)
     phase(phaseNumber, action, details = '') {
         const message = `PHASE ${phaseNumber}: ${action}${details ? ' - ' + details : ''}`;
         this._log('INFO', message, null, true);

@@ -14,8 +14,6 @@ function initializeElements() {
     toolsBtn = document.getElementById('toolsBtn');
     turnsContainer = document.getElementById('messages');        // Inner div for appending turns
     scrollContainer = document.getElementById('messagesContainer');   // Outer div for scrolling
-    conductorModeCheckbox = document.getElementById('conductorMode');
-    
     // Initialize smart auto-scroll tracking
     initSmartScroll(scrollContainer);
     
@@ -36,7 +34,6 @@ function initializeElements() {
     refreshModelsBtn = document.getElementById('refreshModelsBtn');
     saveSettingsBtn = document.getElementById('saveSettings');
     debugPanelsInput = document.getElementById('debugPanels');
-    showPhaseMarkersInput = document.getElementById('showPhaseMarkers');
     testConnectionBtn = document.getElementById('testConnectionBtn');
     
     // Old thinking mode elements (removed - now handled in settings.js)

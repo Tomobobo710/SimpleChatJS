@@ -3,7 +3,7 @@
 const API_BASE = window.location.origin;
 
 // Send a chat message
-async function sendMessage(message, conductorMode = false) {
+async function sendMessage(message) {
     try {
         // Get enabled tools for filtering
         const enabledTools = loadEnabledTools();
@@ -13,10 +13,9 @@ async function sendMessage(message, conductorMode = false) {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
+           body: JSON.stringify({
                 message: message,
                 chat_id: currentChatId,
-                conductor_mode: conductorMode,
                 enabled_tools: enabledTools
             })
         });
@@ -100,7 +99,7 @@ async function getTurnData(chatId, turnNumber) {
 }
 
 // Initiate a request without awaiting the response (returns controller and requestId)
-function initiateMessageRequest(message, conductorMode = false, enabledToolsData = null, phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
+function initiateMessageRequest(message, enabledToolsData = null, requestId = null) {
     try {
         // Generate requestId if not provided
         const generatedRequestId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -108,18 +107,9 @@ function initiateMessageRequest(message, conductorMode = false, enabledToolsData
         const requestBody = {
             message: message,
             chat_id: currentChatId,
-            conductor_mode: conductorMode,
             enabled_tools: enabledToolsData,
-            block_tool_execution: blockToolExecution,
-            block_recursive_call: blockRecursiveToolResponse,
-            ...(messageRole && { message_role: messageRole }),
-            request_id: generatedRequestId // Always include the requestId
+            request_id: generatedRequestId
         };
-        
-        // Add phase number for conductor mode
-        if (phaseNumber !== null) {
-            requestBody.conductor_phase = phaseNumber;
-        }
         
         // Create abort controller for this request
         const abortController = new AbortController();
@@ -163,23 +153,14 @@ function initiateMessageRequest(message, conductorMode = false, enabledToolsData
     }
 }
 
-async function sendMessageWithTools(message, conductorMode = false, toolDefinitions = [], phaseNumber = null, messageRole = null, blockToolExecution = false, blockRecursiveToolResponse = false, requestId = null) {
+async function sendMessageWithTools(message, toolDefinitions = [], requestId = null) {
     try {
         const requestBody = {
             message: message,
             chat_id: currentChatId,
-            conductor_mode: conductorMode,
-            enabled_tools: toolDefinitions, // Send actual tool definitions instead of enable/disable flags
-            block_tool_execution: blockToolExecution,
-            block_recursive_call: blockRecursiveToolResponse,
-            ...(messageRole && { message_role: messageRole }), // Add message_role if provided
-            ...(requestId && { request_id: requestId }) // Add pre-generated request_id if provided
+            enabled_tools: toolDefinitions,
+            ...(requestId && { request_id: requestId })
         };
-        
-        // Add phase number for conductor mode
-        if (phaseNumber !== null) {
-            requestBody.conductor_phase = phaseNumber;
-        }
         
         // Create abort controller for this request
         currentAbortController = new AbortController();

@@ -78,7 +78,6 @@ async function loadSettingsIntoModal() {
         apiKeyInput.value = settings.apiKey;
         modelNameInput.value = settings.modelName;
         debugPanelsInput.checked = settings.debugPanels;
-        showPhaseMarkersInput.checked = settings.showPhaseMarkers;
         
         // Provider-specific thinking mode settings
         loadProviderThinkingSettings(settings);
@@ -104,7 +103,7 @@ async function loadSettingsIntoModal() {
             apiKey: apiKeyInput.value.length > 0 ? '[SET]' : '[EMPTY]',
             modelName: modelNameInput.value,
             debugPanels: debugPanelsInput.checked,
-            showPhaseMarkers: showPhaseMarkersInput.checked
+
         });
         
     } catch (error) {
@@ -126,7 +125,6 @@ async function handleSaveSettings() {
         apiKey: apiKeyInput.value.trim(),
         modelName: modelNameInput.value.trim(),
         debugPanels: debugPanelsInput.checked,
-        showPhaseMarkers: showPhaseMarkersInput.checked,
         // Provider-specific thinking settings
         enableThinkingAnthropic: enableThinkingAnthropic.checked,
         thinkingBudgetAnthropic: parseInt(thinkingBudgetAnthropic.value),
@@ -491,8 +489,7 @@ async function handleSaveAsProfile() {
         apiUrl: apiUrlInput.value.trim(),
         apiKey: apiKeyInput.value.trim(),
         modelName: modelNameInput.value.trim(),
-        debugPanels: debugPanelsInput.checked,
-        showPhaseMarkers: showPhaseMarkersInput.checked
+debugPanels: debugPanelsInput.checked,
     };
     
     logger.info(`[SAVE-PROFILE] Saving profile "${profileName}" with settings:`, settings);

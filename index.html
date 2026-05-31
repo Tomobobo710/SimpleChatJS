@@ -27,11 +27,6 @@
             
             <div class="chat-list-header">
                 <span>Chat History</span>
-                <div class="conductor-toggle">
-                    <label>
-                        <input type="checkbox" id="conductorMode"> Conductor
-                    </label>
-                </div>
             </div>
             
             <div id="chatList" class="chat-list">
@@ -236,12 +231,6 @@
                             <label for="debugPanels">Show debug panels (+ button on messages)</label>
                         </div>
                         <p class="setting-description">Enable debug information panels that show API requests, tool filtering, and response metadata for each message.</p>
-                        
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="showPhaseMarkers" />
-                            <label for="showPhaseMarkers">Show phase markers (conductor mode)</label>
-                        </div>
-                        <p class="setting-description">Display visual phase markers during conductor mode conversations showing current phase progress.</p>
                     </div>
                 </div>
                 
@@ -327,8 +316,6 @@
     <script src="src/js/ui/contextMenu.js"></script>
     
     <!-- Chat functionality -->
-    <script src="src/js/chat/conductorDebugData.js"></script>
-    <script src="src/js/chat/conductor.js"></script>
     <script src="src/js/chat/simpleChatMode.js"></script>
     <script src="src/js/chat/chatManager.js"></script>
     

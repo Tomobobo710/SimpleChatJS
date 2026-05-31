@@ -542,7 +542,7 @@ const responseAdapterFactory = require('../adapters/ResponseAdapterFactory');
 const UnifiedResponse = require('../adapters/UnifiedResponse');
 
 // Handle chat with potential tool calls
-async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null, conductorPhase = null, blockToolExecution = false, blockRecursiveToolResponse = false, userTurnNumber = null) {
+async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null, userTurnNumber = null) {
     const currentSettings = getCurrentSettings();
     
     // Ensure we have a model name
@@ -876,7 +876,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 await executeToolCallsAndContinue(
                     res, unifiedResponse.toolCalls, messages, tools, chatId, 
                     unifiedResponse.content, collectedDebugData, responseCounter, 
-                    requestId, conductorPhase, blockRecursiveToolResponse, userTurnNumber
+requestId, userTurnNumber
                 );
             } else {
                 // No tool calls, finish response
@@ -888,7 +888,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 }
                 
                 // Save final assistant response to history before ending
-                // Save in both conductor mode and simple chat mode
+                // Save assistant response
                 if (chatId && unifiedResponse.content) {
                     log(`[CHAT-SAVE] About to save final assistant response:`);
                     log(`[CHAT-SAVE] Content length: ${unifiedResponse.content.length}`);
@@ -995,7 +995,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
 }
 
 // Execute tool calls and continue conversation
-async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, conductorPhase, blockRecursiveToolResponse, userTurnNumber) {
+async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, userTurnNumber) {
     // Get the turn number from debug data (calculated once at conversation start)
     const currentTurn = debugData && debugData.currentTurn ? debugData.currentTurn : 1;
     
@@ -1130,13 +1130,13 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     }
     
     // Continue conversation with tool results
-    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, conductorPhase, false, false, userTurnNumber);
+    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, userTurnNumber);
 }
 
 // Process chat request (entry point from routes)
 async function processChatRequest(req, res) {
     try {
-        const { message, chat_id, conductor_mode, enabled_tools, conductor_phase, message_role, block_tool_execution, block_recursive_call, request_id, user_turn_number } = req.body;
+        const { message, chat_id, enabled_tools, request_id } = req.body;
         
         if (!message) {
             return res.status(400).json({ error: 'Message is required' });
@@ -1209,7 +1209,7 @@ async function processChatRequest(req, res) {
         // Initialize tool events for this request
         initializeToolEvents(requestId);
         
-        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null, conductor_phase, block_tool_execution, block_recursive_call, user_turn_number);
+        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null, user_turn_number);
         // Response is handled in handleChatWithTools via streaming
         
     } catch (error) {

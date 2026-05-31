@@ -19,7 +19,7 @@ const documentRoutes = require('./routes/documents');
 const app = express();
 const PORT = process.env.PORT || 50505;
 
-// Express middleware - increase payload limit for long conductor conversations
+// Express middleware - increase payload limit for long conversations
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 

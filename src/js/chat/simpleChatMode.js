@@ -1,4 +1,4 @@
-// Simple Chat Mode - Direct streaming chat without conductor complexity
+// Simple Chat Mode - Direct streaming chat
 
 async function handleSimpleChat(message, conversationHistory) {
     // These variables will be used across both user and assistant phases
@@ -58,7 +58,6 @@ async function handleSimpleChat(message, conversationHistory) {
                     userQuery: {
                         message: message,
                         chat_id: currentChatId,
-                        conductor_mode: false,
                         timestamp: new Date().toISOString(),
                         message_length: message.length,
                         turn_number: userTurnNumber // Include turn number
@@ -69,7 +68,6 @@ async function handleSimpleChat(message, conversationHistory) {
                     },
                     context: {
                         input_method: 'manual',
-                        conductor_mode: false,
                         current_chat: currentChatId
                     }
                 },
@@ -90,7 +88,7 @@ async function handleSimpleChat(message, conversationHistory) {
     userDebugData.currentTurnNumber = userTurnNumber;
     
     // INITIATE the API request here (but don't await the response)
-    requestInfo = initiateMessageRequest(message, false, enabledToolsFlags, null, null, false, false, requestId);
+    requestInfo = initiateMessageRequest(message, enabledToolsFlags, requestId);
     logger.info('[SIMPLE-CHAT] Initiated API request with requestId:', requestId);
     
     // Add API request info to debug data

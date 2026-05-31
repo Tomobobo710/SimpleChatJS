@@ -35,7 +35,7 @@ SimpleChatJS embraces a back-to-basics approach:
 - **Simple Deployment** - Single command startup with included scripts
 
 ### Advanced Features
-- **Conductor Mode** - Multi-phase AI reasoning (experimental feature with ongoing improvements)
+
 - **Debug Data Separation** - Technical debugging information separate from chat content
 - **Flexible API Configuration** - Easy switching between different AI providers
 
@@ -119,7 +119,7 @@ Example MCP configuration:
 ```
 src/js/
 ├── app/          # Core application logic
-├── chat/         # Chat functionality and conductor mode
+├── chat/         # Chat functionality
 ├── tools/        # Tool handling and MCP integration
 ├── render/       # Message rendering and streaming
 └── ui/           # User interface components
@@ -176,7 +176,7 @@ SimpleChat JS works with any API that follows OpenAI's chat completions format:
 
 ## Known Limitations
 
-- **Conductor Mode** is experimental and may have rough edges in complex scenarios
+
 - **Tool Execution** timing can vary significantly based on tool complexity
 - **Browser Compatibility** focused on modern browsers (Chrome, Firefox, Safari)
 

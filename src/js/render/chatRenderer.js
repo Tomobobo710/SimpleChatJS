@@ -577,17 +577,12 @@ class ChatRenderer {
         const settings = loadSettings();
         
         const div = document.createElement("div");
-        div.className = "conductor-phase-marker";
+        div.className = "phase-marker";
         div.innerHTML = `
             <div class="phase-marker-content">
                 <span class="phase-text">${escapeHtml(content)}</span>
             </div>
         `;
-        
-        // Apply visibility setting
-        if (!settings.showPhaseMarkers) {
-            div.style.display = "none";
-        }
         
         return div;
     }
@@ -873,12 +868,7 @@ class ChatRenderer {
             
             const requestInfo = initiateMessageRequest(
                 lastUserMessage.content,
-                false,
                 enabledToolsFlags,
-                null,
-                null,
-                false,
-                false,
                 requestId
             );
             const response = await requestInfo.fetchPromise;
@@ -1940,7 +1930,6 @@ class ChatRenderer {
                                 userQuery: {
                                     message: editedContent,
                                     chat_id: currentChatId,
-                                    conductor_mode: false, // Assuming simple chat mode for retry
                                     timestamp: new Date().toISOString(),
                                     message_length: Array.isArray(editedContent) ? JSON.stringify(editedContent).length : editedContent.length,
                                     turn_number: retryTurnNumber,
@@ -1950,9 +1939,8 @@ class ChatRenderer {
                                     total: Object.keys(enabledToolsFlags).length,
                                     flags: enabledToolsFlags
                                 },
-                                context: {
+                              context: {
                                     input_method: "edit_retry",
-                                    conductor_mode: false,
                                     current_chat: currentChatId
                                 }
                             },
@@ -2009,13 +1997,8 @@ class ChatRenderer {
                 // Generate assistant response to the edited user message
                 // Send the proper content format to the AI (multimodal array or text string)
                 const requestInfo = initiateMessageRequest(
-                    editedContent, // This is now properly reconstructed (array for multimodal, string for text)
-                    false,
+                    editedContent,
                     enabledToolsFlags,
-                    null,
-                    null,
-                    false,
-                    false,
                     requestId
                 );
                 const response = await requestInfo.fetchPromise;
