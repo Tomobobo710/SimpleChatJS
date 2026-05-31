@@ -1,6 +1,6 @@
 {
   "name": "simplechatjs",
-  "version": "1.0.0",
+  "version": "0.6.0",
   "description": "Simple chat with MCP support - Electron app",
   "author": "SimpleChatJS",
   "main": "electron-main.js",
