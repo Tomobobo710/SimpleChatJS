@@ -1,7 +1,6 @@
 // SimpleChatJS Server - Main entry point
 const express = require('express');
 const path = require('path');
-const open = require('open');
 
 // Import utilities and services
 const { log } = require('./utils/logger');
@@ -19,7 +18,7 @@ const documentRoutes = require('./routes/documents');
 const app = express();
 const PORT = process.env.PORT || 50505;
 
-// Express middleware - increase payload limit for long conversations
+// Express middleware - increase payload limit for large requests
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -45,18 +44,6 @@ async function startServer() {
             const url = `http://localhost:${PORT}`;
             log(`[SERVER] SimpleChatJS server running at ${url}`);
             await loadSettingsOnStartup();
-            
-            // Skip opening browser when running in Electron
-            if (!process.env.PORTABLE_USERDATA_PATH) {
-                try {
-                    await open(url);
-                    log('[BROWSER] Opened browser automatically');
-                } catch (error) {
-                    log('[BROWSER] Failed to open browser:', error);
-                }
-            } else {
-                log('[BROWSER] Running in Electron, skipping browser launch');
-            }
         });
     } catch (error) {
         log('[STARTUP] Failed to start server:', error);

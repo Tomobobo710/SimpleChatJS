@@ -1,6 +1,7 @@
 node_modules/
 userdata/
-dist_electron/
+dist/
+dist-electron/
 
 # Ignore all .txt and .md except specific ones
 *.txt

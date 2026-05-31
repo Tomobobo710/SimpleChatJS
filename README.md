@@ -12,7 +12,7 @@ SimpleChatJS embraces a back-to-basics approach:
 - **Clean Architecture** - Well-organized backend with clear separation of concerns. Easy to extend and maintain.
 - **OpenAI Compatible** - Works with any OpenAI-compatible API including Ollama, providing flexibility in your AI provider choice.
 - **MCP Integration** - Built-in support for Model Context Protocol, enabling powerful tool integrations.
-- **1998-Style Simplicity** - Edit files, refresh browser. No build tools, no compilation step, no complex deployment pipeline.
+- **1998-Style Simplicity** - Edit files, reload the app. No complex build tools or compilation step.
 
 ## Features
 
@@ -29,10 +29,10 @@ SimpleChatJS embraces a back-to-basics approach:
 - Server-sent events for live tool status updates
 
 ### Developer-Friendly
-- **No Build Tools** - Direct file editing with immediate browser refresh
+- **No Build Tools** - Direct file editing with immediate app reload
 - **Clear Code Organization** - Frontend and backend properly separated into logical modules
 - **Comprehensive Logging** - Built-in debug panels and structured logging
-- **Simple Deployment** - Single command startup with included scripts
+- **Simple Deployment** - Single command build with `npm run build`
 
 ### Advanced Features
 
@@ -48,50 +48,34 @@ You'll need an AI API server running before starting SimpleChat JS. This could b
 - **OpenAI API** with your API key
 - **Any OpenAI-compatible API** (LM Studio, vLLM, etc.)
 
-### Requiremnets not currently installed/included
+### Requirements
 
 - Node.js
 
-### Simple setup
-
-Just run start.bat/start.sh.
-
-- All node dependencies will be installed
-- Server will start and you can connect to the localhost on port 50505 in a browser
-
-### DIY Installation
+### Installation
 
 1. Clone or download this repository
 2. Install dependencies:
    ```bash
    npm install
    ```
-
-3. Start the application:
-   
-   **Windows:**
-   ```cmd
-   start.bat
-   ```
-   
-   **Mac/Linux:**
+3. Start the app:
    ```bash
-   ./start.sh
-   ```
-   
-   **Or using npm:**
-   ```bash
-   npm start
+   npm run dev
    ```
 
-4. Open your browser to `http://localhost:50505`
-
-5. Configure your API settings in the Settings panel:
+4. Configure your API settings in the Settings panel:
    - Set your API URL (e.g., `http://localhost:11434/v1` for Ollama)
    - Add your API key if required
    - Select your model
 
-### MCP Setup (Optional)
+## Building
+
+```bash
+npm run build
+```
+
+## MCP Setup (Optional)
 
 To enable tool integrations:
 
@@ -157,9 +141,9 @@ SimpleChat JS works with any API that follows OpenAI's chat completions format:
 
 ### Making Changes
 
-1. **Frontend Changes** - Edit files in `src/js/`, refresh browser
-2. **Backend Changes** - Edit files in `backend/`, restart server
-3. **Styling** - Edit `src/css/style.css`, refresh browser
+1. **Frontend Changes** - Edit files in `src/js/`, reload the app (Ctrl+R)
+2. **Backend Changes** - Edit files in `backend/`, restart the app
+3. **Styling** - Edit `src/css/style.css`, reload the app (Ctrl+R)
 
 ### Adding Features
 

@@ -1,12 +1,13 @@
 {
   "name": "simplechatjs",
   "version": "1.0.0",
-  "description": "Simple chat with MCP support",
+  "description": "Simple chat with MCP support - Electron app",
   "author": "SimpleChatJS",
   "main": "electron-main.js",
   "scripts": {
-    "start": "node backend/server.js",
-    "dev": "node backend/server.js"
+    "dev": "electron .",
+    "build": "electron-builder --publish=never",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -14,8 +15,42 @@
     "express": "^4.18.2",
     "multer": "^2.0.1",
     "officeparser": "^4.0.4",
-    "open": "^8.4.2",
     "pdf-parse": "^1.1.1"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.simplechatjs.app",
+    "productName": "SimpleChatJS",
+    "icon": "assets/images/icon/simplechaticon256.ico",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/.cache",
+      "!dist-electron",
+      "!*.bat",
+      "!*.sh",
+      "!*.ps1",
+      "!build/**/*",
+      "!package.json.backup",
+      "!package-build.json"
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "assets/images/icon/simplechaticon256.ico"
+    },
+    "linux": {
+      "target": "dir",
+      "icon": "assets/images/icon/simplechaticon256.ico"
+    },
+    "mac": {
+      "target": "dir",
+      "icon": "assets/images/icon/simplechaticon256.ico"
+    },
+    "forceCodeSigning": false
+  }
 }

@@ -77,7 +77,7 @@ function createWindow() {
         height: 900,
         minWidth: 800,
         minHeight: 600,
-        icon: path.join(__dirname, 'simplechatjs.ico'),
+        icon: path.join(__dirname, 'assets', 'images', 'icon', 'simplechaticon256.ico'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -94,10 +94,7 @@ function createWindow() {
         mainWindow.show();
     }, 2000);
     
-    // Open DevTools in development
-    if (process.argv.includes('--dev')) {
-        mainWindow.webContents.openDevTools();
-    }
+ 
     
     // Handle window closed
     mainWindow.on('closed', () => {
@@ -129,7 +126,7 @@ function createWindow() {
         }
         
         // Add inspect element in development mode
-        if (process.argv.includes('--dev')) {
+        if (process.env.NODE_ENV === 'development') {
             if (menuItems.length > 0) {
                 menuItems.push({ action: 'separator' });
             }
