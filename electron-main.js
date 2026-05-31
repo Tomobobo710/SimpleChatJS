@@ -77,7 +77,7 @@ function createWindow() {
         height: 900,
         minWidth: 800,
         minHeight: 600,
-        icon: path.join(__dirname, 'assets', 'images', 'icon', 'simplechaticon256.ico'),
+        icon: path.join(__dirname, 'assets', 'images', 'icon', 'simplechaticon512.ico'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,

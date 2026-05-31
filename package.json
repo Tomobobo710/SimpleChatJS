@@ -24,7 +24,7 @@
   "build": {
     "appId": "com.simplechatjs.app",
     "productName": "SimpleChatJS",
-    "icon": "assets/images/icon/simplechaticon256.ico",
+    "icon": "assets/images/icon/simplechaticon512.ico",
     "directories": {
       "output": "dist-electron"
     },
@@ -41,15 +41,15 @@
     ],
     "win": {
       "target": "dir",
-      "icon": "assets/images/icon/simplechaticon256.ico"
+      "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "linux": {
       "target": "dir",
-      "icon": "assets/images/icon/simplechaticon256.ico"
+      "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "mac": {
       "target": "dir",
-      "icon": "assets/images/icon/simplechaticon256.ico"
+      "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "forceCodeSigning": false
   }
