@@ -78,14 +78,16 @@ function extractPreviewText(content) {
 
 // Get all chats (everything-is-a-branch system)
 router.get('/chats', (req, res) => {
-    // Get chats with their last message content from active branches
-    const query = `
+    const { project_id, freeform } = req.query;
+    
+    let query = `
         SELECT 
             c.id,
             c.title,
             c.created_at,
             c.updated_at,
-            COALESCE(bm.content, '') as last_message
+            COALESCE(bm.content, '') as last_message,
+            c.project_id
         FROM chats c
         LEFT JOIN chat_branches cb ON c.id = cb.chat_id AND cb.is_active = TRUE
         LEFT JOIN (
@@ -96,8 +98,19 @@ router.get('/chats', (req, res) => {
             FROM branch_messages
             WHERE role = 'user'
         ) bm ON cb.id = bm.branch_id AND bm.rn = 1
-        ORDER BY c.updated_at DESC
     `;
+    
+    let whereConditions = [];
+    if (project_id) {
+        whereConditions.push(`c.project_id = '${project_id}'`);
+    } else if (freeform === 'true') {
+        whereConditions.push('c.project_id IS NULL');
+    }
+    
+    if (whereConditions.length > 0) {
+        query += ' WHERE ' + whereConditions.join(' AND ');
+    }
+    query += ' ORDER BY c.updated_at DESC';
     
     try {
         const rows = db.prepare(query).all();
@@ -137,7 +150,7 @@ router.get('/chats', (req, res) => {
 
 // Create new chat (everything-is-a-branch system)
 router.post('/chats', async (req, res) => {
-    const { chat_id, title } = req.body;
+    const { chat_id, title, project_id } = req.body;
     
     if (!chat_id) {
         return res.status(400).json({ error: 'chat_id is required' });
@@ -145,8 +158,8 @@ router.post('/chats', async (req, res) => {
     
     try {
         // Create chat in chats table
-        const stmt = db.prepare('INSERT OR REPLACE INTO chats (id, title, created_at, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)');
-        const result = stmt.run(chat_id, title || 'New Chat');
+        const stmt = db.prepare('INSERT OR REPLACE INTO chats (id, title, created_at, updated_at, project_id) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)');
+        const result = stmt.run(chat_id, title || 'New Chat', project_id || null);
         
         // ALWAYS create a main branch for every new chat (everything-is-a-branch)
         const { createChatBranch, setActiveChatBranch } = require('../services/chatService');
@@ -408,6 +421,10 @@ router.delete('/chat/:id', (req, res) => {
     const chatId = req.params.id;
     
     try {
+        // Get project_id before deleting
+        const chatStmt = db.prepare('SELECT project_id FROM chats WHERE id = ?');
+        const chat = chatStmt.get(chatId);
+        
         // Begin transaction
         db.prepare('BEGIN TRANSACTION').run();
         
@@ -430,8 +447,8 @@ router.delete('/chat/:id', (req, res) => {
         // Commit transaction
         db.prepare('COMMIT').run();
         
-        log(`[CHAT] Deleted chat: ${chatId}`);
-        res.json({ success: true });
+        log(`[CHAT] Deleted chat: ${chatId} (project: ${chat?.project_id || 'freeform'})`);
+        res.json({ success: true, project_id: chat?.project_id || null });
     } catch (err) {
         // Rollback on error
         try { db.prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }

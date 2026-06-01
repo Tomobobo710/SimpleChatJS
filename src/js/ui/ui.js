@@ -24,6 +24,9 @@ function initializeElements() {
     settingsModal = document.getElementById('settingsModal');
     settingsBtn = document.getElementById('settingsBtn');
     newChatBtn = document.getElementById('newChatBtn');
+    bottomBarPlusBtn = document.getElementById('bottomBarPlusBtn');
+    bottomBarBackBtn = document.getElementById('bottomBarBackBtn');
+    settingsBtnInput = document.getElementById('settingsBtnInput');
     closeModalBtn = document.querySelector('.close');
     
     apiUrlInput = document.getElementById('apiUrl');
@@ -79,11 +82,13 @@ function setupEventListeners() {
         }
     });
     
-    // Settings modal
-    settingsBtn.addEventListener('click', async () => {
-        await loadSettingsIntoModal();
-        settingsModal.classList.remove('hidden');
-    });
+    // Settings modal (old settings button removed from sidebar, kept for compatibility)
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', async () => {
+            await loadSettingsIntoModal();
+            settingsModal.classList.remove('hidden');
+        });
+    }
     
     closeModalBtn.addEventListener('click', () => {
         settingsModal.classList.add('hidden');
@@ -185,8 +190,40 @@ function setupEventListeners() {
     saveAsProfileBtn.addEventListener('click', handleSaveAsProfile);
     deleteProfileBtn.addEventListener('click', handleDeleteProfile);
     
-    // New chat
-    newChatBtn.addEventListener('click', handleNewChat);
+    // New chat (kept for compatibility)
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', handleNewChat);
+    }
+    
+    // Bottom bar plus button
+    if (bottomBarPlusBtn) {
+        bottomBarPlusBtn.addEventListener('click', () => {
+            if (typeof handleBottomBarPlus === 'function') handleBottomBarPlus();
+        });
+    }
+    
+    // Bottom bar back button
+    if (bottomBarBackBtn) {
+        bottomBarBackBtn.addEventListener('click', () => {
+            if (typeof closeProject === 'function') closeProject();
+        });
+    }
+    
+    // Settings button in input bar
+    if (settingsBtnInput) {
+        settingsBtnInput.addEventListener('click', async () => {
+            await loadSettingsIntoModal();
+            settingsModal.classList.remove('hidden');
+        });
+    }
+    
+    // Sidebar tabs (Chat / Code)
+    const sidebarTabBtns = document.querySelectorAll('.sidebar-tab-btn');
+    sidebarTabBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            if (typeof switchSidebarView === 'function') switchSidebarView(e.target.dataset.view);
+        });
+    });
     // File upload functionality
     addFileBtn.addEventListener('click', () => {
         fileInput.click();

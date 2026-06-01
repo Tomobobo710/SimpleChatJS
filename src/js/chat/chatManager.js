@@ -1,5 +1,10 @@
 // Chat Manager - Chat list management, switching, and history
 
+// Sidebar and project state (shared with main.js)
+window.sidebarView = 'chat';
+window.currentProjectId = null;
+window.projects = [];
+
 // Utility function to safely extract text content from multimodal or string content
 function getTextContent(content) {
     if (typeof content === 'string') {
@@ -104,43 +109,13 @@ function getPreviewText(content, maxLength = 50) {
     return textContent;
 }
 
-// Handle new chat
-async function handleNewChat() {
-    try {
-        // Create new chat ID
-        currentChatId = generateId();
-        
-        // Create chat in database
-        await createNewChatInDatabase(currentChatId, 'New Chat');
-        
-        // Clear turns
-        turnsContainer.innerHTML = '';        
-        // Reset turn tracking for new chat
-        resetTurnTracking();
-        
-        // Update UI
-        updateChatTitle('New Chat');
-        chatInfo.textContent = `Chat ID: ${currentChatId}`;
-        
-        // Add to chat list
-        addChatToList(currentChatId, 'New Chat', '', new Date());
-        
-        // Select this chat
-        selectChat(currentChatId);
-        
-    } catch (error) {
-        logger.error('Failed to create new chat:', error, true);
-        showError('Failed to create new chat');
-    }
-    
-    // Focus input
-    messageInput.focus();
-}
-
 // Load chat list from backend
 async function loadChatList() {
     try {
-        const response = await fetch(`${API_BASE}/api/chats`);
+        const url = window.sidebarView === 'chat' 
+            ? `${API_BASE}/api/chats?freeform=true` 
+            : `${API_BASE}/api/chats`;
+        const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -154,7 +129,8 @@ async function loadChatList() {
             // No existing chats, create an initial one
             currentChatId = generateId();
             try {
-                await createNewChatInDatabase(currentChatId, 'New Chat');
+                await createNewChatInDatabase(currentChatId, 'New Chat', 
+                    (sidebarView === 'code' && currentProjectId) ? currentProjectId : null);
                 addChatToList(currentChatId, 'New Chat', '', new Date()); // This is already local time
                 selectChat(currentChatId);
                 updateChatTitle('New Chat');
@@ -304,9 +280,8 @@ async function handleDeleteChat(chatId, title) {
     );
 }
 
-// Separate function to perform the actual deletion
+// Perform the actual chat deletion
 async function performChatDeletion(chatId, title) {
-    
     try {
         const response = await fetch(`${API_BASE}/api/chat/${chatId}`, {
             method: 'DELETE'
@@ -316,22 +291,22 @@ async function performChatDeletion(chatId, title) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
-        // Remove the chat item from the UI
         const chatItem = document.querySelector(`[data-chat-id="${chatId}"]`);
         if (chatItem) {
             chatItem.remove();
         }
         
-        // If this was the current chat, switch to another or clear
         if (currentChatId === chatId) {
             const remainingChats = document.querySelectorAll('.chat-item');
             if (remainingChats.length > 0) {
-                // Switch to the first remaining chat
                 const firstChatId = remainingChats[0].dataset.chatId;
                 await switchToChat(firstChatId);
             } else {
-                // No chats left, create a new one
-                await handleNewChat();
+                if (window.currentProjectId) {
+                    await loadProjectChats(window.currentProjectId);
+                } else {
+                    await loadChatList();
+                }
             }
         }
         
@@ -826,5 +801,335 @@ async function getCompleteChatHistory(chatId) {
     }
 }
 
+// ===== PROJECT MANAGEMENT =====
+
+// Sidebar and project state (shared with main.js)
+window.sidebarView = 'chat';
+window.currentProjectId = null;
+window.projects = [];
+
+// Get current bottom bar state
+function getBottomBarState() {
+    if (window.currentProjectId) {
+        return 'projectChat';
+    }
+    if (window.sidebarView === 'code') {
+        return 'newProject';
+    }
+    return 'newChat';
+}
+
+// Update bottom bar label based on current state
+function updateBottomBar() {
+    const label = document.getElementById('bottomBarLabel');
+    const backBtn = document.getElementById('bottomBarBackBtn');
+    const state = getBottomBarState();
+    
+    if (!label) return;
+    
+    switch (state) {
+        case 'newChat':
+            label.textContent = 'New Chat';
+            if (backBtn) backBtn.style.display = 'none';
+            break;
+        case 'newProject':
+            label.textContent = 'New Project';
+            if (backBtn) backBtn.style.display = 'none';
+            break;
+        case 'projectChat':
+            label.textContent = 'Back to Projects';
+            if (backBtn) backBtn.style.display = 'flex';
+            break;
+    }
+}
+
+// Load projects from backend
+async function loadProjects() {
+    try {
+        const response = await fetch(`${API_BASE}/api/projects`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        window.projects = await response.json();
+        renderProjects();
+    } catch (error) {
+        logger.error('Error loading projects:', error);
+    }
+}
+
+// Render projects list
+function renderProjects() {
+    const container = document.getElementById('projectsContainer');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (window.projects.length === 0) {
+        container.innerHTML = '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No projects yet.</div>';
+        return;
+    }
+    
+    window.projects.forEach(project => {
+        const projectItem = document.createElement('div');
+        projectItem.className = 'project-item';
+        projectItem.dataset.projectId = project.id;
+        
+        const projectName = project.name || project.path.split('\\').pop().split('/').pop();
+        
+        projectItem.innerHTML = `
+            <div class="project-item-header">
+                <div class="project-item-name">${escapeHtml(projectName)}</div>
+                <button class="project-delete-btn" title="Delete project"><span class="x-icon"></span></button>
+            </div>
+            <div class="project-item-content">
+                <div class="project-item-path">${escapeHtml(project.path)}</div>
+            </div>
+        `;
+        
+        // Click to open project's chat list
+        projectItem.addEventListener('click', (e) => {
+            if (!e.target.closest('.project-delete-btn')) {
+                openProject(project.id);
+            }
+        });
+        
+        // Delete button
+        const deleteBtn = projectItem.querySelector('.project-delete-btn');
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleDeleteProject(project.id, projectName);
+        });
+        
+        container.appendChild(projectItem);
+    });
+}
+
+// Open a project's chat list
+function openProject(projectId) {
+    window.currentProjectId = projectId;
+    window.sidebarView = 'code';
+    
+    const project = window.projects.find(p => p.id === projectId);
+    const projectName = project ? (project.name || project.path.split('\\').pop().split('/').pop()) : 'Project';
+    
+    // Show project chat header
+    const projectChatHeader = document.getElementById('projectChatHeader');
+    const projectChatTitle = document.getElementById('projectChatTitle');
+    if (projectChatHeader) projectChatHeader.style.display = 'flex';
+    if (projectChatTitle) projectChatTitle.textContent = projectName;
+    
+    // Show project chat list, hide projects list
+    const chatList = document.getElementById('chatList');
+    const projectsList = document.getElementById('projectsList');
+    const chatListHeader = document.querySelector('.chat-list-header');
+    if (chatList) chatList.style.display = 'block';
+    if (projectsList) projectsList.style.display = 'none';
+    // Hide chat-list-header since projectChatHeader shows the project name
+    if (chatListHeader) chatListHeader.style.display = 'none';
+    
+    // Load project-scoped chats
+    loadProjectChats(projectId);
+    
+    // Update bottom bar
+    updateBottomBar();
+    
+    logger.info(`Opened project: ${projectName} (${projectId})`);
+}
+
+// Close current project, go back to projects list
+function closeProject() {
+    window.currentProjectId = null;
+    
+    // Hide project chat header
+    const projectChatHeader = document.getElementById('projectChatHeader');
+    if (projectChatHeader) projectChatHeader.style.display = 'none';
+    
+    // Show projects list, hide chat list
+    const chatList = document.getElementById('chatList');
+    const projectsList = document.getElementById('projectsList');
+    if (chatList) chatList.style.display = 'none';
+    if (projectsList) projectsList.style.display = 'flex';
+    
+    // Update sidebar list title
+    const sidebarListTitle = document.getElementById('sidebarListTitle');
+    if (sidebarListTitle) sidebarListTitle.textContent = 'Project List';
+    
+    // Update bottom bar
+    updateBottomBar();
+    
+    logger.info('Closed project, showing projects list');
+}
+
+// Load chats for a specific project
+async function loadProjectChats(projectId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chats?project_id=${projectId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const chats = await response.json();
+        
+        const chatList = document.getElementById('chatList');
+        chatList.innerHTML = '';
+        
+        if (chats.length === 0) {
+            chatList.innerHTML = '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No chats in this project. Create one!</div>';
+            return;
+        }
+        
+        chats.forEach(chat => {
+            addChatToListAtEnd(chat.chat_id, chat.title, chat.last_message, new Date(chat.last_updated));
+        });
+        
+    } catch (error) {
+        logger.error('Error loading project chats:', error);
+        const chatList = document.getElementById('chatList');
+        chatList.innerHTML = '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error loading chats.</div>';
+    }
+}
+
+// Handle bottom bar plus button action
+async function handleBottomBarPlus() {
+    const state = getBottomBarState();
+    
+    switch (state) {
+        case 'newChat':
+            await handleNewChat();
+            break;
+        case 'newProject':
+            await handleNewProject();
+            break;
+        case 'projectChat':
+            await handleNewChat();
+            break;
+    }
+}
+
+// Handle new chat creation (with project context)
+async function handleNewChat() {
+    try {
+        const chatId = generateId();
+        
+        await createNewChatInDatabase(chatId, 'New Chat', window.currentProjectId);
+        
+        turnsContainer.innerHTML = '';
+        resetTurnTracking();
+        
+        updateChatTitle('New Chat');
+        chatInfo.textContent = `Chat ID: ${chatId}`;
+        
+        addChatToList(chatId, 'New Chat', '', new Date());
+        selectChat(chatId);
+        
+        if (window.currentProjectId) {
+            await loadProjectChats(window.currentProjectId);
+        } else {
+            await loadChatList();
+        }
+        
+    } catch (error) {
+        logger.error('Failed to create new chat:', error, true);
+        showError('Failed to create new chat');
+    }
+    
+    messageInput.focus();
+}
+
+// Handle new project creation (opens folder picker via Electron)
+async function handleNewProject() {
+    let name, path;
+    
+    if (window.electronAPI && window.electronAPI.pickFolder) {
+        try {
+            const result = await window.electronAPI.pickFolder();
+            if (!result) return;
+            name = result.name;
+            path = result.path;
+        } catch (err) {
+            showError('Folder picker error: ' + err.message);
+            return;
+        }
+    } else {
+        name = prompt('Project name:');
+        if (!name) return;
+        path = prompt('Project path:');
+        if (!path) return;
+    }
+    
+    try {
+        const project = await createProject(name, path);
+        window.projects.push(project);
+        renderProjects();
+        logger.info(`Created project: ${name} (${path})`);
+    } catch (error) {
+        logger.error('Failed to create project:', error, true);
+        showError(`Failed to create project: ${error.message}`);
+    }
+}
+
+// Handle project deletion
+async function handleDeleteProject(projectId, projectName) {
+    showCustomConfirm(
+        `Delete project "${projectName}"?\n\nThis will keep all chats in the project but unlink them.`,
+        async () => {
+            try {
+                await deleteProject(projectId);
+                window.projects = window.projects.filter(p => p.id !== projectId);
+                
+                if (window.currentProjectId === projectId) {
+                    closeProject();
+                }
+                
+                renderProjects();
+                logger.info(`Deleted project: ${projectName}`);
+            } catch (error) {
+                logger.error('Failed to delete project:', error, true);
+                showError(`Failed to delete project: ${error.message}`);
+            }
+        }
+    );
+}
+
+// Switch sidebar view (Chat / Code tab)
+function switchSidebarView(view) {
+    // If inside a project, close it first
+    if (window.currentProjectId) {
+        closeProject();
+    }
+    
+    window.sidebarView = view;
+    
+    document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === view);
+    });
+    
+    const chatList = document.getElementById('chatList');
+    const projectsList = document.getElementById('projectsList');
+    const chatListHeader = document.querySelector('.chat-list-header');
+    const sidebarListTitle = document.getElementById('sidebarListTitle');
+    
+    if (view === 'chat') {
+        chatList.style.display = 'block';
+        projectsList.style.display = 'none';
+        if (chatListHeader) chatListHeader.style.display = 'flex';
+        if (sidebarListTitle) sidebarListTitle.textContent = 'Chat History';
+        loadChatList();
+    } else {
+        chatList.style.display = 'none';
+        projectsList.style.display = 'flex';
+        if (chatListHeader) chatListHeader.style.display = 'none';
+        if (sidebarListTitle) sidebarListTitle.textContent = 'Project List';
+        loadProjects();
+    }
+    
+    updateBottomBar();
+}
+
 // Make functions globally available for UI
 window.handleNewChat = handleNewChat;
+window.handleNewProject = handleNewProject;
+window.switchSidebarView = switchSidebarView;
+window.closeProject = closeProject;
+window.handleBottomBarPlus = handleBottomBarPlus;
+window.updateBottomBar = updateBottomBar;

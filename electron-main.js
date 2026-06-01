@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 
 // Set Chromium user-data-dir BEFORE app initialization
@@ -208,6 +208,21 @@ app.whenReady().then(() => {
         if (mainWindow) {
             mainWindow.webContents.toggleDevTools();
         }
+    });
+    
+    // Handle folder picker IPC
+    ipcMain.handle('pick-folder', async () => {
+        const result = await dialog.showOpenDialog({
+            properties: ['openDirectory']
+        });
+        if (result.canceled || result.filePaths.length === 0) {
+            return null;
+        }
+        const path = require('path');
+        return {
+            path: result.filePaths[0],
+            name: path.basename(result.filePaths[0])
+        };
     });
     
     app.on('activate', () => {

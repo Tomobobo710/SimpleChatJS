@@ -2,7 +2,7 @@
 
 // DOM elements
 let messageInput, sendBtn, turnsContainer, scrollContainer;
-let settingsModal, settingsBtn, newChatBtn, closeModalBtn;
+let settingsModal, settingsBtn, newChatBtn, bottomBarPlusBtn, bottomBarBackBtn, settingsBtnInput, closeModalBtn;
 let apiUrlInput, apiKeyInput, modelNameInput, modelSelectDropdown, mainModelSelect, refreshModelsBtn, saveSettingsBtn, debugPanelsInput, testConnectionBtn;
 // File upload elements
 let fileInput, addFileBtn, imagePreviews, documentPreviews, imageArea, toolsBtn;
@@ -24,6 +24,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Auto-connect to MCP servers at startup
     setTimeout(autoConnectMCP, 200);
+    
+    // Initialize bottom bar state
+    window.updateBottomBar();
     
     // Load chat list after a short delay to ensure DOM is ready
     setTimeout(loadChatList, 300);

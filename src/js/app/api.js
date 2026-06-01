@@ -440,17 +440,18 @@ async function updateChatTitleInDatabase(chatId, title) {
 }
 
 // Create new chat in database
-async function createNewChatInDatabase(chatId, title = 'New Chat') {
+async function createNewChatInDatabase(chatId, title = 'New Chat', projectId = null) {
     try {
+        const body = { chat_id: chatId, title: title };
+        if (projectId) {
+            body.project_id = projectId;
+        }
         const response = await fetch(`${API_BASE}/api/chats`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                chat_id: chatId,
-                title: title
-            })
+            body: JSON.stringify(body)
         });
         
         if (!response.ok) {
@@ -727,6 +728,56 @@ async function activateChatBranch(chatId, branchId) {
         return await response.json();
     } catch (error) {
         logger.error('Error activating branch:', error);
+        throw error;
+    }
+}
+
+// ===== PROJECT API =====
+
+// Load all projects
+async function loadProjects() {
+    try {
+        const response = await fetch(`${API_BASE}/api/projects`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        logger.error('Error loading projects:', error);
+        throw error;
+    }
+}
+
+// Create a new project
+async function createProject(name, path) {
+    try {
+        const response = await fetch(`${API_BASE}/api/projects`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, path })
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        logger.error('Error creating project:', error);
+        throw error;
+    }
+}
+
+// Delete a project
+async function deleteProject(projectId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/projects/${projectId}`, {
+            method: 'DELETE'
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        logger.error('Error deleting project:', error);
         throw error;
     }
 }

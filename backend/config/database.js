@@ -52,6 +52,24 @@ function initializeDatabase() {
                 }
             }
             
+            // Add project_id to chats table for project-scoped chats
+            try {
+                db.exec(`ALTER TABLE chats ADD COLUMN project_id TEXT DEFAULT NULL`);
+            } catch (err) {
+                // Column likely already exists
+                if (!err.message.includes('duplicate column name')) {
+                    log('[DB] Error adding project_id to chats:', err.message);
+                }
+            }
+            
+            // Create projects table
+            db.exec(`CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+            
             // Everything-is-a-branch system: Every chat gets a main branch from creation
             db.exec(`CREATE TABLE IF NOT EXISTS chat_branches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

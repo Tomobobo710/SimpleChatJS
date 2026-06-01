@@ -10,6 +10,7 @@ const { shutdownMcp } = require('./services/mcpService');
 
 // Import routes
 const chatRoutes = require('./routes/chat');
+const projectRoutes = require('./routes/project');
 const mcpRoutes = require('./routes/mcp');
 const settingsRoutes = require('./routes/settings');
 const debugRoutes = require('./routes/debug');
@@ -27,6 +28,7 @@ app.use(express.static(path.join(__dirname, '..')));
 
 // Mount API routes
 app.use('/api', chatRoutes);
+app.use('/api', projectRoutes);
 app.use('/api', mcpRoutes);
 app.use('/api', settingsRoutes);
 app.use('/api', debugRoutes);
