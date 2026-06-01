@@ -80,5 +80,4 @@ jobs:
             SimpleChatJS-win/*
             SimpleChatJS-linux/*
             SimpleChatJS-mac/*
-          draft: true
           generate_release_notes: true
