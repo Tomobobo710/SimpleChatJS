@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -61,7 +64,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SimpleChatJS-mac
-          path: dist-electron/mac/
+          path: dist-electron/mac-arm64/
 
   release:
     needs: [check-version, build]
