@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { dialog } = require('electron');
 
 // Expose context menu API to renderer
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -15,5 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         } else if (action === 'inspect') {
             ipcRenderer.send('inspect-element');
         }
+    },
+    pickFolder: () => {
+        return ipcRenderer.invoke('pick-folder');
     }
 });
