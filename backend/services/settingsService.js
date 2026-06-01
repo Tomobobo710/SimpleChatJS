@@ -69,34 +69,6 @@ function loadProfiles() {
         if (fs.existsSync(profilesPath)) {
             const profiles = JSON.parse(fs.readFileSync(profilesPath, 'utf8'));
             
-            // Migrate profiles to ensure they have all default fields
-            const defaults = getDefaultProfileSettings();
-            let needsSaving = false;
-            
-            for (const profileName in profiles.profiles) {
-                const profile = profiles.profiles[profileName];
-                let profileUpdated = false;
-                
-                // Add any missing fields from defaults
-                for (const key in defaults) {
-                    if (!(key in profile)) {
-                        profile[key] = defaults[key];
-                        profileUpdated = true;
-                    }
-                }
-                
-                if (profileUpdated) {
-                    log(`[PROFILES] Migrated profile '${profileName}' with new settings`);
-                    needsSaving = true;
-                }
-            }
-            
-            // Save migrated profiles
-            if (needsSaving) {
-                saveProfiles(profiles);
-                log('[PROFILES] Saved migrated profiles');
-            }
-            
             log('[PROFILES] Loaded from file');
             return profiles;
         } else {
