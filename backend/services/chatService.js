@@ -542,7 +542,7 @@ const responseAdapterFactory = require('../adapters/ResponseAdapterFactory');
 const UnifiedResponse = require('../adapters/UnifiedResponse');
 
 // Handle chat with potential tool calls
-async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null, userTurnNumber = null) {
+async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null) {
     const currentSettings = getCurrentSettings();
     
     // Ensure we have a model name
@@ -596,8 +596,8 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
         // Reuse existing turn from recursive calls
         currentTurn = collectedDebugData.currentTurn;
     } else {
-        // Use the turn number from frontend, or calculate if not provided
-        currentTurn = userTurnNumber || (chatId ? getCurrentTurnNumber(chatId) + 1 : 1);
+        // Calculate turn number from DB
+        currentTurn = chatId ? getCurrentTurnNumber(chatId) + 1 : 1;
     }
     
     // Calculate next sequence step from existing debug data to maintain sequential order across recursive calls
@@ -874,9 +874,9 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 
                 // Execute tools and continue conversation
                 await executeToolCallsAndContinue(
-                    res, unifiedResponse.toolCalls, messages, tools, chatId, 
-                    unifiedResponse.content, collectedDebugData, responseCounter, 
-requestId, userTurnNumber
+                    res, unifiedResponse.toolCalls, messages, tools, chatId,
+                    unifiedResponse.content, collectedDebugData, responseCounter,
+                    requestId
                 );
             } else {
                 // No tool calls, finish response
@@ -995,7 +995,7 @@ requestId, userTurnNumber
 }
 
 // Execute tool calls and continue conversation
-async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, userTurnNumber) {
+async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId) {
     // Get the turn number from debug data (calculated once at conversation start)
     const currentTurn = debugData && debugData.currentTurn ? debugData.currentTurn : 1;
     
@@ -1130,7 +1130,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     }
     
     // Continue conversation with tool results
-    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, userTurnNumber);
+    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData);
 }
 
 // Process chat request (entry point from routes)
@@ -1209,23 +1209,24 @@ async function processChatRequest(req, res) {
         // Initialize tool events for this request
         initializeToolEvents(requestId);
         
-        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null, user_turn_number);
+        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null);
         // Response is handled in handleChatWithTools via streaming
         
     } catch (error) {
         log('[CHAT] Error:', error);
         
         // IMPROVED ERROR HANDLING: Save processing error and burn the turn
-        if (chat_id && user_turn_number) {
+        if (chat_id) {
+            const currentTurn = getCurrentTurnNumber(chat_id) + 1;
             const errorMessage = {
                 role: 'assistant',
                 content: `Processing error: ${error.message}`,
                 debug_data: { error: error.message, stack: error.stack }
             };
-            saveCompleteMessageToDatabase(chat_id, errorMessage, null, user_turn_number, 'processing_error')
+            saveCompleteMessageToDatabase(chat_id, errorMessage, null, currentTurn, 'processing_error')
                 .then(() => {
                     incrementTurnNumber(chat_id); // Burn the turn
-                    log(`[ERROR-HANDLING] Saved processing error and burned turn ${user_turn_number}`);
+                    log(`[ERROR-HANDLING] Saved processing error and burned turn ${currentTurn}`);
                 })
                 .catch(saveError => {
                     log(`[ERROR-HANDLING] Failed to save processing error: ${saveError.message}`);
