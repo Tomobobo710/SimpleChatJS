@@ -11,7 +11,6 @@ function initializeElements() {
     imagePreviews = document.getElementById('imagePreviews');
     documentPreviews = document.getElementById('documentPreviews');
     imageArea = document.getElementById('imageArea');
-    toolsBtn = document.getElementById('toolsBtn');
     turnsContainer = document.getElementById('messages');        // Inner div for appending turns
     scrollContainer = document.getElementById('messagesContainer');   // Outer div for scrolling
     // Initialize smart auto-scroll tracking
@@ -229,11 +228,7 @@ function setupEventListeners() {
         fileInput.click();
     });
     
-    // Tools button functionality
-    if (toolsBtn) {
-        toolsBtn.addEventListener('click', openToolsSettings);
-    }
-    
+ 
     fileInput.addEventListener('change', handleFileSelect);
     
     // Drag and drop for files

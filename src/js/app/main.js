@@ -5,7 +5,7 @@ let messageInput, sendBtn, turnsContainer, scrollContainer;
 let settingsModal, settingsBtn, newChatBtn, bottomBarPlusBtn, bottomBarBackBtn, settingsBtnInput, closeModalBtn;
 let apiUrlInput, apiKeyInput, modelNameInput, modelSelectDropdown, mainModelSelect, refreshModelsBtn, saveSettingsBtn, debugPanelsInput, testConnectionBtn;
 // File upload elements
-let fileInput, addFileBtn, imagePreviews, documentPreviews, imageArea, toolsBtn;
+let fileInput, addFileBtn, imagePreviews, documentPreviews, imageArea;
 // Legacy thinking variables removed
 let mcpServersDiv;
 let mcpConfigModal, mcpConfigBtn, closeMcpModalBtn, mcpConfigText, saveMcpConfigBtn, testMcpConfigBtn;
