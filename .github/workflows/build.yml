@@ -52,19 +52,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SimpleChatJS-win
-          path: dist-electron/win-unpacked/
+          path: dist-electron/*.zip
       - name: Upload Linux build
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: SimpleChatJS-linux
-          path: dist-electron/linux-unpacked/
+          path: dist-electron/*.AppImage
       - name: Upload macOS build
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: SimpleChatJS-mac
-          path: dist-electron/mac-arm64/
+          path: dist-electron/*.dmg
 
   release:
     needs: [check-version, build]
@@ -77,8 +77,8 @@ jobs:
           tag_name: v${{ needs.check-version.outputs.version }}
           name: v${{ needs.check-version.outputs.version }}
           files: |
-            SimpleChatJS-win/**/*
-            SimpleChatJS-linux/**/*
-            SimpleChatJS-mac/**/*
+            SimpleChatJS-win/*
+            SimpleChatJS-linux/*
+            SimpleChatJS-mac/*
           draft: true
           generate_release_notes: true

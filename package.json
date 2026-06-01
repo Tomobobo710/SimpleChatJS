@@ -40,15 +40,15 @@
       "!package-build.json"
     ],
     "win": {
-      "target": "dir",
+      "target": { "target": "zip", "arch": ["x64"] },
       "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "linux": {
-      "target": "dir",
+      "target": { "target": "AppImage", "arch": ["x64"] },
       "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "mac": {
-      "target": "dir",
+      "target": { "target": "dmg", "arch": ["arm64"] },
       "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "forceCodeSigning": false
