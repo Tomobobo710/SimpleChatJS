@@ -71,6 +71,13 @@ Works with any OpenAI-compatible API:
 - **Google Gemini** - Gemini models
 - **LM Studio / vLLM** - Local inference servers
 
+## CI/CD
+
+Pushes to `main` trigger automated builds via GitHub Actions:
+
+- **Build job:** Runs on Windows, Linux, and macOS in parallel. Produces distributable packages (`.zip`, `.AppImage`, `.dmg`).
+- **Release job:** Triggers only when the version in `package.json` differs from the latest git tag. Creates a draft GitHub Release with all platform builds attached.
+
 ## Development
 
 - Edit files in `src/js/` or `backend/`
