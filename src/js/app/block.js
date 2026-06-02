@@ -3,30 +3,30 @@
 // Blocks are created by StreamingMessageProcessor from raw text content.
 
 class Block {
-    constructor({ blockType = '', content = '', metadata = {} } = {}) {
-        this.blockType = blockType;
+    constructor({ type = '', content = '', metadata = {} } = {}) {
+        this.type = type;
         this.content = content;
         this.metadata = metadata;
     }
 
     isChat() {
-        return this.blockType === 'chat';
+        return this.type === 'chat';
     }
 
     isThinking() {
-        return this.blockType === 'thinking';
+        return this.type === 'thinking';
     }
 
     isTool() {
-        return this.blockType === 'tool';
+        return this.type === 'tool';
     }
 
     isCode() {
-        return this.blockType === 'codeblock';
+        return this.type === 'codeblock';
     }
 
     isError() {
-        return this.blockType === 'error';
+        return this.type === 'error';
     }
 
     static fromObject(obj) {

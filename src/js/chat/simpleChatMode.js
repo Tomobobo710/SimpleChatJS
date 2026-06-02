@@ -198,7 +198,8 @@ async function handleSimpleChat(message, conversationHistory) {
         toolEventSource.onmessage = (event) => {
             const toolEvent = JSON.parse(event.data);
             logger.debug('[SIMPLE-CHAT] Received tool event:', toolEvent.type, toolEvent.data);
-            handleToolEvent(toolEvent, processor, liveRenderer, tempContainer);
+            processor.handleToolEvent(toolEvent);
+            updateLiveRendering(processor, liveRenderer, tempContainer);
         };
         toolEventSource.onerror = (error) => {
             logger.error('[SIMPLE-CHAT] SSE error:', error);

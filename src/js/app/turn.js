@@ -41,13 +41,13 @@ class Turn {
             return new RenderableTurnObject({
                 role: 'error',
                 content: errorMsg.content,
-                blocks: [{
+                blocks: [new Block({
                     type: 'error',
                     content: errorMsg.content,
                     metadata: {
                         error_type: errorMsg.errorState
                     }
-                }],
+                })],
                 turnNumber: errorMsg.turnNumber,
                 debugData: errorMsg.debugData,
                 editCount: errorMsg.editCount,
@@ -131,20 +131,20 @@ class Turn {
                         }
 
                         // Simulate the same tool event sequence as live rendering
-                        handleToolEvent({
+                        processor.handleToolEvent({
                             type: 'tool_call_detected',
                             data: { id: toolId, name: toolName }
-                        }, processor, null, null);
+                        });
 
-                        handleToolEvent({
+                        processor.handleToolEvent({
                             type: 'tool_execution_start',
                             data: { id: toolId, name: toolName, arguments: args }
-                        }, processor, null, null);
+                        });
 
-                        handleToolEvent({
+                        processor.handleToolEvent({
                             type: 'tool_execution_complete',
                             data: { id: toolId, name: toolName, status: 'success', result: resultContent, execution_time_ms: 0 }
-                        }, processor, null, null);
+                        });
                     }
                 }
             }

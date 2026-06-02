@@ -2434,7 +2434,8 @@ class ChatRenderer {
                 toolEventSource.onmessage = function (event) {
                     try {
                         const eventData = JSON.parse(event.data);
-                        handleToolEvent(eventData, processor, liveRenderer, tempContainer);
+                        processor.handleToolEvent(eventData);
+                        updateLiveRendering(processor, liveRenderer, tempContainer);
                     } catch (parseError) {
                         console.warn("Failed to parse tool event:", parseError);
                     }
