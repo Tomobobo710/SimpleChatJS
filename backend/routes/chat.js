@@ -208,15 +208,14 @@ router.get('/chat/:id/history-complete', (req, res) => {
         
         // Get ALL messages including errored ones
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM branch_messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
         `);
         const branchMessages = messagesStmt.all(activeBranch.id);
         
-        const messages = branchMessages.map(row => {
-            const parsedBlocks = row.blocks ? JSON.parse(row.blocks) : null;
+       const messages = branchMessages.map(row => {
             const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;
             
             // Parse file metadata
@@ -260,7 +259,6 @@ router.get('/chat/:id/history-complete', (req, res) => {
                 edit_count: row.edit_count || 0,
                 edited_at: row.edited_at,
                 debug_data: debugData,
-                blocks: parsedBlocks,
                 error_state: row.error_state // Include error state for UI
             };
             
@@ -323,7 +321,7 @@ router.get('/chat/:id/history', (req, res) => {
         
         // Get all messages from the active branch (including new file handling fields)
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
+            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
             FROM branch_messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
@@ -331,7 +329,6 @@ router.get('/chat/:id/history', (req, res) => {
         const branchMessages = messagesStmt.all(activeBranch.id);
         
         const messages = branchMessages.map(row => {
-            const parsedBlocks = row.blocks ? JSON.parse(row.blocks) : null;
             const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;            
             // Parse new file handling fields
             let originalContent = null;
@@ -367,8 +364,6 @@ router.get('/chat/:id/history', (req, res) => {
                 }
             }
             
-            log(`[HISTORY] Loading blocks for ${row.role} message in turn ${row.turn_number}:`, parsedBlocks ? parsedBlocks.map(b => ({ type: b.type, id: b.id })) : 'null');
-            
             const message = {
                 id: row.original_message_id || row.id, // Use original ID if available for editing compatibility
                 role: row.role,
@@ -377,8 +372,7 @@ router.get('/chat/:id/history', (req, res) => {
                 turn_number: row.turn_number,
                 edit_count: row.edit_count || 0,
                 edited_at: row.edited_at,
-                debug_data: debugData,
-                blocks: parsedBlocks
+                debug_data: debugData
             };
             
             // Add new file handling fields if present
@@ -461,7 +455,7 @@ router.delete('/chat/:id', (req, res) => {
 // Save message using unified approach
 router.post('/message', async (req, res) => {
     try {
-        const { chat_id, role, content, turn_number, blocks, tool_calls, tool_call_id, tool_name, original_content, file_metadata } = req.body;
+        const { chat_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata } = req.body;
         
         if (!chat_id || !role || content === null || content === undefined) {
             return res.status(400).json({ error: 'chat_id, role, and content are required' });
@@ -485,7 +479,7 @@ router.post('/message', async (req, res) => {
         // Use the unified save function
         const { saveCompleteMessageToDatabase, incrementTurnNumber } = require('../services/chatService');
         // Use turn number provided by frontend
-        await saveCompleteMessageToDatabase(chat_id, completeMessage, blocks, turn_number);
+        await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number);
         
         // Increment turn number when user sends a message (starts new conversation turn)
         if (role === 'user') {
@@ -647,7 +641,7 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
             // Get messages from the active branch
             log(`[TURN-MESSAGES] Getting messages from active branch ${activeBranch.id} for turn ${turnNum}`);
             const stmt = db.prepare(`
-                SELECT id, role, content, timestamp, blocks, turn_number, 
+                SELECT id, role, content, timestamp, turn_number, 
                        edit_count, edited_at 
                 FROM branch_messages 
                 WHERE branch_id = ? AND turn_number = ? 
@@ -662,7 +656,7 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
         
         log(`[TURN-MESSAGES] Found ${messages.length} messages for turn ${turnNum} in chat ${chatId}`);
         
-        // Parse blocks for each message and handle multimodal content
+        // Parse multimodal content
         const processedMessages = messages.map(msg => {
             let processedContent = msg.content;
             
@@ -679,7 +673,6 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
             return {
                 ...msg,
                 content: processedContent,
-                blocks: msg.blocks ? JSON.parse(msg.blocks) : null,
                 edit_count: msg.edit_count || 0
             };
         });

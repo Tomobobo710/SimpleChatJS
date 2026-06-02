@@ -72,7 +72,6 @@ function initializeDatabase() {
                 tool_calls TEXT,
                 tool_call_id TEXT,
                 tool_name TEXT,
-                blocks TEXT,
                 debug_data TEXT,
                 edit_count INTEGER DEFAULT 0,
                 edited_at DATETIME,

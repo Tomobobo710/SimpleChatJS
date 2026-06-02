@@ -1898,7 +1898,6 @@ class ChatRenderer {
                 await saveCompleteMessage(
                     currentChatId,
                     { role: "user", content: contentForSave },
-                    null,
                     retryTurnNumber
                 );
                 

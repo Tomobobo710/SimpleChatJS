@@ -466,14 +466,13 @@ async function createNewChatInDatabase(chatId, title = 'New Chat', projectId = n
 }
 
 // Save complete message using unified approach
-async function saveCompleteMessage(chatId, messageData, blocks = null, turnNumber = null) {
+async function saveCompleteMessage(chatId, messageData, turnNumber = null) {
     try {
         const requestData = {
             chat_id: chatId,
             role: messageData.role,
             content: messageData.content,
-            turn_number: turnNumber,
-            blocks: blocks
+            turn_number: turnNumber
         };
         
         // Add tool-specific fields if present

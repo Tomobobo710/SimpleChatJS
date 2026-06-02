@@ -43,7 +43,7 @@ async function handleSimpleChat(message, conversationHistory) {
             }
         }
         
-        await saveCompleteMessage(currentChatId, messageForSaving, null, userTurnNumber);
+        await saveCompleteMessage(currentChatId, messageForSaving, userTurnNumber);
     } catch (error) {
         logger.warn('Failed to save user message:', error);
     }

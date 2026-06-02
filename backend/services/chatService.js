@@ -467,13 +467,13 @@ function getChatHistoryForAPI(chat_id) {
     }
 }
 // Save complete message structure to database (everything-is-a-branch system)
-async function saveCompleteMessageToDatabase(chatId, messageData, blocks = null, turnNumber = null, errorState = null) {
+async function saveCompleteMessageToDatabase(chatId, messageData, turnNumber = null, errorState = null) {
     // Everything goes through branches now - this is just a wrapper for saveMessageToBranch
-    return await saveMessageToBranch(chatId, messageData, blocks, turnNumber, errorState);
+    return await saveMessageToBranch(chatId, messageData, turnNumber, errorState);
 }
 
 // Save message to current active branch (everything-is-a-branch system)
-async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumber = null, errorState = null) {
+async function saveMessageToBranch(chatId, messageData, turnNumber = null, errorState = null) {
     const { db } = require('../config/database');
     
     try {
@@ -484,7 +484,7 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
             log(`[BRANCHING] No active branch for chat ${chatId}, creating main branch`);
             const newBranch = await createChatBranch(chatId);
             await setActiveChatBranch(chatId, newBranch.branchId);
-            return saveMessageToBranch(chatId, messageData, blocks, turnNumber);
+            return saveMessageToBranch(chatId, messageData, turnNumber);
         }
         
         // Prepare message data
@@ -495,7 +495,6 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
         const toolCalls = messageData.tool_calls ? JSON.stringify(messageData.tool_calls) : null;
         const toolCallId = messageData.tool_call_id || null;
         const toolName = messageData.tool_name || null;
-        const blocksJson = blocks ? JSON.stringify(blocks) : null;
         const debugData = messageData.debug_data ? JSON.stringify(messageData.debug_data) : null;
         
         // Handle original content and file metadata
@@ -515,13 +514,13 @@ async function saveMessageToBranch(chatId, messageData, blocks = null, turnNumbe
         // Insert message into branch with new file handling fields and error_state
         const insertStmt = db.prepare(`
             INSERT INTO branch_messages 
-            (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, original_content, file_metadata, error_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, original_content, file_metadata, error_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = insertStmt.run(
             activeBranch.id, role, content, finalTurnNumber,
-            toolCalls, toolCallId, toolName, blocksJson, debugData, originalContent, fileMetadata, errorState
+            toolCalls, toolCallId, toolName, debugData, originalContent, fileMetadata, errorState
         );
         
         // Update chat's updated_at timestamp
@@ -736,7 +735,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                         content: userErrorMessage,
                         debug_data: collectedDebugData
                     };
-                    saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn, 'api_error')
+                    saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, 'api_error')
                         .then(() => {
                             incrementTurnNumber(chatId); // Burn the turn
                             log(`[ERROR-HANDLING] Saved API error message and burned turn ${currentTurn}`);
@@ -853,7 +852,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             }
             
             // Handle tool calls if any
-            if (unifiedResponse.hasToolCalls() && !blockToolExecution) {
+            if (unifiedResponse.hasToolCalls()) {
                 log(`[ADAPTER] Processing ${unifiedResponse.toolCalls.length} tool calls`);
                 
                 // Add tool execution steps to debug sequence
@@ -900,7 +899,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                         content: unifiedResponse.content
                     };
                     try {
-                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, null, currentTurn);
+                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, currentTurn);
                         log(`[CHAT-SAVE] Successfully saved final assistant response to history`);
                     } catch (error) {
                         log(`[CHAT-SAVE] Error saving final assistant response: ${error.message}`);
@@ -948,7 +947,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 content: `Connection error: ${error.message}`,
                 debug_data: collectedDebugData
             };
-            saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn, 'connection_error')
+            saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, 'connection_error')
                 .then(() => {
                     incrementTurnNumber(chatId); // Burn the turn
                     log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
@@ -1009,7 +1008,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     
     // Save assistant message with tool calls to database
     if (chatId) {
-        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, null, currentTurn);
+        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, currentTurn);
         log(`[CHAT-SAVE] Saved assistant message with ${toolCalls.length} tool calls`);
     }
     
@@ -1042,7 +1041,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, toolMessage, null, currentTurn);
+                await saveCompleteMessageToDatabase(chatId, toolMessage, currentTurn);
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
             
@@ -1091,7 +1090,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool error message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, errorMessage, null, currentTurn);
+                await saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn);
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
             
@@ -1223,7 +1222,7 @@ async function processChatRequest(req, res) {
                 content: `Processing error: ${error.message}`,
                 debug_data: { error: error.message, stack: error.stack }
             };
-            saveCompleteMessageToDatabase(chat_id, errorMessage, null, currentTurn, 'processing_error')
+            saveCompleteMessageToDatabase(chat_id, errorMessage, currentTurn, 'processing_error')
                 .then(() => {
                     incrementTurnNumber(chat_id); // Burn the turn
                     log(`[ERROR-HANDLING] Saved processing error and burned turn ${currentTurn}`);
@@ -1255,8 +1254,8 @@ async function createTurnVersion(chatId, turnNumber, isRetry = false) {
         
         // Get existing messages for this turn AND all previous turns (for complete version 1)
         const getMessagesStmt = db.prepare(`
-            SELECT id, role, content, tool_calls, tool_call_id, tool_name, blocks, debug_data
-            FROM messages 
+            SELECT id, role, content, tool_calls, tool_call_id, tool_name, debug_data
+            FROM messages
             WHERE chat_id = ? AND turn_number <= ?
             ORDER BY timestamp ASC
         `);
@@ -1286,15 +1285,15 @@ async function createTurnVersion(chatId, turnNumber, isRetry = false) {
             
             // Copy existing messages to version 1
             const insertMessageStmt = db.prepare(`
-                INSERT INTO message_versions 
-                (turn_version_id, original_message_id, role, content, tool_calls, tool_call_id, tool_name, blocks, debug_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO message_versions
+                (turn_version_id, original_message_id, role, content, tool_calls, tool_call_id, tool_name, debug_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `);
-            
+
             messages.forEach(msg => {
                 insertMessageStmt.run(
                     version1Id, msg.id, msg.role, msg.content,
-                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.blocks, msg.debug_data
+                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.debug_data
                 );
             });
             
@@ -1316,24 +1315,24 @@ async function createTurnVersion(chatId, turnNumber, isRetry = false) {
         if (isRetry) {
             // Get all messages from this chat that come BEFORE this turn
             const previousMessagesStmt = db.prepare(`
-                SELECT id, role, content, tool_calls, tool_call_id, tool_name, blocks, debug_data, turn_number
-                FROM messages 
+                SELECT id, role, content, tool_calls, tool_call_id, tool_name, debug_data, turn_number
+                FROM messages
                 WHERE chat_id = ? AND turn_number < ?
                 ORDER BY timestamp ASC
             `);
             const previousMessages = previousMessagesStmt.all(chatId, turnNumber);
-            
+
             const insertMessageStmt = db.prepare(`
-                INSERT INTO message_versions 
-                (turn_version_id, original_message_id, role, content, tool_calls, tool_call_id, tool_name, blocks, debug_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO message_versions
+                (turn_version_id, original_message_id, role, content, tool_calls, tool_call_id, tool_name, debug_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `);
-            
+
             // Copy all previous messages to this version (creates truncated history)
             previousMessages.forEach(msg => {
                 insertMessageStmt.run(
                     newVersionId, msg.id, msg.role, msg.content,
-                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.blocks, msg.debug_data
+                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.debug_data
                 );
             });
             
@@ -1444,14 +1443,14 @@ function setActiveTurnVersion(chatId, turnNumber, versionNumber) {
 }
 
 // Save messages to a specific version
-async function saveMessagesToVersion(versionId, messages) {
+  async function saveMessagesToVersion(versionId, messages) {
     const { db } = require('../config/database');
     
     try {
         const insertStmt = db.prepare(`
-            INSERT INTO message_versions 
-            (turn_version_id, role, content, tool_calls, tool_call_id, tool_name, blocks, debug_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO message_versions
+            (turn_version_id, role, content, tool_calls, tool_call_id, tool_name, debug_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
         
         messages.forEach(msg => {
@@ -1459,7 +1458,6 @@ async function saveMessagesToVersion(versionId, messages) {
                 versionId, msg.role, msg.content,
                 msg.tool_calls ? JSON.stringify(msg.tool_calls) : null,
                 msg.tool_call_id, msg.tool_name,
-                msg.blocks ? JSON.stringify(msg.blocks) : null,
                 msg.debug_data ? JSON.stringify(msg.debug_data) : null
             );
         });
@@ -1522,7 +1520,7 @@ async function createChatBranch(chatId, branchPoint = null) {
             if (branchPoint !== null) {
                 // Copy messages before the branch point
                 const getMessagesStmt = db.prepare(`
-                    SELECT original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at
+                    SELECT original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at
                     FROM branch_messages 
                     WHERE branch_id = ? AND turn_number < ?
                     ORDER BY timestamp ASC
@@ -1545,15 +1543,15 @@ async function createChatBranch(chatId, branchPoint = null) {
         // Copy messages to new branch
         if (messagesToCopy.length > 0) {
             const insertMessageStmt = db.prepare(`
-                INSERT INTO branch_messages 
-                (branch_id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, blocks, debug_data, edit_count, edited_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO branch_messages
+                (branch_id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
-            
+
             messagesToCopy.forEach(msg => {
                 insertMessageStmt.run(
                     newBranchId, msg.original_message_id, msg.role, msg.content, msg.turn_number,
-                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.blocks, msg.debug_data,
+                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.debug_data,
                     msg.edit_count || 0, msg.edited_at
                 );
             });
