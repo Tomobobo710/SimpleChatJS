@@ -212,7 +212,7 @@ async function saveTurnDebugData(chatId, turnNumber, debugData) {
         
         // First check if a message exists for this turn
         const checkStmt = db.prepare(`
-            SELECT id FROM branch_messages 
+            SELECT id FROM messages 
             WHERE branch_id = ? AND turn_number = ?
             LIMIT 1
         `);
@@ -222,7 +222,7 @@ async function saveTurnDebugData(chatId, turnNumber, debugData) {
         if (existing) {
             // Update existing message
             const updateStmt = db.prepare(`
-                UPDATE branch_messages 
+                UPDATE messages 
                 SET debug_data = ?
                 WHERE branch_id = ? AND turn_number = ?
             `);
@@ -230,7 +230,7 @@ async function saveTurnDebugData(chatId, turnNumber, debugData) {
         } else {
             // Insert placeholder message with debug data
             const insertStmt = db.prepare(`
-                INSERT INTO branch_messages (branch_id, turn_number, role, content, debug_data, timestamp)
+                INSERT INTO messages (branch_id, turn_number, role, content, debug_data, timestamp)
                 VALUES (?, ?, 'user', '', ?, datetime('now'))
             `);
             result = insertStmt.run(activeBranch.id, turnNumber, debugDataJson);
@@ -256,10 +256,10 @@ function getTurnDebugData(chatId, turnNumber) {
             return null;
         }
         
-        // Get debug data from branch_messages for the specific turn
+        // Get debug data from messages for the specific turn
         const stmt = db.prepare(`
             SELECT debug_data 
-            FROM branch_messages 
+            FROM messages 
             WHERE branch_id = ? AND turn_number = ? AND debug_data IS NOT NULL
             LIMIT 1
         `);
@@ -291,10 +291,10 @@ function getAllTurnDebugData(chatId) {
             return {};
         }
         
-        // Get all debug data from branch_messages
+        // Get all debug data from messages
         const stmt = db.prepare(`
             SELECT turn_number, debug_data 
-            FROM branch_messages 
+            FROM messages 
             WHERE branch_id = ? AND debug_data IS NOT NULL
             ORDER BY turn_number ASC
         `);
@@ -390,7 +390,7 @@ function getChatHistoryForAPI(chat_id) {
         // FILTER OUT ERROR MESSAGES: Only include successful messages in AI history
         const messagesStmt = db.prepare(`
             SELECT role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata
-            FROM branch_messages
+            FROM messages
             WHERE branch_id = ? AND error_state IS NULL
             ORDER BY timestamp ASC
         `);
@@ -513,7 +513,7 @@ async function saveMessageToBranch(chatId, messageData, turnNumber = null, error
         
         // Insert message into branch with new file handling fields and error_state
         const insertStmt = db.prepare(`
-            INSERT INTO branch_messages 
+            INSERT INTO messages 
             (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, original_content, file_metadata, error_state)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -1521,7 +1521,7 @@ async function createChatBranch(chatId, branchPoint = null) {
                 // Copy messages before the branch point
                 const getMessagesStmt = db.prepare(`
                     SELECT original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at
-                    FROM branch_messages 
+                    FROM messages 
                     WHERE branch_id = ? AND turn_number < ?
                     ORDER BY timestamp ASC
                 `);
@@ -1543,7 +1543,7 @@ async function createChatBranch(chatId, branchPoint = null) {
         // Copy messages to new branch
         if (messagesToCopy.length > 0) {
             const insertMessageStmt = db.prepare(`
-                INSERT INTO branch_messages
+                INSERT INTO messages
                 (branch_id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
@@ -1569,7 +1569,7 @@ async function createChatBranch(chatId, branchPoint = null) {
             // CRITICAL FIX #2: Delete any existing messages for the retry turn in the new branch
             // This prevents duplicate content when retrying
             const deleteRetryTurnStmt = db.prepare(`
-                DELETE FROM branch_messages 
+                DELETE FROM messages 
                 WHERE branch_id = ? AND turn_number >= ?
             `);
             const deletedCount = deleteRetryTurnStmt.run(newBranchId, branchPoint).changes;
@@ -1602,7 +1602,7 @@ function getChatBranches(chatId) {
                    COUNT(bm.id) as message_count,
                    pcb.branch_name as parent_branch_name
             FROM chat_branches cb
-            LEFT JOIN branch_messages bm ON cb.id = bm.branch_id
+            LEFT JOIN messages bm ON cb.id = bm.branch_id
             LEFT JOIN chat_branches pcb ON cb.parent_branch_id = pcb.id
             WHERE cb.chat_id = ?
             GROUP BY cb.id, cb.branch_name, cb.parent_branch_id, cb.branch_point_turn, cb.is_active, cb.created_at, pcb.branch_name

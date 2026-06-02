@@ -62,7 +62,7 @@ function initializeDatabase() {
                 FOREIGN KEY (parent_branch_id) REFERENCES chat_branches (id)
             )`);
             
-           db.exec(`CREATE TABLE IF NOT EXISTS branch_messages (
+           db.exec(`CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 branch_id INTEGER NOT NULL,
                 original_message_id INTEGER,

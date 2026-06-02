@@ -95,7 +95,7 @@ router.get('/chats', (req, res) => {
                 branch_id,
                 content,
                 ROW_NUMBER() OVER (PARTITION BY branch_id ORDER BY timestamp DESC) as rn
-            FROM branch_messages
+            FROM messages
             WHERE role = 'user'
         ) bm ON cb.id = bm.branch_id AND bm.rn = 1
     `;
@@ -209,7 +209,7 @@ router.get('/chat/:id/history-complete', (req, res) => {
         // Get ALL messages including errored ones
         const messagesStmt = db.prepare(`
             SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
-            FROM branch_messages
+            FROM messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
         `);
@@ -322,7 +322,7 @@ router.get('/chat/:id/history', (req, res) => {
         // Get all messages from the active branch (including new file handling fields)
         const messagesStmt = db.prepare(`
             SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
-            FROM branch_messages
+            FROM messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
         `);
@@ -425,7 +425,7 @@ router.delete('/chat/:id', (req, res) => {
         // Everything-is-a-branch: Delete all branch messages and branches for this chat
         // First delete all branch messages
         const deleteBranchMessages = db.prepare(`
-            DELETE FROM branch_messages 
+            DELETE FROM messages 
             WHERE branch_id IN (SELECT id FROM chat_branches WHERE chat_id = ?)
         `);
         deleteBranchMessages.run(chatId);
@@ -643,7 +643,7 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
             const stmt = db.prepare(`
                 SELECT id, role, content, timestamp, turn_number, 
                        edit_count, edited_at 
-                FROM branch_messages 
+                FROM messages 
                 WHERE branch_id = ? AND turn_number = ? 
                 ORDER BY timestamp ASC
             `);
@@ -795,24 +795,24 @@ router.patch('/message/:id', async (req, res) => {
             return res.status(400).json({ error: 'Content is required' });
         }
         
-        // Try to find the message in branch_messages first (for branching system)
+        // Try to find the message in messages first (for branching system)
         let currentMessage = null;
         let isInBranch = false;
         
-        // First, try to find in branch_messages table
+        // First, try to find in messages table
         const getBranchMessageStmt = db.prepare(`
             SELECT content, edit_count, edited_at, branch_id 
-            FROM branch_messages 
+            FROM messages 
             WHERE id = ?
         `);
         currentMessage = getBranchMessageStmt.get(messageId);
         
         if (currentMessage) {
             isInBranch = true;
-            log(`[EDIT] Found message ${messageId} in branch_messages table`);
+            log(`[EDIT] Found message ${messageId} in messages table`);
         } else {
-            // Everything-is-a-branch: All messages should be in branch_messages
-            log(`[EDIT] Message ${messageId} not found in branch_messages - this shouldn't happen in everything-is-a-branch system`);
+            // Everything-is-a-branch: All messages should be in messages
+            log(`[EDIT] Message ${messageId} not found in messages - this shouldn't happen in everything-is-a-branch system`);
         }
         
         if (!currentMessage) {
@@ -823,10 +823,10 @@ router.patch('/message/:id', async (req, res) => {
         let result;
         
         if (isInBranch) {
-            // Update message in branch_messages table (no original_content column here)
-            log(`[EDIT] Updating message ${messageId} in branch_messages table`);
+            // Update message in messages table (no original_content column here)
+            log(`[EDIT] Updating message ${messageId} in messages table`);
             const updateBranchStmt = db.prepare(`
-                UPDATE branch_messages 
+                UPDATE messages 
                 SET content = ?, 
                     original_content = ?,
                     file_metadata = ?,

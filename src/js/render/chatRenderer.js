@@ -2332,7 +2332,7 @@ class ChatRenderer {
         return true;
         
         // Future enhancement: Could check actual message existence in database
-        // const hasMessageQuery = `SELECT COUNT(*) as count FROM branch_messages
+        // const hasMessageQuery = `SELECT COUNT(*) as count FROM messages
         //                          WHERE branch_id = ? AND turn_number = ?`;
         // return count > 0;
     }
