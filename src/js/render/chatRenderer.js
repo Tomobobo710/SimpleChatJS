@@ -2512,18 +2512,13 @@ class ChatRenderer {
                 debugData.currentTurnNumber = turnNumber;
             }
             
-            // Get final blocks and re-render
-            const finalBlocks = processor.getBlocks();
-
             const renderedTurn = this.renderTurn(
-                {
-                    role: "assistant",
-                    blocks: finalBlocks,
-                    content: processor.getRawContent() || "",
-                    debugData: debugData,
-                    dropdownStates: dropdownStates,
-                    turnNumber: turnNumber
-                },
+                RenderableTurnObject.fromStreamingProcessor({
+                    processor,
+                    turnNumber,
+                    debugData,
+                    dropdownStates,
+                }),
                 true
             );
             

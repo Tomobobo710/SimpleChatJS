@@ -283,18 +283,12 @@ async function handleSimpleChat(message, conversationHistory) {
             debugData.currentTurnNumber = assistantTurnNumber;
         }
         
-        // Create a Turn with the assistant message and render it
-        const assistantMessage = new Message({
-            id: null,
-            role: 'assistant',
-            content: processor.getRawContent() || '',
-            turn_number: assistantTurnNumber,
-            debug_data: debugData,
-            edit_count: 0,
+        const rto = RenderableTurnObject.fromStreamingProcessor({
+            processor,
+            turnNumber: assistantTurnNumber,
+            debugData,
+            dropdownStates,
         });
-        
-        const assistantTurn = new Turn(assistantTurnNumber, [assistantMessage]);
-        const rto = assistantTurn.renderable(processor);
         
         const renderedTurn = chatRenderer.renderTurn(rto, true);
         
