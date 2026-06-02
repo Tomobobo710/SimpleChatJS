@@ -1,0 +1,76 @@
+// Message - a persistent source data record, the raw material from which Turns are computed.
+// Messages are never merged or combined. They map directly to database rows.
+
+class Message {
+    constructor(data = {}) {
+        this.id = data.id ?? null;
+        this.branchId = data.branch_id ?? null;
+        this.role = data.role ?? 'other';
+        this.content = data.content ?? '';
+        this.turnNumber = data.turn_number ?? 0;
+        this.timestamp = data.timestamp ?? null;
+        this.toolCalls = data.tool_calls ?? null;
+        this.toolResults = data.tool_results ?? null;
+        this.thinking = data.thinking ?? null;
+        this.errorState = data.error_state ?? null;
+        this.debugData = data.debug_data ?? null;
+        this.editCount = data.edit_count ?? 0;
+        this.editedAt = data.edited_at ?? null;
+    }
+
+    isUser() {
+        return this.role === 'user';
+    }
+
+    isAssistant() {
+        return this.role === 'assistant';
+    }
+
+    isError() {
+        return this.errorState !== null;
+    }
+
+    hasToolCalls() {
+        return this.toolCalls !== null && this.toolCalls.length > 0;
+    }
+
+    hasThinking() {
+        return this.thinking !== null && this.thinking.length > 0;
+    }
+
+    isEditable() {
+        return this.isUser() && this.editCount < 3;
+    }
+
+    static fromApiData(data) {
+        const parsedToolCalls = data.tool_calls
+            ? (typeof data.tool_calls === 'string' ? JSON.parse(data.tool_calls) : data.tool_calls)
+            : null;
+
+        const parsedDebugData = data.debug_data
+            ? (typeof data.debug_data === 'string' ? JSON.parse(data.debug_data) : data.debug_data)
+            : null;
+
+        return new Message({
+            id: data.original_message_id || data.id || null,
+            branch_id: data.branch_id || null,
+            role: data.role,
+            content: data.content,
+            turn_number: data.turn_number,
+            timestamp: data.timestamp,
+            tool_calls: parsedToolCalls,
+            tool_results: data.tool_results ?? null,
+            thinking: data.thinking ?? null,
+            error_state: data.error_state ?? null,
+            debug_data: parsedDebugData,
+            edit_count: data.edit_count || 0,
+            edited_at: data.edited_at ?? null,
+        });
+    }
+
+    static fromObject(obj) {
+        return new Message(obj);
+    }
+}
+
+
