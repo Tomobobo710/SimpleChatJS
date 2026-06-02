@@ -15,10 +15,19 @@ router.get('/debug/schema', (req, res) => {
             const columns = db.prepare(`PRAGMA table_info(${name})`).all();
             const rowCount = db.prepare(`SELECT COUNT(*) as count FROM ${name}`).get();
             const sample = db.prepare(`SELECT * FROM ${name} LIMIT 20`).all();
+            // Exclude large debug_data columns from sample output
+            const debugColumns = new Set(['debug_data', 'file_metadata']);
+            const cleanSample = sample.map(row => {
+                const cleaned = { ...row };
+                for (const col of debugColumns) {
+                    if (col in cleaned) delete cleaned[col];
+                }
+                return cleaned;
+            });
             result[name] = {
                 columns: columns.map(c => c.name),
                 count: rowCount.count,
-                data: sample
+                data: cleanSample
             };
         }
         res.json(result);
