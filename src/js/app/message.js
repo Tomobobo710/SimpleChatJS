@@ -10,6 +10,8 @@ class Message {
         this.turnNumber = data.turn_number ?? 0;
         this.timestamp = data.timestamp ?? null;
         this.toolCalls = data.tool_calls ?? null;
+        this.toolCallId = data.tool_call_id ?? null;
+        this.toolName = data.tool_name ?? null;
         this.toolResults = data.tool_results ?? null;
         this.thinking = data.thinking ?? null;
         this.errorState = data.error_state ?? null;
@@ -59,6 +61,8 @@ class Message {
             turn_number: data.turn_number,
             timestamp: data.timestamp,
             tool_calls: parsedToolCalls,
+            tool_call_id: data.tool_call_id ?? null,
+            tool_name: data.tool_name ?? null,
             tool_results: data.tool_results ?? null,
             thinking: data.thinking ?? null,
             error_state: data.error_state ?? null,

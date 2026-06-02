@@ -18,11 +18,16 @@ async function handleSimpleChat(message, conversationHistory) {
     const userTurnNumber = getNextTurnNumber();
     
     // Add user message to UI using global chatRenderer (same as saved chats)
-    chatRenderer.renderTurn({
+    const userMessage = new Message({
+        id: null,
         role: 'user',
         content: message,
-        turn_number: userTurnNumber
-    }, true);
+        turn_number: userTurnNumber,
+        edit_count: 0,
+    });
+    const userTurn = new Turn(userTurnNumber, [userMessage]);
+    const userRto = userTurn.renderable();
+    chatRenderer.renderTurn(userRto, true);
     
     // Save user message with separated file structure
     try {
@@ -277,18 +282,20 @@ async function handleSimpleChat(message, conversationHistory) {
             debugData.currentTurnNumber = assistantTurnNumber;
         }
         
-        // Get the blocks that were created during live rendering - these have tool structure
-        const finalBlocks = processor.getBlocks();
-        
-        // Re-render the SAME WAY as live renderer - pass blocks AND content
-        const renderedTurn = chatRenderer.renderTurn({
+        // Create a Turn with the assistant message and render it
+        const assistantMessage = new Message({
+            id: null,
             role: 'assistant',
-            blocks: finalBlocks,  // Use blocks like live renderer  
-            content: processor.getRawContent() || '', // Also pass content for saving
+            content: processor.getRawContent() || '',
+            turn_number: assistantTurnNumber,
             debug_data: debugData,
-            dropdownStates: dropdownStates,
-            turn_number: assistantTurnNumber
-        }, true); // Enable scrolling
+            edit_count: 0,
+        });
+        
+        const assistantTurn = new Turn(assistantTurnNumber, [assistantMessage]);
+        const rto = assistantTurn.renderable(processor);
+        
+        const renderedTurn = chatRenderer.renderTurn(rto, true);
         
         // Save assistant message and debug data separately
         try {
@@ -360,14 +367,18 @@ async function handleSimpleChat(message, conversationHistory) {
             // Finalize processor and render with debug panel using global chatRenderer
             processor.finalize();
             
-            // Render the partial message using global chatRenderer
-            chatRenderer.renderTurn({
+            // Render the partial message using Turn.renderable()
+            const partialAssistantMessage = new Message({
+                id: null,
                 role: 'assistant',
                 content: processor.getRawContent() || '',
+                turn_number: 0,
                 debug_data: stoppedDebugData,
-                dropdownStates: {},
-                isPartial: true
-            }, true);
+                edit_count: 0,
+            });
+            const partialTurn = new Turn(0, [partialAssistantMessage]);
+            const partialRto = partialTurn.renderable();
+            chatRenderer.renderTurn(partialRto, true);
             
             // Save whatever content the AI actually generated (even if empty)
             try {
@@ -412,10 +423,17 @@ async function handleSimpleChat(message, conversationHistory) {
         assistantTurnDiv.remove();
         
         // Show error using global chatRenderer
-        chatRenderer.renderTurn({
+        const errorMessage = new Message({
+            id: null,
             role: 'assistant',
             content: `[ERROR] ${error.message}`,
-            debug_data: debugData
-        }, true);
+            turn_number: 0,
+            debug_data: debugData,
+            edit_count: 0,
+            error_state: error.message,
+        });
+        const errorTurn = new Turn(0, [errorMessage]);
+        const errorRto = errorTurn.renderable();
+        chatRenderer.renderTurn(errorRto, true);
     }
 }

@@ -346,79 +346,19 @@ async function switchToChat(chatId) {
     messageInput.focus();
 }
 
-// Reconstruct tool content from message relationships
-function reconstructToolContent(messages) {
-    const processedMessages = [];
-    let i = 0;
-    
-    while (i < messages.length) {
-        const msg = messages[i];
-        
-        // Check if this is an assistant message with tool calls
-        if (msg.role === 'assistant' && hasToolCalls(msg)) {
-            // Find all subsequent tool messages that belong to this assistant message
-            const toolResults = [];
-            let j = i + 1;
-            
-            // Collect all tool messages that follow this assistant message
-            while (j < messages.length && messages[j].role === 'tool') {
-                toolResults.push(messages[j]);
-                j++;
-            }
-            
-            // Keep original content clean - no injection of fake markers
-            let reconstructedContent = msg.content || '';
-            
-            // Add the message with tool data for SSE simulation
-            processedMessages.push({
-                ...msg,
-                content: reconstructedContent,
-                tool_results: toolResults  // Add tool results for SSE simulation
-            });
-            
-            // Skip the tool messages since we've absorbed them
-            i = j;
-        } else {
-            // Regular message, add as-is
-            processedMessages.push(msg);
-            i++;
-        }
-    }
-    
-    return processedMessages;
-}
-
-// Group messages by turn_number for proper turn-based rendering
+// Group messages by turn_number into Turn instances
 function groupMessagesByTurn(messages) {
-    const turnGroups = new Map();
-    
-    messages.forEach(msg => {
-        const turnNumber = msg.turn_number || 0;
-        if (!turnGroups.has(turnNumber)) {
-            turnGroups.set(turnNumber, []);
+    const groups = new Map();
+    for (const msg of messages) {
+        const key = msg.turn_number || 0;
+        if (!groups.has(key)) {
+            groups.set(key, []);
         }
-        turnGroups.get(turnNumber).push(msg);
-    });
-    
-    // Check for duplicate turn numbers in the groups  
-    const turnNumbers = Array.from(turnGroups.keys());
-    const duplicateTurns = turnNumbers.filter((turn, index) => turnNumbers.indexOf(turn) !== index);
-    
-    if (duplicateTurns.length > 0) {
-        console.error(`[GROUP-MESSAGES] DUPLICATE TURN NUMBERS DETECTED: ${duplicateTurns}`);
+        groups.get(key).push(msg);
     }
-    
-    turnGroups.forEach((msgs, turnNum) => {
-        const assistantCount = msgs.filter(m => m.role === 'assistant').length;
-        if (assistantCount > 1) {
-            console.warn(`[GROUP-MESSAGES] Turn ${turnNum} has ${assistantCount} assistant messages!`);
-        }
-    });
-    
-    // Convert to array and sort by turn number
-    return Array.from(turnGroups.entries())
+    return Array.from(groups.entries())
         .sort(([a], [b]) => a - b)
-        .map(([turnNumber, turnMessages]) => ({ turnNumber, messages: turnMessages }));
+        .map(([turnNumber, msgs]) => new Turn(turnNumber, msgs.map(m => Message.fromObject(m))));
 }
 
 // Check if a message has tool calls
@@ -453,13 +393,11 @@ async function loadChatHistory(chatId) {
         
         const history = await getCompleteChatHistory(chatId);
         
-        // Validate history data
         if (!history || !history.messages || !Array.isArray(history.messages)) {
             console.error('[LOAD-HISTORY] Invalid history data received:', history);
             throw new Error('Invalid chat history data received from server');
         }
         
-        // Filter out any malformed messages
         const validMessages = history.messages.filter(msg => {
             if (!msg || !msg.role || msg.turn_number === undefined) {
                 console.warn('[LOAD-HISTORY] Skipping malformed message:', msg);
@@ -472,237 +410,27 @@ async function loadChatHistory(chatId) {
             console.warn(`[LOAD-HISTORY] Filtered out ${history.messages.length - validMessages.length} malformed messages`);
         }
         
-        // Replace with filtered messages
         history.messages = validMessages;
         
-        // Initialize turn tracking for this chat
         await initializeTurnTrackingForChat(chatId);
         
-        // Clear current turns
         turnsContainer.innerHTML = '';
-        
-        // Reset auto-scroll state when loading new chat
         isUserAtBottom = true;
         
-        // Update chat info
         const chatItem = document.querySelector(`[data-chat-id="${chatId}"]`);
         const title = chatItem ? chatItem.querySelector('.chat-item-title').textContent : 'Chat';
-        chatTitle.textContent = title; // Just update the UI title, don't save to database
+        chatTitle.textContent = title;
         chatInfo.textContent = `Chat ID: ${chatId} | ${history.messages.length} messages`;
         
-        // Using proper SSE simulation without content injection
-        logger.info('[UNIFIED-RENDERING] Processing chat history through SSE simulation');
+        logger.info('[UNIFIED-RENDERING] Loading chat history through Turn.renderable()');
         
-        // Prepare messages with tool data for SSE simulation
-        const processedMessages = reconstructToolContent(history.messages);
+        const turns = groupMessagesByTurn(history.messages);
         
-        // Group messages by turn_number for proper turn-based rendering
-        const turnGroups = groupMessagesByTurn(processedMessages);
-        
-        // Process each turn using the exact same pipeline as live rendering
-        turnGroups.forEach((group, groupIndex) => {
-            const { turnNumber, messages: turnMessages } = group;
-            
-            // Separate user and assistant messages (like live rendering does)
-            const userMessages = turnMessages.filter(msg => msg.role === 'user');
-            const assistantMessages = turnMessages.filter(msg => msg.role === 'assistant');
-            
-            // Check if any messages in this turn are errored
-            const hasErrors = turnMessages.some(msg => msg.error_state);
-            const errorMessages = turnMessages.filter(msg => msg.error_state);
-            
-            // Check for duplicate assistant messages in the same turn
-            if (assistantMessages.length > 1) {
-                console.warn(`[LOAD-HISTORY] WARNING: Turn ${turnNumber} has ${assistantMessages.length} assistant messages!`);
-                console.warn(`[LOAD-HISTORY] Assistant message IDs:`, assistantMessages.map(m => ({id: m.id, content: getPreviewText(m.content, 50)})));
-            }
-            
-            // Render user messages directly (exactly like live rendering)
-            userMessages.forEach(userMsg => {
-                chatRenderer.renderTurn({
-                    id: userMsg.id,
-                    role: 'user',
-                    content: userMsg.content,
-                    turn_number: turnNumber,
-                    edit_count: userMsg.edit_count,
-                    edited_at: userMsg.edited_at,
-                    debug_data: userMsg.debug_data  // Include debug data for user messages
-                }, false);
-            });
-            
-            // Handle error messages - render them with special error styling
-            if (hasErrors && errorMessages.length > 0) {
-                errorMessages.forEach(errorMsg => {
-                    // Create error message with debug panel
-                    chatRenderer.renderTurn({
-                        id: errorMsg.id,
-                        role: 'assistant',
-                        content: errorMsg.content,
-                        turn_number: turnNumber,
-                        error_state: errorMsg.error_state,
-                        debug_data: errorMsg.debug_data,
-                        edit_count: errorMsg.edit_count,
-                        edited_at: errorMsg.edited_at,
-                        blocks: [{
-                            type: 'error',
-                            content: errorMsg.content,
-                            metadata: {
-                                error_type: errorMsg.error_state,
-                                debug_data: errorMsg.debug_data
-                            }
-                        }]
-                    }, false);
-                });
-            }
-            
-            // Process assistant messages separately (exactly like live rendering)
-            if (assistantMessages.length > 0 && !hasErrors) {
-                
-                // Create a processor only for assistant content
-                const processor = new StreamingMessageProcessor();
-                
-                // Create a temp container for use with updateLiveRendering (required by handleToolEvent)
-                const tempContainer = document.createElement('div');
-                const liveRenderer = new ChatRenderer(tempContainer);
-                
-                let turnDebugData = null;
-                let primaryAssistantMessage = null;
-                
-                assistantMessages.forEach((msg, msgIndex) => {
-                    // Track the primary assistant message
-                    if (msg.content) {
-                        if (primaryAssistantMessage) {
-                            console.warn(`[LOAD-HISTORY] Multiple assistant messages with content! Previous: ${primaryAssistantMessage.id}, Current: ${msg.id}`);
-                        }
-                        primaryAssistantMessage = msg;
-                        turnDebugData = msg.debug_data;
-                    }
-                    
-                    // Handle only assistant content - this properly processes <think> and <thinking> tags and normal text
-                    if (msg.content) {
-                        // Check if content is multimodal (array) - if so, only process text parts for streaming processor
-                        if (Array.isArray(msg.content)) {
-                            const textParts = msg.content.filter(part => part.type === 'text');
-                            textParts.forEach(part => {
-                                if (part.text) {
-                                    processor.addChunk(part.text);
-                                }
-                            });
-                        } else {
-                            // Regular string content
-                            processor.addChunk(msg.content);
-                        }
-                    }
-                    
-                    // Simulate SSE tool events using the same structured data
-                    if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-                        msg.tool_calls.forEach((toolCall, toolIdx) => {
-                            const toolName = toolCall.function?.name || 'unknown_tool';
-                            let args;
-                            try {
-                                args = JSON.parse(toolCall.function?.arguments || '{}');
-                            } catch (e) {
-                                args = { raw: toolCall.function?.arguments || '{}' };
-                            }
-                            
-                            // Find corresponding tool result
-                            const toolResult = msg.tool_results?.find(tr => tr.tool_call_id === toolCall.id);
-                            
-                            // Simulate the exact same tool event sequence that live rendering receives
-                            // 1. Tool call detected
-                            handleToolEvent({
-                                type: 'tool_call_detected',
-                                data: {
-                                    id: toolCall.id,
-                                    name: toolName
-                                }
-                            }, processor, liveRenderer, tempContainer);
-                            
-                            // 2. Tool execution started
-                            handleToolEvent({
-                                type: 'tool_execution_start',
-                                data: {
-                                    id: toolCall.id,
-                                    name: toolName,
-                                    arguments: args
-                                }
-                            }, processor, liveRenderer, tempContainer);
-                            
-                            // 3. Tool execution completed
-                            let resultContent = { content: 'No result available' };
-                            if (toolResult) {
-                                try {
-                                    resultContent = JSON.parse(toolResult.content);
-                                } catch (e) {
-                                    resultContent = { content: toolResult.content };
-                                }
-                            }
-                            
-                            handleToolEvent({
-                                type: 'tool_execution_complete',
-                                data: {
-                                    id: toolCall.id,
-                                    name: toolName,
-                                    status: 'success',
-                                    result: resultContent,
-                                    execution_time_ms: 0
-                                }
-                            }, processor, liveRenderer, tempContainer);
-                        });
-                    }
-                });
-                
-                // Finalize the processor after processing all assistant messages
-                processor.finalize();
-                
-                // Get the blocks that were created through the exact same pipeline as live rendering
-                let blocks = processor.getBlocks();
-                
-                // Determine content to render - preserve multimodal content if it exists
-                let contentToRender = processor.getRawContent() || '';
-                if (primaryAssistantMessage?.content && Array.isArray(primaryAssistantMessage.content)) {
-                    // Use original multimodal content to preserve images
-                    contentToRender = primaryAssistantMessage.content;
-                    
-                    // CRITICAL FIX: Create complete blocks that include multimodal content
-                    // The processor only created blocks from text parts, but we need to include images too
-                    const hasImages = primaryAssistantMessage.content.some(part => part.type === 'image');
-                    
-                    if (hasImages && blocks.length > 0) {
-                        // Replace the first chat block with the complete multimodal content
-                        const firstChatBlockIndex = blocks.findIndex(block => block.type === 'chat');
-                        if (firstChatBlockIndex !== -1) {
-                            blocks[firstChatBlockIndex] = {
-                                type: 'chat',
-                                content: primaryAssistantMessage.content, // Full multimodal array
-                                metadata: {}
-                            };
-                        }
-                    } else if (hasImages && blocks.length === 0) {
-                        // No blocks were created (probably no text), but we have images - create a multimodal block
-                        blocks = [{
-                            type: 'chat',
-                            content: primaryAssistantMessage.content, // Full multimodal array
-                            metadata: {}
-                        }];
-                    }
-                }
-                
-                // Render assistant turn with complete blocks (including images)
-                chatRenderer.renderTurn({
-                    id: primaryAssistantMessage?.id,
-                    role: 'assistant',
-                    blocks: blocks, // Now includes complete multimodal content
-                    content: contentToRender,
-                    debug_data: turnDebugData,
-                    turn_number: turnNumber,
-                    edit_count: primaryAssistantMessage?.edit_count,
-                    edited_at: primaryAssistantMessage?.edited_at
-                }, false); // false = don't scroll for each turn
-            }
+        turns.forEach(turn => {
+            const rto = turn.renderable();
+            chatRenderer.renderTurn(rto, false);
         });
         
-        // Force scroll to bottom when loading chat history
         scrollToBottom(scrollContainer);
         
     } catch (error) {
