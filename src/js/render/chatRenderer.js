@@ -13,25 +13,25 @@ class ChatRenderer {
                 role,
                 blocks,
                 content,
-                debug_data,
+                debugData,
                 dropdownStates = {},
-                original_content,
-                turn_number,
-                edit_count,
-                edited_at
+                originalContent,
+                turnNumber,
+                editCount,
+                editedAt
             } = turnData;
-            
+
             // Validate required data
-            if (!role || turn_number === undefined) {
-                console.error('[RENDER-ERROR] Missing required turn data:', { role, turn_number, turnData });
+            if (!role || turnNumber === undefined) {
+                console.error('[RENDER-ERROR] Missing required turn data:', { role, turnNumber, turnData });
                 return null;
             }
         
         // Check if this turn already exists in DOM
-        const existingTurns = document.querySelectorAll(`[data-turn-number="${turn_number}"]`);
+        const existingTurns = document.querySelectorAll(`[data-turn-number="${turnNumber}"]`);
         if (existingTurns.length > 0 && role === "assistant") {
             console.warn(
-                `[DUPLICATE-GUARD] Turn ${turn_number} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
+                `[DUPLICATE-GUARD] Turn ${turnNumber} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
             );
             return existingTurns[0]; // Return existing turn instead of creating duplicate
         }
@@ -67,8 +67,8 @@ class ChatRenderer {
         if (id) {
             turnDiv.dataset.messageId = id;
         }
-        if (turn_number) {
-            turnDiv.dataset.turnNumber = turn_number;
+        if (turnNumber) {
+            turnDiv.dataset.turnNumber = turnNumber;
         }
         
         // Create content container
@@ -102,11 +102,11 @@ class ChatRenderer {
         turnDiv.appendChild(contentDiv);
         
         // Add message actions bar
-        this.addMessageActions(turnDiv, role, turnId, turn_number, id);
+        this.addMessageActions(turnDiv, role, turnId, turnNumber, id);
         
         // Add debug toggle and panel if debug data provided
-        if (debug_data) {
-            this.addDebugPanel(turnDiv, turnId, debug_data, turn_number);
+        if (debugData) {
+            this.addDebugPanel(turnDiv, turnId, debugData, turnNumber);
         }
         
         this.container.appendChild(turnDiv);
@@ -144,7 +144,7 @@ class ChatRenderer {
     
     // Create message element without appending to container (for seamless replacement)
     createTurnElement(turnData, shouldScroll = true) {
-        const { id, role, blocks, content, debug_data, dropdownStates = {}, turn_number } = turnData;
+        const { id, role, blocks, content, debugData, dropdownStates = {}, turnNumber } = turnData;
         
         // If blocks aren't provided, we have a broken pipeline
         let finalBlocks;
@@ -168,8 +168,8 @@ class ChatRenderer {
         }
         
         turnDiv.dataset.turnId = turnId;
-        if (turn_number) {
-            turnDiv.dataset.turnNumber = turn_number;
+        if (turnNumber) {
+            turnDiv.dataset.turnNumber = turnNumber;
         }
         
         // Create content container
@@ -203,11 +203,11 @@ class ChatRenderer {
         turnDiv.appendChild(contentDiv);
         
         // Add message actions bar
-        this.addMessageActions(turnDiv, role, turnId, turn_number, id);
+        this.addMessageActions(turnDiv, role, turnId, turnNumber, id);
         
         // Add debug toggle and panel if debug data provided
-        if (debug_data) {
-            this.addDebugPanel(turnDiv, turnId, debug_data, turn_number);
+        if (debugData) {
+            this.addDebugPanel(turnDiv, turnId, debugData, turnNumber);
         }
         
         // Handle metadata but don't scroll yet
@@ -1898,7 +1898,6 @@ class ChatRenderer {
                 await saveCompleteMessage(
                     currentChatId,
                     { role: "user", content: contentForSave },
-                    null,
                     retryTurnNumber
                 );
                 
@@ -1988,8 +1987,8 @@ class ChatRenderer {
                     {
                         role: "user",
                         content: editedContent,
-                        turn_number: retryTurnNumber,
-                        debug_data: userDebugData // Pass the newly generated debug data
+                        turnNumber: retryTurnNumber,
+                        debugData: userDebugData // Pass the newly generated debug data
                     },
                     true
                 );
@@ -2435,7 +2434,8 @@ class ChatRenderer {
                 toolEventSource.onmessage = function (event) {
                     try {
                         const eventData = JSON.parse(event.data);
-                        handleToolEvent(eventData, processor, liveRenderer, tempContainer);
+                        processor.handleToolEvent(eventData);
+                        updateLiveRendering(processor, liveRenderer, tempContainer);
                     } catch (parseError) {
                         console.warn("Failed to parse tool event:", parseError);
                     }
@@ -2512,18 +2512,13 @@ class ChatRenderer {
                 debugData.currentTurnNumber = turnNumber;
             }
             
-            // Get final blocks and re-render
-            const finalBlocks = processor.getBlocks();
-            
             const renderedTurn = this.renderTurn(
-                {
-                    role: "assistant",
-                    blocks: finalBlocks,
-                    content: processor.getRawContent() || "",
-                    debug_data: debugData,
-                    dropdownStates: dropdownStates,
-                    turn_number: turnNumber
-                },
+                RenderableTurnObject.fromStreamingProcessor({
+                    processor,
+                    turnNumber,
+                    debugData,
+                    dropdownStates,
+                }),
                 true
             );
             

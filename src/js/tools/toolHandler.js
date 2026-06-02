@@ -41,90 +41,14 @@ function createToolBlocksFromDebugData(chatBlocks, debugData) {
     toolCallsMap.forEach(toolData => {
         if (toolData.result) {
             const toolContent = `[${toolData.name}]:\nArguments: ${JSON.stringify(toolData.arguments, null, 2)}\nResult: ${typeof toolData.result === 'string' ? toolData.result : JSON.stringify(toolData.result, null, 2)}`;
-            const toolBlock = {
+            const toolBlock = new Block({
                 type: 'tool',
                 content: toolContent,
                 metadata: { toolName: toolData.name, step: toolData.step }
-            };
+            });
             toolBlocks.push(toolBlock);
         }
     });
     return [...toolBlocks, ...chatBlocks];
 }
 
-// Handle real-time tool events from the tool events stream
-function handleToolEvent(toolEvent, processor, liveRenderer, tempContainer) {
-    logger.debug(`[TOOL-EVENT] Received: ${toolEvent.type}`, toolEvent.data);
-    
-    switch (toolEvent.type) {
-        case 'connected':
-            logger.debug('[TOOL-EVENT] Connected to tool events stream');
-            break;
-            
-        case 'tool_call_detected':
-            // Tool call detected - create placeholder tool block
-            const placeholderContent = `[${toolEvent.data.name}]:\nArguments: Loading...\nResult: Executing...`;
-            const placeholderBlock = {
-                type: 'tool',
-                content: placeholderContent,
-                metadata: { 
-                    toolName: toolEvent.data.name,
-                    id: toolEvent.data.id,
-                    status: 'executing'
-                }
-            };
-            processor.blocks.push(placeholderBlock);
-            updateLiveRendering(processor, liveRenderer, tempContainer);
-            break;
-            
-        case 'tool_execution_start':
-            // Update the placeholder with actual arguments
-            const startBlock = processor.blocks.find(b => 
-                b.type === 'tool' && b.metadata?.id === toolEvent.data.id
-            );
-            if (startBlock) {
-                const argsContent = `[${toolEvent.data.name}]:\nArguments: ${JSON.stringify(toolEvent.data.arguments, null, 2)}\nResult: Executing...`;
-                startBlock.content = argsContent;
-                startBlock.metadata.status = 'executing';
-                startBlock.metadata.arguments = toolEvent.data.arguments;
-                updateLiveRendering(processor, liveRenderer, tempContainer);
-            }
-            break;
-            
-        case 'tool_execution_complete':
-            // Update with final result
-            const completeBlock = processor.blocks.find(b => 
-                b.type === 'tool' && b.metadata?.id === toolEvent.data.id
-            );
-            if (completeBlock) {
-                let resultContent;
-                if (toolEvent.data.status === 'success') {
-                    // Show just the raw content field as the AI would see it
-                    const result = toolEvent.data.result;
-                    if (result && result.content) {
-                        // Just show the raw content string with all escapes intact
-                        resultContent = JSON.stringify({
-                            success: result.success,
-                            content: result.content,
-                            isError: result.isError === false ? false : !!result.isError
-                        }, null, 2);
-                    } else {
-                        // Fallback to the entire result
-                        resultContent = JSON.stringify(result, null, 2);
-                    }
-                } else {
-                    resultContent = `ERROR: ${toolEvent.data.error}`;
-                }
-                    
-                const finalContent = `[${toolEvent.data.name}]:\nArguments: ${JSON.stringify(completeBlock.metadata.arguments || {}, null, 2)}\nResult: ${resultContent}`;
-                completeBlock.content = finalContent;
-                completeBlock.metadata.status = toolEvent.data.status;
-                completeBlock.metadata.execution_time_ms = toolEvent.data.execution_time_ms;
-                updateLiveRendering(processor, liveRenderer, tempContainer);
-            }
-            break;
-            
-        default:
-            logger.warn(`[TOOL-EVENT] Unknown event type: ${toolEvent.type}`);
-    }
-}

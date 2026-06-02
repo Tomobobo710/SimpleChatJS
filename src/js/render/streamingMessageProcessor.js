@@ -102,7 +102,7 @@ class StreamingMessageProcessor {
             }
             
             // Create a live streaming code block
-            const codeBlock = {
+            const codeBlock = new Block({
                 type: 'codeblock',
                 content: '',
                 metadata: { 
@@ -110,7 +110,7 @@ class StreamingMessageProcessor {
                     isStreaming: true,
                     language: language
                 }
-            };
+            });
             
             logger.debug(`[PROCESSOR] CODE BLOCK CREATED with language: "${language}" from buffer: "${afterBackticks.slice(0, 20)}..."`);
             this.blocks.push(codeBlock);
@@ -199,7 +199,7 @@ class StreamingMessageProcessor {
             }
             
             // Immediately create a thinking block for real-time streaming
-            const thinkingBlock = {
+            const thinkingBlock = new Block({
                 type: 'thinking',
                 content: '',
                 metadata: { 
@@ -208,7 +208,7 @@ class StreamingMessageProcessor {
                     tagType: tagType, // Track which tag type we're using
                     title: title // Store the title if present
                 }
-            };
+            });
             this.blocks.push(thinkingBlock);
             this.currentThinkingBlock = thinkingBlock;
             
@@ -281,11 +281,11 @@ class StreamingMessageProcessor {
     // Create a chat block immediately
     createChatBlock(content) {
         if (content) { // Don't check for trimmed content - preserve whitespace
-            const block = {
+            const block = new Block({
                 type: 'chat',
                 content: content, // Don't trim - preserve whitespace
                 metadata: {}
-            };
+            });
             this.blocks.push(block);
             logger.debug(`[PROCESSOR] Created chat block: ${content.length} chars`);
         }
@@ -346,5 +346,73 @@ class StreamingMessageProcessor {
     // Get current buffer (for live rendering)
     getBuffer() {
         return this.buffer;
+    }
+    
+    // Handle tool events to create/update tool blocks (matches Rust implementation)
+    handleToolEvent(toolEvent) {
+        const data = toolEvent.data;
+        switch (toolEvent.type) {
+            case 'tool_call_detected':
+                this._onToolCallDetected(data);
+                break;
+            case 'tool_execution_start':
+                this._onToolExecutionStart(data);
+                break;
+            case 'tool_execution_complete':
+                this._onToolExecutionComplete(data);
+                break;
+        }
+    }
+    
+    _findToolBlock(toolId) {
+        return this.blocks.find(b =>
+            b.type === 'tool' && b.metadata?.id === toolId
+        );
+    }
+    
+    _onToolCallDetected(data) {
+        const alreadyExists = this.blocks.some(b =>
+            b.type === 'tool' && b.metadata?.id === data.id
+        );
+        if (!alreadyExists) {
+            this.blocks.push(new Block({
+                type: 'tool',
+                content: `[${data.name}]:\nArguments: Loading...\nResult: Executing...`,
+                metadata: { toolName: data.name, id: data.id, status: 'executing' }
+            }));
+        }
+    }
+    
+    _onToolExecutionStart(data) {
+        const block = this._findToolBlock(data.id);
+        if (block) {
+            block.content = `[${data.name}]:\nArguments: ${JSON.stringify(data.arguments, null, 2)}\nResult: Executing...`;
+            block.metadata.status = 'executing';
+            block.metadata.arguments = data.arguments;
+        }
+    }
+    
+    _onToolExecutionComplete(data) {
+        const block = this._findToolBlock(data.id);
+        if (block) {
+            let resultContent;
+            if (data.status === 'success') {
+                const result = data.result;
+                if (result && result.content) {
+                    resultContent = JSON.stringify({
+                        success: result.success,
+                        content: result.content,
+                        isError: result.isError === false ? false : !!result.isError
+                    }, null, 2);
+                } else {
+                    resultContent = JSON.stringify(result, null, 2);
+                }
+            } else {
+                resultContent = `ERROR: ${data.error}`;
+            }
+            block.content = `[${data.name}]:\nArguments: ${JSON.stringify(block.metadata.arguments || {}, null, 2)}\nResult: ${resultContent}`;
+            block.metadata.status = data.status;
+            block.metadata.execution_time_ms = data.execution_time_ms;
+        }
     }
 }
