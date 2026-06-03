@@ -21,7 +21,7 @@ async function sendMessage(message) {
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         return response;
@@ -99,7 +99,7 @@ async function getTurnData(chatId, turnNumber) {
 }
 
 // Initiate a request without awaiting the response (returns controller and requestId)
-function initiateMessageRequest(message, enabledToolsData = null, requestId = null) {
+function initiateMessageRequest(message, enabledToolsData = null, requestId = null, parentTurnId = null, turnId = null) {
     try {
         // Generate requestId if not provided
         const generatedRequestId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -108,7 +108,9 @@ function initiateMessageRequest(message, enabledToolsData = null, requestId = nu
             message: message,
             chat_id: currentChatId,
             enabled_tools: enabledToolsData,
-            request_id: generatedRequestId
+            request_id: generatedRequestId,
+            parent_turn_id: parentTurnId,
+            turn_id: turnId
         };
         
         // Create abort controller for this request
@@ -560,6 +562,23 @@ async function getCurrentTurnNumber(chatId) {
         throw error;
     }
 }
+
+// Get last turn info (turn_id and parent_turn_id) for a chat
+async function getLastTurnInfo(chatId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/last-turn-info`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        logger.error('Error getting last turn info:', error);
+        throw error;
+    }
+}
+
 // Get messages for a specific turn
 async function getTurnMessages(chatId, turnNumber) {
     try {

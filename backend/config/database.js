@@ -69,6 +69,8 @@ function initializeDatabase() {
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 turn_number INTEGER NOT NULL,
+                turn_id TEXT,
+                parent_turn_id TEXT,
                 tool_calls TEXT,
                 tool_call_id TEXT,
                 tool_name TEXT,

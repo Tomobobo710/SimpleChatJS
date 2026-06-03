@@ -8,6 +8,8 @@ class Message {
         this.role = data.role ?? 'other';
         this.content = data.content ?? '';
         this.turnNumber = data.turn_number ?? 0;
+        this.turnId = data.turn_id ?? null;
+        this.parentTurnId = data.parent_turn_id ?? null;
         this.timestamp = data.timestamp ?? null;
         this.toolCalls = data.tool_calls ?? null;
         this.toolCallId = data.tool_call_id ?? null;
@@ -59,6 +61,8 @@ class Message {
             role: data.role,
             content: data.content,
             turn_number: data.turn_number,
+            turn_id: data.turn_id ?? null,
+            parent_turn_id: data.parent_turn_id ?? null,
             timestamp: data.timestamp,
             tool_calls: parsedToolCalls,
             tool_call_id: data.tool_call_id ?? null,

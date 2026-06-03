@@ -17,6 +17,8 @@ class ChatRenderer {
                 dropdownStates = {},
                 originalContent,
                 turnNumber,
+                turnId,
+                parentTurnId,
                 editCount,
                 editedAt
             } = turnData;
@@ -28,12 +30,22 @@ class ChatRenderer {
             }
         
         // Check if this turn already exists in DOM
-        const existingTurns = document.querySelectorAll(`[data-turn-number="${turnNumber}"]`);
-        if (existingTurns.length > 0 && role === "assistant") {
-            console.warn(
-                `[DUPLICATE-GUARD] Turn ${turnNumber} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
-            );
-            return existingTurns[0]; // Return existing turn instead of creating duplicate
+        if (turnId) {
+            const existingTurns = document.querySelectorAll(`[data-message-turn-id="${turnId}"]`);
+            if (existingTurns.length > 0 && role === "assistant") {
+                console.warn(
+                    `[DUPLICATE-GUARD] Turn ${turnId} already exists in DOM! SKIPPING RENDER`
+                );
+                return existingTurns[0];
+            }
+        } else {
+            const existingTurns = document.querySelectorAll(`[data-turn-number="${turnNumber}"]`);
+            if (existingTurns.length > 0 && role === "assistant") {
+                console.warn(
+                    `[DUPLICATE-GUARD] Turn ${turnNumber} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
+                );
+                return existingTurns[0];
+            }
         }
         
         // Handle blocks: Required for assistant messages, optional for user messages
@@ -52,7 +64,7 @@ class ChatRenderer {
         }
         
         const turnDiv = document.createElement("div");
-        const turnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const domTurnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         // Use the new turn-based class names
         if (role === "user") {
@@ -63,12 +75,18 @@ class ChatRenderer {
             turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
         }
         
-        turnDiv.dataset.turnId = turnId;
+        turnDiv.dataset.turnId = domTurnId;
         if (id) {
             turnDiv.dataset.messageId = id;
         }
         if (turnNumber) {
             turnDiv.dataset.turnNumber = turnNumber;
+        }
+        if (turnId) {
+            turnDiv.dataset.messageTurnId = turnId;
+        }
+        if (parentTurnId) {
+            turnDiv.dataset.parentTurnId = parentTurnId;
         }
         
         // Create content container
@@ -101,12 +119,12 @@ class ChatRenderer {
         
         turnDiv.appendChild(contentDiv);
         
-        // Add message actions bar
-        this.addMessageActions(turnDiv, role, turnId, turnNumber, id);
+        // Add message actions bar (passing turn_id and parent_turn_id from RTO)
+        this.addMessageActions(turnDiv, role, domTurnId, turnNumber, id, turnId, parentTurnId);
         
         // Add debug toggle and panel if debug data provided
         if (debugData) {
-            this.addDebugPanel(turnDiv, turnId, debugData, turnNumber);
+            this.addDebugPanel(turnDiv, domTurnId, debugData, turnNumber);
         }
         
         this.container.appendChild(turnDiv);
@@ -167,7 +185,7 @@ class ChatRenderer {
             turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
         }
         
-        turnDiv.dataset.turnId = turnId;
+        turnDiv.dataset.turnId = domTurnId;
         if (turnNumber) {
             turnDiv.dataset.turnNumber = turnNumber;
         }
@@ -202,12 +220,12 @@ class ChatRenderer {
         
         turnDiv.appendChild(contentDiv);
         
-        // Add message actions bar
-        this.addMessageActions(turnDiv, role, turnId, turnNumber, id);
+        // Add message actions bar (passing turn_id and parent_turn_id from RTO)
+        this.addMessageActions(turnDiv, role, domTurnId, turnNumber, id, turnId, parentTurnId);
         
         // Add debug toggle and panel if debug data provided
         if (debugData) {
-            this.addDebugPanel(turnDiv, turnId, debugData, turnNumber);
+            this.addDebugPanel(turnDiv, domTurnId, debugData, turnNumber);
         }
         
         // Handle metadata but don't scroll yet
@@ -639,10 +657,10 @@ class ChatRenderer {
     }
     
     // Add message actions bar to turn
-    addMessageActions(turnDiv, role, turnId, turnNumber = null, messageId = null) {
+    addMessageActions(turnDiv, role, domTurnId, turnNumber = null, messageId = null, messageTurnId = null, messageParentTurnId = null) {
         const actionsContainer = document.createElement("div");
         actionsContainer.className = "message-actions";
-        actionsContainer.dataset.turnId = turnId;
+        actionsContainer.dataset.turnId = domTurnId;
         actionsContainer.dataset.role = role;
         actionsContainer.dataset.turnNumber = turnNumber;
         if (messageId) {
@@ -658,21 +676,21 @@ class ChatRenderer {
         editBtn.className = "action-btn edit-btn";
         editBtn.title = "Edit message";
         editBtn.textContent = "Edit";
-        editBtn.addEventListener("click", () => this.handleEditMessage(turnId, role, turnNumber, messageId));
+        editBtn.addEventListener("click", () => this.handleEditMessage(messageTurnId, role, turnNumber, messageId));
         
         // Edit and retry button (for user messages)
         const editRetryBtn = document.createElement("button");
         editRetryBtn.className = "action-btn edit-retry-btn";
         editRetryBtn.title = "Edit your message and regenerate conversation from this point";
         editRetryBtn.textContent = "Edit & Retry";
-        editRetryBtn.addEventListener("click", () => this.handleEditAndRetry(turnId, role, turnNumber, messageId));
+        editRetryBtn.addEventListener("click", () => this.handleEditAndRetry(messageTurnId, role, turnNumber, messageId));
         
         // Retry button (for assistant messages)
         const retryBtn = document.createElement("button");
         retryBtn.className = "action-btn retry-btn";
         retryBtn.title = "Generate a different response to the same prompt";
         retryBtn.textContent = "Retry";
-        retryBtn.addEventListener("click", () => this.handleRetryMessage(turnId, role, turnNumber, messageId));
+        retryBtn.addEventListener("click", () => this.handleRetryMessage(messageTurnId, role, turnNumber, messageId));
         
         // Add buttons to container
         actionButtons.appendChild(editBtn);
@@ -721,7 +739,7 @@ class ChatRenderer {
             branchNav.appendChild(nextBtn);
             
             // Check if this turn should show branch navigation
-            this.updateBranchNavigation(branchNav, turnNumber).catch((error) => {
+            this.updateBranchNavigation(branchNav, turnNumber, { turnId: messageTurnId, parentTurnId: messageParentTurnId }).catch((error) => {
                 console.error("[BRANCH-NAV] Error loading branch info:", error);
                 // Hide navigation on error
                 branchNav.style.display = "none";
@@ -741,13 +759,13 @@ class ChatRenderer {
     }
     
     // Handle turn-level editing - show all messages in the turn
-    async handleEditMessage(turnId, role, turnNumber, messageId) {
+    async handleEditMessage(messageTurnId, role, turnNumber, messageId) {
         if (!turnNumber) {
             showError("Cannot edit: Turn number not available");
             return;
         }
         
-        const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
+        const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
         if (!turnDiv) {
             showError("Cannot edit: Turn element not found");
             return;
@@ -783,7 +801,7 @@ class ChatRenderer {
         }
     }
     
-    async handleEditAndRetry(turnId, role, turnNumber, messageId) {
+    async handleEditAndRetry(messageTurnId, role, turnNumber, messageId) {
         // Only allow edit & retry for user messages
         if (role !== "user") {
             return;
@@ -794,17 +812,17 @@ class ChatRenderer {
         }
         
         // Set a flag that this turn should retry after editing
-        const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
+        const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
         if (turnDiv) {
             turnDiv.dataset.shouldRetryAfterEdit = "true";
             turnDiv.dataset.editRetryTurnNumber = turnNumber;
         }
         
         // Call the regular edit function - it will use the proper modal
-        await this.handleEditMessage(turnId, role, turnNumber, messageId);
+        await this.handleEditMessage(messageTurnId, role, turnNumber, messageId);
     }
     
-    async handleRetryMessage(turnId, role, turnNumber, messageId) {
+    async handleRetryMessage(messageTurnId, role, turnNumber, messageId) {
         // Only allow retry for assistant messages
         if (role !== "assistant") {
             return;
@@ -817,7 +835,7 @@ class ChatRenderer {
         
         try {
             // Show loading state
-            const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
+            const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
             if (turnDiv) {
                 const retryBtn = turnDiv.querySelector(".retry-btn");
                 if (retryBtn) {
@@ -885,7 +903,7 @@ class ChatRenderer {
             console.error("[RETRY] Error:", error);
         } finally {
             // Restore button state
-            const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
+            const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
             if (turnDiv) {
                 const retryBtn = turnDiv.querySelector(".retry-btn");
                 if (retryBtn) {
@@ -2054,69 +2072,66 @@ class ChatRenderer {
     
     // ===== BRANCH NAVIGATION SYSTEM =====
     // Update brnch navigation
-    async updateBranchNavigation(branchNavElement, turnNumber) {
+    async updateBranchNavigation(branchNavElement, turnNumber, turnData = null) {
         if (!currentChatId || !turnNumber) {
             branchNavElement.style.display = "none";
             return;
         }
         
         try {
-            const branchInfo = await getChatBranches(currentChatId);
-            const { branches, activeBranch, totalBranches } = branchInfo;
+            // Get turn data from RTO if not provided
+            const rto = branchNavElement.closest('.turn')?.dataset?.rto;
+            const parentTurnId = turnData?.parentTurnId || rto?.parentTurnId;
             
-            if (!branches || branches.length <= 1) {
+            if (!parentTurnId) {
                 branchNavElement.style.display = "none";
                 return false;
             }
             
-            // Only show navigation on actual branch points (where branches diverge)
-            const isBranchPoint = branches.some((branch) => branch.branch_point_turn === turnNumber);
-            
-            if (!isBranchPoint) {
-                // This turn is not a branch connection point - hide navigation
+            // Get all messages to find siblings
+            const history = await getCompleteChatHistory(currentChatId);
+            if (!history?.messages) {
                 branchNavElement.style.display = "none";
                 return false;
             }
             
-            // Build hierarchical branch tree
-            const branchTree = this.buildBranchTree(branches);
-            
-            // Find all branches that contain this turn, considering hierarchy
-            const turnBranches = this.findBranchesForTurn(branches, branchTree, turnNumber, activeBranch);
-            
-            if (turnBranches.length <= 1) {
-                // No alternative versions of this turn exist
-                branchNavElement.style.display = "none";
-                return false;
-            }
-            
-            // Sort branches by hierarchy (ancestor -> descendant)
-            const sortedBranches = this.sortBranchesByHierarchy(turnBranches, branchTree);
-            
-            // Find which branch in the original split is the ancestor of the current active branch
-            // This preserves the original branching relationships regardless of current branch
-            let currentBranchIndex = -1;
-            
-            // If active branch is directly in the turn branches, use it
-            currentBranchIndex = sortedBranches.findIndex((b) => b.is_active);
-            
-            if (currentBranchIndex === -1) {
-                // Active branch not in turn branches - find which turn branch is its ancestor
-                const ancestorBranch = this.findAncestorInBranches(activeBranch, sortedBranches, branchTree);
-                if (ancestorBranch) {
-                    currentBranchIndex = sortedBranches.findIndex((b) => b.id === ancestorBranch.id);
-                } else {
-                    // Fallback to first branch if no ancestor found
-                    currentBranchIndex = 0;
-                    console.warn(
-                        `[BRANCH-NAV] Turn ${turnNumber}: Could not find ancestor, defaulting to first branch`
-                    );
+            // Find all turns with the same parent_turn_id but different turn_id (siblings)
+            const siblingTurns = new Map();
+            for (const msg of history.messages) {
+                if (msg.parent_turn_id === parentTurnId) {
+                    const key = `${msg.turn_number || 0}::${msg.turn_id || 'unknown'}`;
+                    if (!siblingTurns.has(key)) {
+                        siblingTurns.set(key, []);
+                    }
+                    siblingTurns.get(key).push(msg);
                 }
             }
             
-            if (currentBranchIndex === -1 || sortedBranches.length === 0) {
+            const sortedSiblings = Array.from(siblingTurns.entries())
+                .sort(([a], [b]) => {
+                    const [aTurn] = a.split('::');
+                    const [bTurn] = b.split('::');
+                    return parseInt(aTurn) - parseInt(bTurn);
+                });
+            
+            if (sortedSiblings.length <= 1) {
                 branchNavElement.style.display = "none";
                 return false;
+            }
+            
+            // Find current sibling index
+            const currentTurnId = turnData?.turnId || rto?.turnId;
+            let currentIndex = -1;
+            for (let i = 0; i < sortedSiblings.length; i++) {
+                const [, msgs] = sortedSiblings[i];
+                if (msgs[0]?.turn_id === currentTurnId) {
+                    currentIndex = i;
+                    break;
+                }
+            }
+            
+            if (currentIndex === -1) {
+                currentIndex = 0;
             }
             
             // Update navigation elements
@@ -2124,18 +2139,13 @@ class ChatRenderer {
             const nextBtn = branchNavElement.querySelector(".branch-next");
             const indicator = branchNavElement.querySelector(".branch-indicator");
             
-            // Enable/disable buttons
-            prevBtn.disabled = currentBranchIndex <= 0;
-            nextBtn.disabled = currentBranchIndex >= sortedBranches.length - 1;
+            prevBtn.disabled = currentIndex <= 0;
+            nextBtn.disabled = currentIndex >= sortedSiblings.length - 1;
+            indicator.textContent = `${currentIndex + 1}/${sortedSiblings.length}`;
             
-            // Update indicator with branch names, showing original split relationship
-            const currentBranch = sortedBranches[currentBranchIndex];
-            indicator.textContent = `${currentBranch.branch_name} (${currentBranchIndex + 1}/${sortedBranches.length})`;
-            indicator.title = `Turn ${turnNumber} original split: ${sortedBranches.map((b) => b.branch_name).join(" ↔ ")} (preserved regardless of current branch)`;
-            
-            // Store branch data for navigation
-            branchNavElement._turnBranches = sortedBranches;
-            branchNavElement._currentIndex = currentBranchIndex;
+            // Store sibling data for navigation
+            branchNavElement._siblings = sortedSiblings;
+            branchNavElement._currentIndex = currentIndex;
             branchNavElement._turnNumber = turnNumber;
             
             // Show navigation
@@ -2146,7 +2156,7 @@ class ChatRenderer {
             
             return true;
         } catch (error) {
-            console.error(`[BRANCH-NAV] Error getting branches:`, error);
+            console.error(`[BRANCH-NAV] Error updating navigation:`, error);
             branchNavElement.style.display = "none";
             return false;
         }
@@ -2359,43 +2369,64 @@ class ChatRenderer {
     async navigateBranch(direction, branchNavElement = null) {
         let targetBranchNav = branchNavElement;
         
-        // Fallback to finding any branch nav element if none provided (for backward compatibility)
+        // Fallback to finding any branch nav element if none provided
         if (!targetBranchNav) {
             const branchNavElements = document.querySelectorAll(".branch-nav");
             for (const nav of branchNavElements) {
-                if (nav._turnBranches && nav._currentIndex !== undefined) {
+                if (nav._siblings && nav._currentIndex !== undefined) {
                     targetBranchNav = nav;
                     break;
                 }
             }
         }
         
-        if (!targetBranchNav || !targetBranchNav._turnBranches) {
-            console.error("[BRANCH-NAV] No branch data found for navigation");
+        if (!targetBranchNav || !targetBranchNav._siblings) {
+            console.error("[BRANCH-NAV] No sibling data found for navigation");
             return;
         }
         
-        const turnBranches = targetBranchNav._turnBranches;
+        const siblings = targetBranchNav._siblings;
         const currentIndex = targetBranchNav._currentIndex;
-        const turnNumber = targetBranchNav._turnNumber;
         
         let newIndex;
         if (direction === "prev") {
             newIndex = Math.max(0, currentIndex - 1);
         } else if (direction === "next") {
-            newIndex = Math.min(turnBranches.length - 1, currentIndex + 1);
+            newIndex = Math.min(siblings.length - 1, currentIndex + 1);
         } else {
             return;
         }
         
         if (newIndex === currentIndex) {
-            return; // No change needed
+            return;
         }
         
-        const currentBranch = turnBranches[currentIndex];
-        const targetBranch = turnBranches[newIndex];
+        const targetSibling = siblings[newIndex];
+        const targetTurnId = targetSibling[0][1][0]?.turn_id;
         
-        await this.switchBranch(targetBranch.id);
+        // Navigate to the sibling turn by activating the branch that contains this turn_id
+        // For now, reload the chat - the branch switching logic will handle it
+        await this.switchToTurnId(targetTurnId);
+    }
+
+    async switchToTurnId(turnId) {
+        if (!turnId || !currentChatId) return;
+        
+        try {
+            // Get all branches to find which one contains this turn_id
+            const branches = await getChatBranches(currentChatId);
+            if (!branches?.branches) return;
+            
+            // For now, reload the chat - branch switching will be implemented later
+            // The turn_id information is stored in messages, so the renderer can find the right turn
+            await loadChatHistory(currentChatId);
+            
+            setTimeout(async () => {
+                await this.refreshBranchNavigation();
+            }, 100);
+        } catch (error) {
+            console.error("[BRANCH-NAV] Error switching to turn:", error);
+        }
     }
 
     // Switch to a different branch

@@ -163,6 +163,7 @@ function processMessageForAI(messageContent) {
 }
 const https = require('https');
 const http = require('http');
+const crypto = require('crypto');
 const { log } = require('../utils/logger');
 
 // Simple debug flag for adapter logs - set DEBUG=1 to enable
@@ -338,6 +339,15 @@ function getCurrentTurnNumber(chat_id) {
     }
 }
 
+function getTurnInfo(userTurnId) {
+    const turnId = crypto.randomUUID();
+    const parentTurnId = userTurnId || crypto.randomUUID();
+    
+    log(`[TURN-INFO] turn_id=${turnId}, parent_turn_id=${parentTurnId}`);
+    
+    return { turn_id: turnId, parent_turn_id: parentTurnId };
+}
+
 function incrementTurnNumber(chat_id) {
     if (!chat_id) {
         return;
@@ -389,7 +399,7 @@ function getChatHistoryForAPI(chat_id) {
         // Get all messages from the active branch including new file fields
         // FILTER OUT ERROR MESSAGES: Only include successful messages in AI history
         const messagesStmt = db.prepare(`
-            SELECT role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata
+            SELECT role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
             FROM messages
             WHERE branch_id = ? AND error_state IS NULL
             ORDER BY timestamp ASC
@@ -437,7 +447,9 @@ function getChatHistoryForAPI(chat_id) {
             const message = {
                 role: row.role,
                 content: parsedContent,
-                turn_number: row.turn_number
+                turn_number: row.turn_number,
+                turn_id: row.turn_id,
+                parent_turn_id: row.parent_turn_id
             };
             
             // Add tool data if present
@@ -473,7 +485,7 @@ async function saveCompleteMessageToDatabase(chatId, messageData, turnNumber = n
 }
 
 // Save message to current active branch (everything-is-a-branch system)
-async function saveMessageToBranch(chatId, messageData, turnNumber = null, errorState = null) {
+async function saveMessageToBranch(chatId, messageData, turnNumber = null, errorState = null, turnInfo = null) {
     const { db } = require('../config/database');
     
     try {
@@ -484,7 +496,7 @@ async function saveMessageToBranch(chatId, messageData, turnNumber = null, error
             log(`[BRANCHING] No active branch for chat ${chatId}, creating main branch`);
             const newBranch = await createChatBranch(chatId);
             await setActiveChatBranch(chatId, newBranch.branchId);
-            return saveMessageToBranch(chatId, messageData, turnNumber);
+            return saveMessageToBranch(chatId, messageData, turnNumber, errorState, turnInfo);
         }
         
         // Prepare message data
@@ -511,15 +523,19 @@ async function saveMessageToBranch(chatId, messageData, turnNumber = null, error
             finalTurnNumber = getCurrentTurnNumber(chatId);
         }
         
-        // Insert message into branch with new file handling fields and error_state
+        // Extract turn info
+        const turnId = turnInfo?.turn_id || null;
+        const parentTurnId = turnInfo?.parent_turn_id || null;
+        
+        // Insert message into branch with new file handling fields, error_state, and turn info
         const insertStmt = db.prepare(`
             INSERT INTO messages 
-            (branch_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, original_content, file_metadata, error_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (branch_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, original_content, file_metadata, error_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         
         const result = insertStmt.run(
-            activeBranch.id, role, content, finalTurnNumber,
+            activeBranch.id, role, content, finalTurnNumber, turnId, parentTurnId,
             toolCalls, toolCallId, toolName, debugData, originalContent, fileMetadata, errorState
         );
         
@@ -527,7 +543,7 @@ async function saveMessageToBranch(chatId, messageData, turnNumber = null, error
         const updateChatStmt = db.prepare('UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
         updateChatStmt.run(chatId);
         
-        log(`[BRANCHING] Saved ${role} message to branch '${activeBranch.branch_name}' (turn ${finalTurnNumber})`);
+        log(`[BRANCHING] Saved ${role} message to branch '${activeBranch.branch_name}' (turn ${finalTurnNumber}, turn_id=${turnId}, parent_turn_id=${parentTurnId})`);
         return result.lastInsertRowid;
         
     } catch (error) {
@@ -541,7 +557,7 @@ const responseAdapterFactory = require('../adapters/ResponseAdapterFactory');
 const UnifiedResponse = require('../adapters/UnifiedResponse');
 
 // Handle chat with potential tool calls
-async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null) {
+async function handleChatWithTools(res, messages, tools, chatId, debugData = null, responseCounter = 1, requestId = null, existingDebugData = null, parentTurnId = null, userTurnId = null) {
     const currentSettings = getCurrentSettings();
     
     // Ensure we have a model name
@@ -560,6 +576,18 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             addToolEvent(reqId, { type: eventType, data: data });
         }
     });
+    
+    // Generate turn info for this conversation turn
+    // userTurnId = the turn_id of the message that triggered this (user's turn_id for first call, assistant's for tool call chain)
+    // parentTurnId = the parent_turn_id to use (from frontend for first call, from previous turn for recursive calls)
+    let turnInfo;
+    if (userTurnId) {
+        // Reuse the parent_turn_id from the previous turn, generate new turn_id
+        turnInfo = getTurnInfo(userTurnId);
+    } else {
+        // First call - generate both turn_id and parent_turn_id
+        turnInfo = getTurnInfo(null);
+    }
     
     // Create unified request
     const unifiedRequest = responseAdapterFactory.createUnifiedRequest(messages, tools, currentSettings.modelName);
@@ -735,7 +763,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                         content: userErrorMessage,
                         debug_data: collectedDebugData
                     };
-                    saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, 'api_error')
+                    saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, 'api_error', turnInfo)
                         .then(() => {
                             incrementTurnNumber(chatId); // Burn the turn
                             log(`[ERROR-HANDLING] Saved API error message and burned turn ${currentTurn}`);
@@ -875,7 +903,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 await executeToolCallsAndContinue(
                     res, unifiedResponse.toolCalls, messages, tools, chatId,
                     unifiedResponse.content, collectedDebugData, responseCounter,
-                    requestId
+                    requestId, turnInfo
                 );
             } else {
                 // No tool calls, finish response
@@ -899,7 +927,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                         content: unifiedResponse.content
                     };
                     try {
-                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, currentTurn);
+                        await saveCompleteMessageToDatabase(chatId, finalAssistantMessage, currentTurn, null, turnInfo);
                         log(`[CHAT-SAVE] Successfully saved final assistant response to history`);
                     } catch (error) {
                         log(`[CHAT-SAVE] Error saving final assistant response: ${error.message}`);
@@ -947,7 +975,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
                 content: `Connection error: ${error.message}`,
                 debug_data: collectedDebugData
             };
-            saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, 'connection_error')
+            saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, 'connection_error', turnInfo)
                 .then(() => {
                     incrementTurnNumber(chatId); // Burn the turn
                     log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
@@ -994,7 +1022,7 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
 }
 
 // Execute tool calls and continue conversation
-async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId) {
+async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chatId, assistantMessage, debugData, responseCounter, requestId, turnInfo = null) {
     // Get the turn number from debug data (calculated once at conversation start)
     const currentTurn = debugData && debugData.currentTurn ? debugData.currentTurn : 1;
     
@@ -1008,7 +1036,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     
     // Save assistant message with tool calls to database
     if (chatId) {
-        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, currentTurn);
+        await saveCompleteMessageToDatabase(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
         log(`[CHAT-SAVE] Saved assistant message with ${toolCalls.length} tool calls`);
     }
     
@@ -1041,7 +1069,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, toolMessage, currentTurn);
+                await saveCompleteMessageToDatabase(chatId, toolMessage, currentTurn, null, turnInfo);
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
             
@@ -1090,7 +1118,7 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
             
             // Save tool error message to database
             if (chatId) {
-                await saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn);
+                await saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, null, turnInfo);
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
             
@@ -1129,13 +1157,13 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
     }
     
     // Continue conversation with tool results
-    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData);
+    await handleChatWithTools(res, messages, tools, chatId, debugData, responseCounter + 1, requestId, debugData, turnInfo?.parent_turn_id, turnInfo?.turn_id);
 }
 
 // Process chat request (entry point from routes)
 async function processChatRequest(req, res) {
     try {
-        const { message, chat_id, enabled_tools, request_id } = req.body;
+        const { message, chat_id, enabled_tools, request_id, parent_turn_id, turn_id } = req.body;
         
         if (!message) {
             return res.status(400).json({ error: 'Message is required' });
@@ -1172,7 +1200,8 @@ async function processChatRequest(req, res) {
                 // Save system prompt to database (it becomes part of chat history)
                 if (chat_id) {
                     try {
-                        await saveCompleteMessageToDatabase(chat_id, systemMessage);
+                        const systemPromptTurnInfo = getTurnInfo(null);
+                        await saveCompleteMessageToDatabase(chat_id, systemMessage, null, null, systemPromptTurnInfo);
                         log(`[SYSTEM-PROMPT] Saved system prompt to chat history`);
                     } catch (error) {
                         log(`[SYSTEM-PROMPT] Error saving system prompt to history: ${error.message}`);
@@ -1208,7 +1237,7 @@ async function processChatRequest(req, res) {
         // Initialize tool events for this request
         initializeToolEvents(requestId);
         
-        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null);
+        await handleChatWithTools(res, messages, tools, chat_id, debugData, 1, requestId, null, parent_turn_id, turn_id);
         // Response is handled in handleChatWithTools via streaming
         
     } catch (error) {
@@ -1520,7 +1549,7 @@ async function createChatBranch(chatId, branchPoint = null) {
             if (branchPoint !== null) {
                 // Copy messages before the branch point
                 const getMessagesStmt = db.prepare(`
-                    SELECT original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at
+                    SELECT original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at
                     FROM messages 
                     WHERE branch_id = ? AND turn_number < ?
                     ORDER BY timestamp ASC
@@ -1544,14 +1573,14 @@ async function createChatBranch(chatId, branchPoint = null) {
         if (messagesToCopy.length > 0) {
             const insertMessageStmt = db.prepare(`
                 INSERT INTO messages
-                (branch_id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (branch_id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
 
             messagesToCopy.forEach(msg => {
                 insertMessageStmt.run(
                     newBranchId, msg.original_message_id, msg.role, msg.content, msg.turn_number,
-                    msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.debug_data,
+                    msg.turn_id, msg.parent_turn_id, msg.tool_calls, msg.tool_call_id, msg.tool_name, msg.debug_data,
                     msg.edit_count || 0, msg.edited_at
                 );
             });
@@ -1763,6 +1792,7 @@ module.exports = {
     updateMessageDebugData,
     getChatHistoryForAPI,
     getCurrentTurnNumber,
+    getTurnInfo,
     incrementTurnNumber,
     // Turn-based debug data functions
     saveTurnDebugData,

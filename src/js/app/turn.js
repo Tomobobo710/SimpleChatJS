@@ -1,10 +1,13 @@
-// Turn - a first-class concept representing a collection of messages grouped by turn_number.
+// Turn - a first-class concept representing a collection of messages grouped by turn_number AND parent_turn_id.
 // Turns are never persisted — they are computed from Message source data.
+// Turns with the same parent_turn_id but different turn_id are siblings.
 
 class Turn {
-    constructor(turnNumber, messages = []) {
+    constructor(turnNumber, messages = [], turnId = null, parentTurnId = null) {
         this.turnNumber = turnNumber;
         this.messages = messages;
+        this.turnId = turnId;
+        this.parentTurnId = parentTurnId;
     }
 
     get errorMessages() {
@@ -49,6 +52,8 @@ class Turn {
                     }
                 })],
                 turnNumber: errorMsg.turnNumber,
+                turnId: this.turnId,
+                parentTurnId: this.parentTurnId,
                 debugData: errorMsg.debugData,
                 editCount: errorMsg.editCount,
             });
@@ -72,6 +77,8 @@ class Turn {
                     content: liveProcessor.getRawContent() || '',
                     blocks: liveProcessor.getBlocks(),
                     turnNumber: primaryMessage.turnNumber,
+                    turnId: this.turnId,
+                    parentTurnId: this.parentTurnId,
                     debugData: primaryMessage.debugData,
                     editCount: primaryMessage.editCount,
                 });
@@ -158,6 +165,8 @@ class Turn {
                 content: processor.getRawContent() || '',
                 blocks: blocks,
                 turnNumber: primary.turnNumber,
+                turnId: this.turnId,
+                parentTurnId: this.parentTurnId,
                 debugData: turnDebugData,
                 editCount: primary.editCount,
             });
@@ -169,6 +178,8 @@ class Turn {
             content: '',
             blocks: null,
             turnNumber: this.turnNumber,
+            turnId: this.turnId,
+            parentTurnId: this.parentTurnId,
             debugData: null,
             editCount: 0,
         });

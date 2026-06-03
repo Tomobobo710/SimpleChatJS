@@ -17,7 +17,8 @@ async function handleSimpleChat(message, conversationHistory) {
     // Get turn number for this user message (frontend manages turns now)
     const userTurnNumber = getNextTurnNumber();
     
-    // Add user message to UI using global chatRenderer (same as saved chats)
+   // Add user message to UI using global chatRenderer (same as saved chats)
+    let userTurnInfo = null;
     const userMessage = new Message({
         id: null,
         role: 'user',
@@ -25,10 +26,7 @@ async function handleSimpleChat(message, conversationHistory) {
         turn_number: userTurnNumber,
         edit_count: 0,
     });
-    const userTurn = new Turn(userTurnNumber, [userMessage]);
-    const userRto = userTurn.renderable();
-    chatRenderer.renderTurn(userRto, true);
-    
+        
     // Save user message with separated file structure
     try {
         // Extract file metadata from the message for storage
@@ -48,9 +46,23 @@ async function handleSimpleChat(message, conversationHistory) {
             }
         }
         
-        await saveCompleteMessage(currentChatId, messageForSaving, userTurnNumber);
+        const saveResult = await saveCompleteMessage(currentChatId, messageForSaving, userTurnNumber);
+        if (saveResult && saveResult.turn_id) {
+            userTurnInfo = { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
+        }
     } catch (error) {
         logger.warn('Failed to save user message:', error);
+    }
+    
+    // Create and render user Turn with turn info
+    if (userMessage) {
+        if (userTurnInfo) {
+            userMessage.turnId = userTurnInfo.turn_id;
+            userMessage.parentTurnId = userTurnInfo.parent_turn_id;
+        }
+        const userTurn = new Turn(userTurnNumber, [userMessage], userTurnInfo?.turn_id, userTurnInfo?.parent_turn_id);
+        const userRto = userTurn.renderable();
+        chatRenderer.renderTurn(userRto, true);
     }
     
     // Prepare debug data with the correct turn number
@@ -93,7 +105,7 @@ async function handleSimpleChat(message, conversationHistory) {
     userDebugData.currentTurnNumber = userTurnNumber;
     
     // INITIATE the API request here (but don't await the response)
-    requestInfo = initiateMessageRequest(message, enabledToolsFlags, requestId);
+    requestInfo = initiateMessageRequest(message, enabledToolsFlags, requestId, userTurnInfo?.parent_turn_id, userTurnInfo?.turn_id);
     logger.info('[SIMPLE-CHAT] Initiated API request with requestId:', requestId);
     
     // Add API request info to debug data
@@ -170,6 +182,7 @@ async function handleSimpleChat(message, conversationHistory) {
     }
     
     // Prepare for assistant response
+    let assistantTurnInfo = null;
     const assistantTurnDiv = document.createElement('div');
     assistantTurnDiv.className = 'turn assistant-turn';
     assistantTurnDiv.innerHTML = '';
@@ -278,14 +291,23 @@ async function handleSimpleChat(message, conversationHistory) {
         tempContainer.remove();
         assistantTurnDiv.remove();
         
+        // Get the last turn info to use as parent for assistant turn
+        try {
+            assistantTurnInfo = await getLastTurnInfo(currentChatId);
+        } catch (error) {
+            logger.warn('Failed to get last turn info:', error);
+        }
+        
         const assistantTurnNumber = getNextTurnNumber();
         if (debugData) {
             debugData.currentTurnNumber = assistantTurnNumber;
         }
         
-        const rto = RenderableTurnObject.fromStreamingProcessor({
+       const rto = RenderableTurnObject.fromStreamingProcessor({
             processor,
             turnNumber: assistantTurnNumber,
+            turnId: assistantTurnInfo?.turn_id,
+            parentTurnId: assistantTurnInfo?.parent_turn_id,
             debugData,
             dropdownStates,
         });
@@ -302,6 +324,8 @@ async function handleSimpleChat(message, conversationHistory) {
             
             // Save debug data to turn-based storage
             if (debugData) {
+                debugData.turn_id = assistantTurnInfo?.turn_id || null;
+                debugData.parent_turn_id = assistantTurnInfo?.parent_turn_id || null;
                 await saveTurnData(currentChatId, assistantTurnNumber, debugData);
                 logger.info(`[TURN-DEBUG] Saved assistant debug data for turn ${assistantTurnNumber}`);
             }
@@ -391,6 +415,8 @@ async function handleSimpleChat(message, conversationHistory) {
                 
                 // Save debug data to turn-based storage
                 if (stoppedDebugData) {
+                    stoppedDebugData.turn_id = assistantTurnInfo?.turn_id || null;
+                    stoppedDebugData.parent_turn_id = assistantTurnInfo?.parent_turn_id || null;
                     await saveTurnData(currentChatId, assistantTurnNumber, stoppedDebugData);
                     logger.info(`[TURN-DEBUG] Saved stopped debug data for turn ${assistantTurnNumber}`);
                 }

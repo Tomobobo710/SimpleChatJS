@@ -83,15 +83,19 @@ function createWindow() {
             contextIsolation: true,
             enableRemoteModule: false,
             spellcheck: true,
-            preload: path.join(__dirname, 'electron-preload.js')
+            preload: path.join(__dirname, 'electron-preload.js'),
+            devTools: {
+                enabled: true
+            }
         },
         show: false // Don't show until ready
     });
     
     // Wait a moment for server to start, then load the URL
-    setTimeout(() => {
+      setTimeout(() => {
         mainWindow.loadURL('http://localhost:50505');
         mainWindow.show();
+        mainWindow.webContents.openDevTools();
     }, 2000);
     
  

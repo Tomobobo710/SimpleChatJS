@@ -208,7 +208,7 @@ router.get('/chat/:id/history-complete', (req, res) => {
         
         // Get ALL messages including errored ones
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
@@ -256,6 +256,8 @@ router.get('/chat/:id/history-complete', (req, res) => {
                 content: parsedContent,
                 timestamp: row.timestamp,
                 turn_number: row.turn_number,
+                turn_id: row.turn_id,
+                parent_turn_id: row.parent_turn_id,
                 edit_count: row.edit_count || 0,
                 edited_at: row.edited_at,
                 debug_data: debugData,
@@ -321,7 +323,7 @@ router.get('/chat/:id/history', (req, res) => {
         
         // Get all messages from the active branch (including new file handling fields)
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
             FROM messages
             WHERE branch_id = ?
             ORDER BY timestamp ASC
@@ -370,6 +372,8 @@ router.get('/chat/:id/history', (req, res) => {
                 content: parsedContent,
                 timestamp: row.timestamp,
                 turn_number: row.turn_number,
+                turn_id: row.turn_id,
+                parent_turn_id: row.parent_turn_id,
                 edit_count: row.edit_count || 0,
                 edited_at: row.edited_at,
                 debug_data: debugData
@@ -455,7 +459,7 @@ router.delete('/chat/:id', (req, res) => {
 // Save message using unified approach
 router.post('/message', async (req, res) => {
     try {
-        const { chat_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata } = req.body;
+        const { chat_id, role, content, turn_number, tool_calls, tool_call_id, tool_name, original_content, file_metadata, turn_id, parent_turn_id } = req.body;
         
         if (!chat_id || !role || content === null || content === undefined) {
             return res.status(400).json({ error: 'chat_id, role, and content are required' });
@@ -476,20 +480,70 @@ router.post('/message', async (req, res) => {
         if (original_content !== undefined) completeMessage.originalContent = original_content;
         if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
         
-        // Use the unified save function
-        const { saveCompleteMessageToDatabase, incrementTurnNumber } = require('../services/chatService');
+       // Use the unified save function
+        const { saveCompleteMessageToDatabase, incrementTurnNumber, getTurnInfo } = require('../services/chatService');
+        const turnInfo = getTurnInfo(parent_turn_id);
         // Use turn number provided by frontend
-        await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number);
+        await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number, null, turnInfo);
         
         // Increment turn number when user sends a message (starts new conversation turn)
         if (role === 'user') {
             incrementTurnNumber(chat_id);
         }
         
+        res.json({ success: true, turn_id: turnInfo.turn_id, parent_turn_id: turnInfo.parent_turn_id });
+        
+    } catch (error) {
+        log('[UPDATE-DEBUG] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Turn data endpoints (RESTful design)
+// Save turn data
+router.post('/chat/:id/turns/:turnNumber', async (req, res) => {
+    try {
+        const { id: chatId, turnNumber } = req.params;
+        const { data } = req.body;
+        const turnNum = parseInt(turnNumber, 10);
+        
+        if (isNaN(turnNum)) {
+            return res.status(400).json({ error: 'Invalid turn number' });
+        }
+        
+        if (!data) {
+            return res.status(400).json({ error: 'data is required' });
+        }
+        
+        await saveTurnDebugData(chatId, turnNum, data);
         res.json({ success: true });
         
     } catch (error) {
-        log('[MESSAGE] Error:', error);
+        log('[TURN-DATA-SAVE] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get turn data
+router.get('/chat/:id/turns/:turnNumber', (req, res) => {
+    try {
+        const { id: chatId, turnNumber } = req.params;
+        const turnNum = parseInt(turnNumber, 10);
+        
+        if (isNaN(turnNum)) {
+            return res.status(400).json({ error: 'Invalid turn number' });
+        }
+        
+        const turnData = getTurnDebugData(chatId, turnNum);
+        
+        if (turnData) {
+            res.json(turnData);
+        } else {
+            res.status(404).json({ error: 'Turn data not found' });
+        }
+        
+    } catch (error) {
+        log('[TURN-DATA-GET] Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -547,72 +601,42 @@ router.get('/chat/:id/current-turn', (req, res) => {
     }
 });
 
-// Update debug data for a message
-router.patch('/message/debug', async (req, res) => {
+// Get last turn info (turn_id and parent_turn_id) for a chat
+router.get('/chat/:id/last-turn-info', (req, res) => {
+    const { id: chatId } = req.params;
+    const { db } = require('../config/database');
+    
     try {
-        const { chat_id, role, turn_number, debug_data } = req.body;
+        // Get the active branch
+        const activeBranchStmt = db.prepare(`
+            SELECT id FROM chat_branches 
+            WHERE chat_id = ? AND is_active = TRUE 
+            LIMIT 1
+        `);
+        const activeBranch = activeBranchStmt.get(chatId);
         
-        if (!chat_id || !role || !turn_number) {
-            return res.status(400).json({ error: 'chat_id, role, and turn_number are required' });
+        if (!activeBranch) {
+            return res.json({ turn_id: null, parent_turn_id: null });
         }
         
-        const { updateMessageDebugData } = require('../services/chatService');
-        await updateMessageDebugData(chat_id, role, turn_number, debug_data);
+        // Get the most recent message with a turn_id
+        const lastTurnStmt = db.prepare(`
+            SELECT turn_id, parent_turn_id 
+            FROM messages 
+            WHERE branch_id = ? AND turn_id IS NOT NULL
+            ORDER BY id DESC 
+            LIMIT 1
+        `);
+        const lastTurn = lastTurnStmt.get(activeBranch.id);
         
-        res.json({ success: true });
-        
-    } catch (error) {
-        log('[UPDATE-DEBUG] Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Turn data endpoints (RESTful design)
-// Save turn data
-router.post('/chat/:id/turns/:turnNumber', async (req, res) => {
-    try {
-        const { id: chatId, turnNumber } = req.params;
-        const { data } = req.body;
-        const turnNum = parseInt(turnNumber, 10);
-        
-        if (isNaN(turnNum)) {
-            return res.status(400).json({ error: 'Invalid turn number' });
-        }
-        
-        if (!data) {
-            return res.status(400).json({ error: 'data is required' });
-        }
-        
-        await saveTurnDebugData(chatId, turnNum, data);
-        res.json({ success: true });
-        
-    } catch (error) {
-        log('[TURN-DATA-SAVE] Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get turn data
-router.get('/chat/:id/turns/:turnNumber', (req, res) => {
-    try {
-        const { id: chatId, turnNumber } = req.params;
-        const turnNum = parseInt(turnNumber, 10);
-        
-        if (isNaN(turnNum)) {
-            return res.status(400).json({ error: 'Invalid turn number' });
-        }
-        
-        const turnData = getTurnDebugData(chatId, turnNum);
-        
-        if (turnData) {
-            res.json(turnData);
+        if (lastTurn) {
+            res.json({ turn_id: lastTurn.turn_id, parent_turn_id: lastTurn.parent_turn_id });
         } else {
-            res.status(404).json({ error: 'Turn data not found' });
+            res.json({ turn_id: null, parent_turn_id: null });
         }
-        
-    } catch (error) {
-        log('[TURN-DATA-GET] Error:', error);
-        res.status(500).json({ error: error.message });
+    } catch (err) {
+        log('[LAST-TURN-INFO] Error:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -641,7 +665,7 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
             // Get messages from the active branch
             log(`[TURN-MESSAGES] Getting messages from active branch ${activeBranch.id} for turn ${turnNum}`);
             const stmt = db.prepare(`
-                SELECT id, role, content, timestamp, turn_number, 
+                SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
                        edit_count, edited_at 
                 FROM messages 
                 WHERE branch_id = ? AND turn_number = ? 

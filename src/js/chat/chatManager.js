@@ -350,15 +350,46 @@ async function switchToChat(chatId) {
 function groupMessagesByTurn(messages) {
     const groups = new Map();
     for (const msg of messages) {
-        const key = msg.turn_number || 0;
+        const key = `${msg.turn_number || 0}::${msg.parent_turn_id || 'root'}`;
         if (!groups.has(key)) {
             groups.set(key, []);
         }
         groups.get(key).push(msg);
     }
     return Array.from(groups.entries())
-        .sort(([a], [b]) => a - b)
-        .map(([turnNumber, msgs]) => new Turn(turnNumber, msgs.map(m => Message.fromObject(m))));
+        .sort(([a], [b]) => {
+            const [aTurn] = a.split('::');
+            const [bTurn] = b.split('::');
+            return parseInt(aTurn) - parseInt(bTurn);
+        })
+        .map(([key, msgs]) => {
+            const [turnNumber, parentTurnId] = key.split('::');
+            const turnId = msgs[0]?.turnId || null;
+            return new Turn(parseInt(turnNumber), msgs.map(m => Message.fromObject(m)), turnId, parentTurnId === 'root' ? null : parentTurnId);
+        });
+}
+
+function getTurnsByParentTurnId(messages, parentTurnId) {
+    const groups = new Map();
+    for (const msg of messages) {
+        if (msg.parent_turn_id === parentTurnId) {
+            const key = `${msg.turn_number || 0}::${msg.turn_id || 'unknown'}`;
+            if (!groups.has(key)) {
+                groups.set(key, []);
+            }
+            groups.get(key).push(msg);
+        }
+    }
+    return Array.from(groups.entries())
+        .sort(([a], [b]) => {
+            const [aTurn] = a.split('::');
+            const [bTurn] = b.split('::');
+            return parseInt(aTurn) - parseInt(bTurn);
+        })
+        .map(([key, msgs]) => {
+            const [turnNumber, turnId] = key.split('::');
+            return new Turn(parseInt(turnNumber), msgs.map(m => Message.fromObject(m)), turnId, parentTurnId);
+        });
 }
 
 // Check if a message has tool calls
