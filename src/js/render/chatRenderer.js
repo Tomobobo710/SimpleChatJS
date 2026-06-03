@@ -816,13 +816,13 @@ class ChatRenderer {
                 enabledToolsFlags,
                 requestId,
                 parentUserTurnId,
-                null,
+                parentUserTurnId,
                 parentUserTurnId
             );
             const response = await requestInfo.fetchPromise;
             
             // 5. Process the streaming response like normal chat
-            await this.processRetryResponse(response, currentChatId, turnNumber, requestId);
+            await this.processRetryResponse(response, currentChatId, turnNumber, requestId, parentUserTurnId);
             
             // 6. Update branch navigation for all turns after retry
             // Give a small delay to ensure the DOM has been updated
@@ -1968,7 +1968,7 @@ class ChatRenderer {
                 const response = await requestInfo.fetchPromise;
                 
                 // Process the streaming response
-                await this.processRetryResponse(response, currentChatId, retryTurnNumber + 1, requestId);
+                await this.processRetryResponse(response, currentChatId, retryTurnNumber + 1, requestId, editedUserTurnId);
                 
                 // Update branch navigation
                 setTimeout(async () => {
@@ -2195,7 +2195,7 @@ class ChatRenderer {
     }
     
     // Process streaming response for retry (without creating new user message)
-    async processRetryResponse(response, chatId, turnNumber, requestId) {
+    async processRetryResponse(response, chatId, turnNumber, requestId, parentUserTurnId = null) {
         try {
             const processor = new StreamingMessageProcessor();
             const tempContainer = document.createElement("div");
@@ -2291,9 +2291,17 @@ class ChatRenderer {
             let savedAssistantTurn = null;
             try {
                 const history = await getCompleteChatHistory(chatId);
-                const assistantTurns = (history.messages || []).filter((msg) =>
-                    msg.role === "assistant" && msg.turn_number === turnNumber && msg.turn_id
-                );
+                const allMessages = history.messages || [];
+                let assistantTurns;
+                if (parentUserTurnId) {
+                    assistantTurns = allMessages.filter((msg) =>
+                        msg.role === "assistant" && msg.parent_turn_id === parentUserTurnId && msg.turn_id
+                    );
+                } else {
+                    assistantTurns = allMessages.filter((msg) =>
+                        msg.role === "assistant" && msg.turn_number === turnNumber && msg.turn_id
+                    );
+                }
                 savedAssistantTurn = assistantTurns[assistantTurns.length - 1] || null;
             } catch (error) {
                 logger.warn("[RETRY] Failed to load saved assistant turn metadata:", error);
