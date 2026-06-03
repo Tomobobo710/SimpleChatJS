@@ -31,7 +31,7 @@ class ChatRenderer {
         
         // Check if this turn already exists in DOM
         if (turnId) {
-            const existingTurns = document.querySelectorAll(`[data-message-turn-id="${turnId}"]`);
+            const existingTurns = document.querySelectorAll(`[data-turn-id="${turnId}"]`);
             if (existingTurns.length > 0 && role === "assistant") {
                 console.warn(
                     `[DUPLICATE-GUARD] Turn ${turnId} already exists in DOM! SKIPPING RENDER`
@@ -64,7 +64,7 @@ class ChatRenderer {
         }
         
         const turnDiv = document.createElement("div");
-        const domTurnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const domId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
         // Use the new turn-based class names
         if (role === "user") {
@@ -75,7 +75,7 @@ class ChatRenderer {
             turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
         }
         
-        turnDiv.dataset.turnId = domTurnId;
+        turnDiv.dataset.domId = domId;
         if (id) {
             turnDiv.dataset.messageId = id;
         }
@@ -83,7 +83,7 @@ class ChatRenderer {
             turnDiv.dataset.turnNumber = turnNumber;
         }
         if (turnId) {
-            turnDiv.dataset.messageTurnId = turnId;
+            turnDiv.dataset.turnId = turnId;
         }
         if (parentTurnId) {
             turnDiv.dataset.parentTurnId = parentTurnId;
@@ -120,11 +120,11 @@ class ChatRenderer {
         turnDiv.appendChild(contentDiv);
         
         // Add message actions bar (passing turn_id and parent_turn_id from RTO)
-        this.addMessageActions(turnDiv, role, domTurnId, turnNumber, id, turnId, parentTurnId);
+        this.addMessageActions(turnDiv, role, domId, turnNumber, id, turnId, parentTurnId);
         
         // Add debug toggle and panel if debug data provided
         if (debugData) {
-            this.addDebugPanel(turnDiv, domTurnId, debugData, turnNumber);
+            this.addDebugPanel(turnDiv, domId, debugData, turnNumber);
         }
         
         this.container.appendChild(turnDiv);
@@ -160,85 +160,6 @@ class ChatRenderer {
         }
     }
     
-    // Create message element without appending to container (for seamless replacement)
-    createTurnElement(turnData, shouldScroll = true) {
-        const { id, role, blocks, content, debugData, dropdownStates = {}, turnNumber } = turnData;
-        
-        // If blocks aren't provided, we have a broken pipeline
-        let finalBlocks;
-        if (!blocks) {
-            console.error("[BROKEN-RENDER] No blocks provided for element creation:", turnData);
-            throw new Error("Blocks are required for element creation - 3rd rendering path has been removed");
-        } else {
-            finalBlocks = blocks;
-        }
-        
-        const turnDiv = document.createElement("div");
-        const turnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        // Use the new turn-based class names
-        if (role === "user") {
-            turnDiv.className = "turn user-turn";
-        } else if (role === "assistant") {
-            turnDiv.className = "turn assistant-turn";
-        } else {
-            turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
-        }
-        
-        turnDiv.dataset.turnId = domTurnId;
-        if (turnNumber) {
-            turnDiv.dataset.turnNumber = turnNumber;
-        }
-        
-        // Create content container
-        const contentDiv = document.createElement("div");
-        contentDiv.className = "turn-content";
-        
-        // Always render blocks - no conditionals needed
-        let thinkingIndex = 0;
-        let toolIndex = 0;
-        
-        finalBlocks.forEach((blockData) => {
-            let stateKey;
-            let isOpen = false;
-            
-            if (blockData.type === "thinking") {
-                stateKey = "thinking_" + thinkingIndex;
-                thinkingIndex++;
-            } else if (blockData.type === "tool") {
-                stateKey = "tool_" + toolIndex;
-                toolIndex++;
-            }
-            
-            if (stateKey) {
-                isOpen = dropdownStates[stateKey] || false;
-            }
-            
-            const blockElement = this.renderBlock(blockData, isOpen);
-            contentDiv.appendChild(blockElement);
-        });
-        
-        turnDiv.appendChild(contentDiv);
-        
-        // Add message actions bar (passing turn_id and parent_turn_id from RTO)
-        this.addMessageActions(turnDiv, role, domTurnId, turnNumber, id, turnId, parentTurnId);
-        
-        // Add debug toggle and panel if debug data provided
-        if (debugData) {
-            this.addDebugPanel(turnDiv, domTurnId, debugData, turnNumber);
-        }
-        
-        // Handle metadata but don't scroll yet
-        this.handleTurnMeta(
-            role,
-            finalBlocks
-                .filter((b) => b.type === "chat")
-                .map((b) => b.content)
-                .join(" ")
-        );
-        
-        return turnDiv;
-    }
     // Render individual block based on type
     renderBlock(blockData, isOpen = false) {
         const { type, content, metadata = {} } = blockData;
@@ -657,10 +578,10 @@ class ChatRenderer {
     }
     
     // Add message actions bar to turn
-    addMessageActions(turnDiv, role, domTurnId, turnNumber = null, messageId = null, messageTurnId = null, messageParentTurnId = null) {
+    addMessageActions(turnDiv, role, domId, turnNumber = null, messageId = null, turnId = null, parentTurnId = null) {
         const actionsContainer = document.createElement("div");
         actionsContainer.className = "message-actions";
-        actionsContainer.dataset.turnId = domTurnId;
+        actionsContainer.dataset.domId = domId;
         actionsContainer.dataset.role = role;
         actionsContainer.dataset.turnNumber = turnNumber;
         if (messageId) {
@@ -676,21 +597,21 @@ class ChatRenderer {
         editBtn.className = "action-btn edit-btn";
         editBtn.title = "Edit message";
         editBtn.textContent = "Edit";
-        editBtn.addEventListener("click", () => this.handleEditMessage(messageTurnId, role, turnNumber, messageId));
+        editBtn.addEventListener("click", () => this.handleEditMessage(turnId, role, turnNumber, messageId));
         
         // Edit and retry button (for user messages)
         const editRetryBtn = document.createElement("button");
         editRetryBtn.className = "action-btn edit-retry-btn";
         editRetryBtn.title = "Edit your message and regenerate conversation from this point";
         editRetryBtn.textContent = "Edit & Retry";
-        editRetryBtn.addEventListener("click", () => this.handleEditAndRetry(messageTurnId, role, turnNumber, messageId));
+        editRetryBtn.addEventListener("click", () => this.handleEditAndRetry(turnId, role, turnNumber, messageId));
         
         // Retry button (for assistant messages)
         const retryBtn = document.createElement("button");
         retryBtn.className = "action-btn retry-btn";
         retryBtn.title = "Generate a different response to the same prompt";
         retryBtn.textContent = "Retry";
-        retryBtn.addEventListener("click", () => this.handleRetryMessage(messageTurnId, role, turnNumber, messageId));
+        retryBtn.addEventListener("click", () => this.handleRetryMessage(turnId, role, turnNumber, messageId));
         
         // Add buttons to container
         actionButtons.appendChild(editBtn);
@@ -739,7 +660,7 @@ class ChatRenderer {
             branchNav.appendChild(nextBtn);
             
             // Check if this turn should show branch navigation
-            this.updateBranchNavigation(branchNav, turnNumber, { turnId: messageTurnId, parentTurnId: messageParentTurnId }).catch((error) => {
+            this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId }).catch((error) => {
                 console.error("[BRANCH-NAV] Error loading branch info:", error);
                 // Hide navigation on error
                 branchNav.style.display = "none";
@@ -759,13 +680,13 @@ class ChatRenderer {
     }
     
     // Handle turn-level editing - show all messages in the turn
-    async handleEditMessage(messageTurnId, role, turnNumber, messageId) {
+    async handleEditMessage(turnId, role, turnNumber, messageId) {
         if (!turnNumber) {
             showError("Cannot edit: Turn number not available");
             return;
         }
         
-        const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
+        const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (!turnDiv) {
             showError("Cannot edit: Turn element not found");
             return;
@@ -801,7 +722,7 @@ class ChatRenderer {
         }
     }
     
-    async handleEditAndRetry(messageTurnId, role, turnNumber, messageId) {
+    async handleEditAndRetry(turnId, role, turnNumber, messageId) {
         // Only allow edit & retry for user messages
         if (role !== "user") {
             return;
@@ -812,17 +733,20 @@ class ChatRenderer {
         }
         
         // Set a flag that this turn should retry after editing
-        const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
+        const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (turnDiv) {
             turnDiv.dataset.shouldRetryAfterEdit = "true";
             turnDiv.dataset.editRetryTurnNumber = turnNumber;
+            if (turnId) {
+                turnDiv.dataset.editRetryTurnId = turnId;
+            }
         }
         
         // Call the regular edit function - it will use the proper modal
-        await this.handleEditMessage(messageTurnId, role, turnNumber, messageId);
+        await this.handleEditMessage(turnId, role, turnNumber, messageId);
     }
     
-    async handleRetryMessage(messageTurnId, role, turnNumber, messageId) {
+    async handleRetryMessage(turnId, role, turnNumber, messageId) {
         // Only allow retry for assistant messages
         if (role !== "assistant") {
             return;
@@ -835,7 +759,7 @@ class ChatRenderer {
         
         try {
             // Show loading state
-            const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
+            const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
             if (turnDiv) {
                 const retryBtn = turnDiv.querySelector(".retry-btn");
                 if (retryBtn) {
@@ -844,23 +768,25 @@ class ChatRenderer {
                 }
             }
             
-            // 1. Create new branch with truncated history (backend handles this)
-            const branchInfo = await retryTurn(currentChatId, turnNumber);
-            
-            // 2. Get the chat history to find the last user message (before truncation)
-            const history = await getChatHistory(currentChatId);
+            // 1. Get complete history and anchor this retry to the parent user turn
+            // of the assistant message being retried.
+            const history = await getCompleteChatHistory(currentChatId);
             const allMessages = history.messages || [];
-            
-            // Find the last user message in the truncated history
-            const userMessages = allMessages.filter((msg) => msg.role === "user");
-            if (userMessages.length === 0) {
-                console.error("[RETRY] No user messages found in truncated history");
+
+            const retriedAssistant = allMessages.find((msg) => msg.role === "assistant" && msg.turn_id === turnId);
+            if (!retriedAssistant?.parent_turn_id) {
+                console.error("[RETRY] Could not find retried assistant turn", { turnId, retriedAssistant });
+                return;
+            }
+
+            const parentUserTurnId = retriedAssistant.parent_turn_id;
+            const parentUserMessage = allMessages.find((msg) => msg.role === "user" && msg.turn_id === parentUserTurnId);
+            if (!parentUserMessage) {
+                console.error("[RETRY] Could not find parent user message for assistant retry", { parentUserTurnId });
                 return;
             }
             
-            const lastUserMessage = userMessages[userMessages.length - 1];
-            
-            // 3. Truncate UI to show only messages up to the last user message
+            // 2. Truncate UI to show only messages up to the last user message
             // Remove all turns after the user turn we're retrying from
             const allTurns = this.container.querySelectorAll(".turn");
             let foundRetryPoint = false;
@@ -879,15 +805,19 @@ class ChatRenderer {
                 console.warn(`[RETRY] Could not find turn ${turnNumber} to truncate from`);
             }
             
-            // 4. Generate assistant response using the same pattern as simpleChatMode
+            // 3. Generate assistant response using the same pattern as simpleChatMode
             const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             await loadEnabledToolsFromBackend(); // Ensure cache is loaded
             const enabledToolsFlags = loadEnabledTools(); // Get flags like {"server.tool": false}
             
+            // Pass the retried turn's turn_id so backend can filter history
             const requestInfo = initiateMessageRequest(
-                lastUserMessage.content,
+                parentUserMessage.content,
                 enabledToolsFlags,
-                requestId
+                requestId,
+                parentUserTurnId,
+                null,
+                parentUserTurnId
             );
             const response = await requestInfo.fetchPromise;
             
@@ -903,7 +833,7 @@ class ChatRenderer {
             console.error("[RETRY] Error:", error);
         } finally {
             // Restore button state
-            const turnDiv = document.querySelector(`[data-message-turn-id="${messageTurnId}"]`);
+            const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
             if (turnDiv) {
                 const retryBtn = turnDiv.querySelector(".retry-btn");
                 if (retryBtn) {
@@ -1748,7 +1678,7 @@ class ChatRenderer {
             saveBtn.textContent = "Saving...";
             saveBtn.disabled = true;
             
-            // Check if this is an "Edit & Retry" - if so, skip saving edits to preserve original branch
+            // Check if this is an "Edit & Retry" - if so, skip saving edits to preserve original turn
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
             
             if (!isEditRetry) {
@@ -1841,6 +1771,8 @@ class ChatRenderer {
             // Check if this was an Edit & Retry
             const shouldRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
             const retryTurnNumber = parseInt(turnDiv.dataset.editRetryTurnNumber);
+            const retryTurnId = turnDiv.dataset.editRetryTurnId || null;
+            console.log('[EDIT-EXIT] shouldRetry=', shouldRetry, 'retryTurnNumber=', retryTurnNumber, 'dataset=', turnDiv.dataset);
             
             turnDiv.classList.remove("editing");
             
@@ -1848,11 +1780,12 @@ class ChatRenderer {
                 // Clear the retry flags
                 delete turnDiv.dataset.shouldRetryAfterEdit;
                 delete turnDiv.dataset.editRetryTurnNumber;
+                delete turnDiv.dataset.editRetryTurnId;
                 
                 // Wait a moment to ensure edit save completes
                 await new Promise((resolve) => setTimeout(resolve, 100));
                 
-                // Get the edited content from UI (since we skipped saving to preserve original branch)
+                // Get the edited content from UI (since we skipped saving to preserve original turn)
                 const messageContainers = turnDiv.querySelectorAll("[data-message-id]");
                 let editedContent = null;
                 
@@ -1905,19 +1838,27 @@ class ChatRenderer {
                     return;
                 }
                 
-                // Now create branch at this user turn
-                const branchInfo = await retryTurn(currentChatId, retryTurnNumber);
+                // Get the user's turn_id from history for lineage filtering
+                const history = await getCompleteChatHistory(currentChatId);
+                const userMsg = (history.messages || []).find(m => m.role === 'user' && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId);
+                const originalUserTurnId = userMsg?.turn_id || retryTurnId || null;
+                const originalUserParentTurnId = userMsg?.parent_turn_id || null;
                 
-                // CRITICAL: Save the edited user message to the new branch (so it persists on reload)
-                // The original branch keeps the original message unchanged
+                // Retract at this user turn (truncates history, new response becomes sibling)
+                
+                // CRITICAL: Save the edited user message so it persists on reload
+                // The original turn keeps the original message unchanged
                 // Convert multimodal arrays to JSON strings for database storage
                 const contentForSave = Array.isArray(editedContent) ? JSON.stringify(editedContent) : editedContent;
                 
-                await saveCompleteMessage(
+                const saveResult = await saveCompleteMessage(
                     currentChatId,
                     { role: "user", content: contentForSave },
-                    retryTurnNumber
+                    retryTurnNumber,
+                    { parent_turn_id: originalUserParentTurnId }
                 );
+                const editedUserTurnId = saveResult?.turn_id || null;
+                const editedUserParentTurnId = saveResult?.parent_turn_id || originalUserParentTurnId;
                 
                 // Truncate UI - remove all turns after the edited turn (keep existing turns up to edit point)
                 const allTurns = this.container.querySelectorAll(".turn");
@@ -2006,17 +1947,23 @@ class ChatRenderer {
                         role: "user",
                         content: editedContent,
                         turnNumber: retryTurnNumber,
+                        turnId: editedUserTurnId,
+                        parentTurnId: editedUserParentTurnId,
                         debugData: userDebugData // Pass the newly generated debug data
                     },
                     true
                 );
                 
-                // Generate assistant response to the edited user message
+            // Generate assistant response to the edited user message
                 // Send the proper content format to the AI (multimodal array or text string)
+                // Pass the user's turn_id as retried_turn_id so backend filters to ancestors only
                 const requestInfo = initiateMessageRequest(
                     editedContent,
                     enabledToolsFlags,
-                    requestId
+                    requestId,
+                    editedUserParentTurnId,
+                    editedUserTurnId,
+                    editedUserTurnId
                 );
                 const response = await requestInfo.fetchPromise;
                 
@@ -2031,7 +1978,7 @@ class ChatRenderer {
                 // Regular edit - reload chat and refresh branch navigation
                 await loadChatHistory(currentChatId);
                 
-                // Refresh branch navigation in case the edit created new branches
+                // Refresh branch navigation in case the edit created new sibling turns
                 setTimeout(async () => {
                     await this.refreshBranchNavigation();
                 }, 100);
@@ -2071,7 +2018,7 @@ class ChatRenderer {
     }
     
     // ===== BRANCH NAVIGATION SYSTEM =====
-    // Update brnch navigation
+    // Update branch navigation
     async updateBranchNavigation(branchNavElement, turnNumber, turnData = null) {
         if (!currentChatId || !turnNumber) {
             branchNavElement.style.display = "none";
@@ -2161,211 +2108,8 @@ class ChatRenderer {
             return false;
         }
     }
-    
-    // Build hierarchical branch tree from parent-child relationships
-    buildBranchTree(branches) {
-        const tree = new Map();
-        
-        // Initialize tree with all branches
-        branches.forEach((branch) => {
-            tree.set(branch.id, {
-                ...branch,
-                children: [],
-                depth: 0
-            });
-        });
-        
-        // Build parent-child relationships and calculate depths
-        branches.forEach((branch) => {
-            if (branch.parent_branch_id) {
-                const parent = tree.get(branch.parent_branch_id);
-                const child = tree.get(branch.id);
-                if (parent && child) {
-                    parent.children.push(child);
-                    child.depth = parent.depth + 1;
-                }
-            }
-        });
-        
-        return tree;
-    }
-    
-    // Find branches that are relevant at a specific branch point
-    findBranchesForTurn(branches, branchTree, turnNumber, activeBranch) {
-        if (!activeBranch) return [];
-        
-        // Get active lineage
-        const activeLineage = this.getBranchLineage(branchTree.get(activeBranch.id), branchTree);
-        const activeLineageIds = new Set(activeLineage.map((b) => b.id));
-        
-        const result = [];
-        
-        // Find all branches that branch at this exact turn
-        const branchesAtThisTurn = branches.filter((branch) => branch.branch_point_turn === turnNumber);
-        
-        if (branchesAtThisTurn.length === 0) {
-            return [];
-        }
-        
-        // KEY FIX: Only show navigation if the active branch was directly involved in this split
-        // Check if active branch exists at this turn (created at or before this turn)
-        const activeBranchTurn = activeBranch.branch_point_turn;
-        if (activeBranchTurn && activeBranchTurn < turnNumber) {
-            return [];
-        }
-        
-        // Filter branches to only those relevant to active lineage
-        const relevantBranchesAtThisTurn = branchesAtThisTurn.filter((branch) => {
-            const branchInLineage = activeLineageIds.has(branch.id);
-            const parentInLineage = activeLineageIds.has(branch.parent_branch_id);
-            
-            return branchInLineage || parentInLineage;
-        });
-        
-        if (relevantBranchesAtThisTurn.length === 0) {
-            return [];
-        }
-        
-        // ADDITIONAL CHECK: Active branch must be directly involved
-        const activeBranchDirectlyInvolved =
-            relevantBranchesAtThisTurn.some((b) => b.id === activeBranch.id) || // Active branch splits here
-            relevantBranchesAtThisTurn.some((b) => b.parent_branch_id === activeBranch.id); // Active branch is parent
-        
-        if (!activeBranchDirectlyInvolved) {
-            return [];
-        }
-        
-        // Find the parent branch for this turn (use first relevant branch)
-        const firstRelevantBranch = relevantBranchesAtThisTurn[0];
-        let parentBranch = null;
-        
-        if (firstRelevantBranch.parent_branch_id) {
-            parentBranch = branches.find((b) => b.id === firstRelevantBranch.parent_branch_id);
-            
-            // Only include parent if it's also in active lineage
-            const parentInLineage = parentBranch && activeLineageIds.has(parentBranch.id);
-            
-            if (parentInLineage) {
-                result.push(parentBranch);
-            }
-        }
-        
-        // Add all relevant branches that actually split at this turn
-        relevantBranchesAtThisTurn.forEach((branch) => {
-            const alreadyInResult = result.find((b) => b.id === branch.id);
-            
-            if (!alreadyInResult) {
-                result.push(branch);
-            }
-        });
-        
-        return result;
-    }
 
-    // Find which branch in a list is an ancestor of the given branch
-    findAncestorInBranches(targetBranch, candidateBranches, branchTree) {
-        if (!targetBranch || !candidateBranches || candidateBranches.length === 0) {
-            return null;
-        }
-
-        // Get the complete ancestry of the target branch
-        const targetBranchNode = branchTree.get(targetBranch.id);
-        if (!targetBranchNode) {
-            return null;
-        }
-        
-        const ancestryChain = this.getBranchLineage(targetBranchNode, branchTree);
-        
-        // Find the first ancestor that exists in the candidate branches
-        // (working backwards from the target branch to root)
-        for (let i = ancestryChain.length - 1; i >= 0; i--) {
-            const ancestor = ancestryChain[i];
-            const found = candidateBranches.find((candidate) => candidate.id === ancestor.id);
-            if (found) {
-                return found;
-            }
-        }
-        
-        return null;
-    }
-
-    // Get the complete lineage (ancestry path) of a branch
-    getBranchLineage(branch, branchTree) {
-        const lineage = [];
-        let current = branch;
-        
-        // Walk up the ancestry chain
-        while (current) {
-            lineage.unshift(current); // Add to beginning to maintain order
-            if (current.parent_branch_id) {
-                current = branchTree.get(current.parent_branch_id);
-            } else {
-                break;
-            }
-        }
-        
-        return lineage;
-    }
-
-    // Get all descendants of a branch
-    getBranchDescendants(branch, branchTree) {
-        const descendants = [];
-        
-        function collectDescendants(node) {
-            node.children.forEach((child) => {
-                descendants.push(child);
-                collectDescendants(child);
-            });
-        }
-        
-        collectDescendants(branch);
-        return descendants;
-    }
-
-    // Check if a branch contains a specific turn
-    branchHasTurn(branch, turnNumber) {
-        // A branch contains a turn if:
-        // 1. It's the main branch (has all turns before any branch point)
-        // 2. For other branches:
-        //    - Turns BEFORE the branch point come from the parent branch
-        //    - Turns AT OR AFTER the branch point are the branch's own versions
-        
-        if (!branch.branch_point_turn || branch.branch_point_turn === null) {
-            // Main branch - contains all turns that exist
-            return true;
-        }
-        
-        // For branches with a branch point:
-        // - They inherit all turns from parent up to (but not including) the branch point
-        // - They have their own versions from the branch point onwards
-        // So they contain ALL turns, but different versions depending on the turn number
-        return true;
-        
-        // Future enhancement: Could check actual message existence in database
-        // const hasMessageQuery = `SELECT COUNT(*) as count FROM messages
-        //                          WHERE branch_id = ? AND turn_number = ?`;
-        // return count > 0;
-    }
-
-    // Sort branches by hierarchy (ancestor first, then descendants)
-    sortBranchesByHierarchy(branches, branchTree) {
-        return branches.sort((a, b) => {
-            const nodeA = branchTree.get(a.id);
-            const nodeB = branchTree.get(b.id);
-            
-            if (!nodeA || !nodeB) return 0;
-            
-            // Sort by depth first (ancestors before descendants)
-            if (nodeA.depth !== nodeB.depth) {
-                return nodeA.depth - nodeB.depth;
-            }
-            
-            // Same depth - sort by creation time
-            return new Date(a.created_at) - new Date(b.created_at);
-        });
-    }
-
-    // Navigate to previous/next branch
+    // Navigate to previous/next sibling turn
     async navigateBranch(direction, branchNavElement = null) {
         let targetBranchNav = branchNavElement;
         
@@ -2402,50 +2146,51 @@ class ChatRenderer {
         }
         
         const targetSibling = siblings[newIndex];
-        const targetTurnId = targetSibling[0][1][0]?.turn_id;
+        const targetTurnId = targetSibling[1][0]?.turn_id;
         
-        // Navigate to the sibling turn by activating the branch that contains this turn_id
-        // For now, reload the chat - the branch switching logic will handle it
-        await this.switchToTurnId(targetTurnId);
-    }
-
-    async switchToTurnId(turnId) {
-        if (!turnId || !currentChatId) return;
+        // Get the parent_turn_id from the turn element
+        const turnElement = targetBranchNav.closest('.turn');
+        const parentTurnId = turnElement?.dataset?.parentTurnId;
         
-        try {
-            // Get all branches to find which one contains this turn_id
-            const branches = await getChatBranches(currentChatId);
-            if (!branches?.branches) return;
-            
-            // For now, reload the chat - branch switching will be implemented later
-            // The turn_id information is stored in messages, so the renderer can find the right turn
-            await loadChatHistory(currentChatId);
-            
-            setTimeout(async () => {
-                await this.refreshBranchNavigation();
-            }, 100);
-        } catch (error) {
-            console.error("[BRANCH-NAV] Error switching to turn:", error);
+        // Update the nav element state
+        targetBranchNav._currentIndex = newIndex;
+        const indicator = targetBranchNav.querySelector(".branch-indicator");
+        indicator.textContent = `${newIndex + 1}/${siblings.length}`;
+        targetBranchNav.querySelector(".branch-prev").disabled = newIndex <= 0;
+        targetBranchNav.querySelector(".branch-next").disabled = newIndex >= siblings.length - 1;
+        
+        // Update selectedSiblings state in chatManager
+        if (parentTurnId) {
+            selectedSiblings[parentTurnId] = targetTurnId;
         }
+        
+        // Re-render the chat history with the new sibling selected
+        await loadChatHistory(currentChatId);
+        
+        // Scroll to the selected turn
+        setTimeout(() => {
+            const targetTurn = document.querySelector(`[data-turn-id="${targetTurnId}"]`);
+            if (targetTurn) {
+                targetTurn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 100);
     }
 
-    // Switch to a different branch
-    async switchBranch(branchId) {
-        if (!branchId || !currentChatId) return;
-        
+    // Refresh branch navigation for all turns
+    async refreshBranchNavigation() {
         try {
-            // Activate the new branch
-            await activateChatBranch(currentChatId, parseInt(branchId));
+            const allTurns = document.querySelectorAll(".user-turn, .assistant-turn");
             
-            // Reload the chat to show the new branch (this will trigger debug panel updates)
-            await loadChatHistory(currentChatId);
-            
-            // Refresh branch navigation for all turns after switching
-            setTimeout(async () => {
-                await this.refreshBranchNavigation();
-            }, 100);
+            for (const turn of allTurns) {
+                const branchNav = turn.querySelector(".branch-nav");
+                const turnNumber = parseInt(turn.dataset.turnNumber);
+                
+                if (branchNav && turnNumber) {
+                    await this.updateBranchNavigation(branchNav, turnNumber);
+                }
+            }
         } catch (error) {
-            console.error("[BRANCH-NAV] Error switching branch:", error);
+            console.error("[BRANCH-NAV] Error refreshing branch navigation:", error);
         }
     }
     
@@ -2542,11 +2287,24 @@ class ChatRenderer {
             if (debugData) {
                 debugData.currentTurnNumber = turnNumber;
             }
+
+            let savedAssistantTurn = null;
+            try {
+                const history = await getCompleteChatHistory(chatId);
+                const assistantTurns = (history.messages || []).filter((msg) =>
+                    msg.role === "assistant" && msg.turn_number === turnNumber && msg.turn_id
+                );
+                savedAssistantTurn = assistantTurns[assistantTurns.length - 1] || null;
+            } catch (error) {
+                logger.warn("[RETRY] Failed to load saved assistant turn metadata:", error);
+            }
             
             const renderedTurn = this.renderTurn(
                 RenderableTurnObject.fromStreamingProcessor({
                     processor,
                     turnNumber,
+                    turnId: savedAssistantTurn?.turn_id || null,
+                    parentTurnId: savedAssistantTurn?.parent_turn_id || null,
                     debugData,
                     dropdownStates,
                 }),
@@ -2563,25 +2321,6 @@ class ChatRenderer {
         } catch (error) {
             logger.error("[RETRY] Error processing response:", error);
             throw error;
-        }
-    }
-    
-    // Refresh branch navigation for all turns
-    async refreshBranchNavigation() {
-        try {
-            // Get branch navigations for both user and assistant turns
-            const allTurns = document.querySelectorAll(".user-turn, .assistant-turn");
-            
-            for (const turn of allTurns) {
-                const branchNav = turn.querySelector(".branch-nav");
-                const turnNumber = parseInt(turn.dataset.turnNumber);
-                
-                if (branchNav && turnNumber) {
-                    await this.updateBranchNavigation(branchNav, turnNumber);
-                }
-            }
-        } catch (error) {
-            console.error("[BRANCH-NAV] Error refreshing branch navigation:", error);
         }
     }
 }

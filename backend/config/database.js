@@ -49,22 +49,9 @@ function initializeDatabase() {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`);
             
-          db.exec(`CREATE TABLE IF NOT EXISTS chat_branches (
+          db.exec(`CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id TEXT NOT NULL,
-                branch_name TEXT NOT NULL,
-                parent_branch_id INTEGER,
-                branch_point_turn INTEGER,
-                is_active BOOLEAN DEFAULT FALSE,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(chat_id, branch_name),
-                FOREIGN KEY (chat_id) REFERENCES chats (id),
-                FOREIGN KEY (parent_branch_id) REFERENCES chat_branches (id)
-            )`);
-            
-           db.exec(`CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                branch_id INTEGER NOT NULL,
                 original_message_id INTEGER,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
@@ -81,7 +68,7 @@ function initializeDatabase() {
                 original_content TEXT,
                 file_metadata TEXT,
                 error_state TEXT DEFAULT NULL,
-                FOREIGN KEY (branch_id) REFERENCES chat_branches (id)
+                FOREIGN KEY (chat_id) REFERENCES chats (id)
             )`);
             
             log('[DB] Database initialized successfully');

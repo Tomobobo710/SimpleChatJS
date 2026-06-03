@@ -99,7 +99,7 @@ async function getTurnData(chatId, turnNumber) {
 }
 
 // Initiate a request without awaiting the response (returns controller and requestId)
-function initiateMessageRequest(message, enabledToolsData = null, requestId = null, parentTurnId = null, turnId = null) {
+function initiateMessageRequest(message, enabledToolsData = null, requestId = null, parentTurnId = null, turnId = null, retriedTurnId = null) {
     try {
         // Generate requestId if not provided
         const generatedRequestId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -110,7 +110,8 @@ function initiateMessageRequest(message, enabledToolsData = null, requestId = nu
             enabled_tools: enabledToolsData,
             request_id: generatedRequestId,
             parent_turn_id: parentTurnId,
-            turn_id: turnId
+            turn_id: turnId,
+            retried_turn_id: retriedTurnId
         };
         
         // Create abort controller for this request
@@ -468,7 +469,7 @@ async function createNewChatInDatabase(chatId, title = 'New Chat', projectId = n
 }
 
 // Save complete message using unified approach
-async function saveCompleteMessage(chatId, messageData, turnNumber = null) {
+async function saveCompleteMessage(chatId, messageData, turnNumber = null, turnInfo = null) {
     try {
         const requestData = {
             chat_id: chatId,
@@ -484,6 +485,8 @@ async function saveCompleteMessage(chatId, messageData, turnNumber = null) {
         // Add new file handling fields if present
         if (messageData.original_content !== undefined) requestData.original_content = messageData.original_content;
         if (messageData.file_metadata !== undefined) requestData.file_metadata = messageData.file_metadata;
+        if (turnInfo?.turn_id) requestData.turn_id = turnInfo.turn_id;
+        if (turnInfo?.parent_turn_id !== undefined) requestData.parent_turn_id = turnInfo.parent_turn_id;
         
         const response = await fetch(`${API_BASE}/api/message`, {
             method: 'POST',
@@ -649,103 +652,6 @@ async function getMessage(messageId) {
         return await response.json();
     } catch (error) {
         logger.error('Error getting message:', error);
-        throw error;
-    }
-}
-
-// ===== CHAT BRANCHING API =====
-
-// Retry a turn (create new version)
-async function retryTurn(chatId, turnNumber) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}/retry`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error retrying turn:', error);
-        throw error;
-    }
-}
-
-// Get all versions for a turn
-async function getTurnVersions(chatId, turnNumber) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}/versions`);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error getting turn versions:', error);
-        throw error;
-    }
-}
-
-// Activate a specific version
-async function activateTurnVersion(chatId, turnNumber, versionNumber) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}/version/${versionNumber}/activate`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error activating turn version:', error);
-        throw error;
-    }
-}
-
-// Get all branches for a chat
-async function getChatBranches(chatId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/branches`);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error getting chat branches:', error);
-        throw error;
-    }
-}
-
-// Switch to a specific branch
-async function activateChatBranch(chatId, branchId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/branch/${branchId}/activate`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error activating branch:', error);
         throw error;
     }
 }

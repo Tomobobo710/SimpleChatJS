@@ -1,7 +1,7 @@
 // Chat routes - Handle chat operations and messaging
 const express = require('express');
 const { db } = require('../config/database');
-const { processChatRequest, saveTurnDebugData, getTurnDebugData, getAllTurnDebugData, createChatBranch, getChatBranches, getActiveChatBranch, setActiveChatBranch } = require('../services/chatService');
+const { processChatRequest, saveTurnDebugData, getTurnDebugData, getAllTurnDebugData } = require('../services/chatService');
 const { log } = require('../utils/logger');
 
 const router = express.Router();
@@ -76,7 +76,7 @@ function extractPreviewText(content) {
     return String(content || '');
 }
 
-// Get all chats (everything-is-a-branch system)
+// Get all chats
 router.get('/chats', (req, res) => {
     const { project_id, freeform } = req.query;
     
@@ -89,15 +89,14 @@ router.get('/chats', (req, res) => {
             COALESCE(bm.content, '') as last_message,
             c.project_id
         FROM chats c
-        LEFT JOIN chat_branches cb ON c.id = cb.chat_id AND cb.is_active = TRUE
         LEFT JOIN (
             SELECT 
-                branch_id,
+                chat_id,
                 content,
-                ROW_NUMBER() OVER (PARTITION BY branch_id ORDER BY timestamp DESC) as rn
+                ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY timestamp DESC) as rn
             FROM messages
             WHERE role = 'user'
-        ) bm ON cb.id = bm.branch_id AND bm.rn = 1
+        ) bm ON c.id = bm.chat_id AND bm.rn = 1
     `;
     
     let whereConditions = [];
@@ -148,7 +147,7 @@ router.get('/chats', (req, res) => {
     }
 });
 
-// Create new chat (everything-is-a-branch system)
+// Create new chat
 router.post('/chats', async (req, res) => {
     const { chat_id, title, project_id } = req.body;
     
@@ -160,23 +159,6 @@ router.post('/chats', async (req, res) => {
         // Create chat in chats table
         const stmt = db.prepare('INSERT OR REPLACE INTO chats (id, title, created_at, updated_at, project_id) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)');
         const result = stmt.run(chat_id, title || 'New Chat', project_id || null);
-        
-        // ALWAYS create a main branch for every new chat (everything-is-a-branch)
-        const { createChatBranch, setActiveChatBranch } = require('../services/chatService');
-        
-        // Check if main branch already exists
-        const existingBranchStmt = db.prepare(`
-            SELECT id FROM chat_branches 
-            WHERE chat_id = ? AND branch_name = 'main'
-        `);
-        const existingBranch = existingBranchStmt.get(chat_id);
-        
-        if (!existingBranch) {
-            // Create main branch for this chat
-            const newBranch = await createChatBranch(chat_id);
-            await setActiveChatBranch(chat_id, newBranch.branchId);
-            log(`[CHAT-CREATE] Created main branch for new chat ${chat_id}`);
-        }
         
         res.json({ success: true, chat_id });
     } catch (err) {
@@ -190,32 +172,18 @@ router.get('/chat/:id/history-complete', (req, res) => {
     const chatId = req.params.id;
     
     try {
-        log(`[HISTORY-COMPLETE] Getting complete history including errors for chat ${chatId}`);
+        log(`[HISTORY-COMPLETE] Getting complete history for chat ${chatId}`);
         
-        // Get the active branch
-        const activeBranchStmt = db.prepare(`
-            SELECT id, branch_name
-            FROM chat_branches
-            WHERE chat_id = ? AND is_active = TRUE
-            LIMIT 1
-        `);
-        const activeBranch = activeBranchStmt.get(chatId);
-        
-        if (!activeBranch) {
-            log(`[HISTORY-COMPLETE] No active branch found for chat ${chatId}`);
-            return res.json({ messages: [] });
-        }
-        
-        // Get ALL messages including errored ones
+        // Get ALL messages for the chat including errored ones
         const messagesStmt = db.prepare(`
             SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
-            WHERE branch_id = ?
+            WHERE chat_id = ?
             ORDER BY timestamp ASC
         `);
-        const branchMessages = messagesStmt.all(activeBranch.id);
+        const chatMessages = messagesStmt.all(chatId);
         
-       const messages = branchMessages.map(row => {
+       const messages = chatMessages.map(row => {
             const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;
             
             // Parse file metadata
@@ -290,7 +258,7 @@ router.get('/chat/:id/history-complete', (req, res) => {
             return message;
         });
         
-        log(`[HISTORY-COMPLETE] Retrieved ${messages.length} messages (including errors) from branch '${activeBranch.branch_name}'`);
+        log(`[HISTORY-COMPLETE] Retrieved ${messages.length} messages (including errors) from chat ${chatId}`);
         res.json({ messages });
         
     } catch (err) {
@@ -299,38 +267,23 @@ router.get('/chat/:id/history-complete', (req, res) => {
     }
 });
 
-// Get chat history (everything-is-a-branch system) - FILTERED for AI
+// Get chat history - FILTERED for AI
 router.get('/chat/:id/history', (req, res) => {
     const chatId = req.params.id;
     
     try {
-        // Everything-is-a-branch: Always use active branch
-        log(`[HISTORY] Getting history from active branch for chat ${chatId}`);
+        log(`[HISTORY] Getting history for chat ${chatId}`);
         
-        // Get the active branch
-        const activeBranchStmt = db.prepare(`
-            SELECT id, branch_name
-            FROM chat_branches
-            WHERE chat_id = ? AND is_active = TRUE
-            LIMIT 1
-        `);
-        const activeBranch = activeBranchStmt.get(chatId);
-        
-        if (!activeBranch) {
-            log(`[HISTORY] No active branch found for chat ${chatId} - this shouldn't happen in everything-is-a-branch system`);
-            return res.json({ messages: [] });
-        }
-        
-        // Get all messages from the active branch (including new file handling fields)
+        // Get all messages for the chat (errors filtered out for AI)
         const messagesStmt = db.prepare(`
             SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
             FROM messages
-            WHERE branch_id = ?
+            WHERE chat_id = ? AND error_state IS NULL
             ORDER BY timestamp ASC
         `);
-        const branchMessages = messagesStmt.all(activeBranch.id);
+        const chatMessages = messagesStmt.all(chatId);
         
-        const messages = branchMessages.map(row => {
+        const messages = chatMessages.map(row => {
             const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;            
             // Parse new file handling fields
             let originalContent = null;
@@ -405,7 +358,7 @@ router.get('/chat/:id/history', (req, res) => {
             return message;
         });
         
-        log(`[HISTORY] Retrieved ${messages.length} successful messages from branch '${activeBranch.branch_name}' (errors filtered out)`);
+        log(`[HISTORY] Retrieved ${messages.length} successful messages from chat ${chatId} (errors filtered out)`);
         res.json({ messages });
         
     } catch (err) {
@@ -426,21 +379,11 @@ router.delete('/chat/:id', (req, res) => {
         // Begin transaction
         db.prepare('BEGIN TRANSACTION').run();
         
-        // Everything-is-a-branch: Delete all branch messages and branches for this chat
-        // First delete all branch messages
-        const deleteBranchMessages = db.prepare(`
-            DELETE FROM messages 
-            WHERE branch_id IN (SELECT id FROM chat_branches WHERE chat_id = ?)
-        `);
-        deleteBranchMessages.run(chatId);
+        // Delete all messages for this chat
+        db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
         
-        // Then delete all branches for this chat
-        const deleteBranches = db.prepare('DELETE FROM chat_branches WHERE chat_id = ?');
-        deleteBranches.run(chatId);
-        
-        // Finally delete the chat itself
-        const deleteChat = db.prepare('DELETE FROM chats WHERE id = ?');
-        deleteChat.run(chatId);
+        // Delete the chat itself
+        db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
         
         // Commit transaction
         db.prepare('COMMIT').run();
@@ -480,9 +423,9 @@ router.post('/message', async (req, res) => {
         if (original_content !== undefined) completeMessage.originalContent = original_content;
         if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
         
-       // Use the unified save function
+        // Use the unified save function
         const { saveCompleteMessageToDatabase, incrementTurnNumber, getTurnInfo } = require('../services/chatService');
-        const turnInfo = getTurnInfo(parent_turn_id);
+        const turnInfo = getTurnInfo(parent_turn_id, turn_id);
         // Use turn number provided by frontend
         await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number, null, turnInfo);
         
@@ -607,27 +550,15 @@ router.get('/chat/:id/last-turn-info', (req, res) => {
     const { db } = require('../config/database');
     
     try {
-        // Get the active branch
-        const activeBranchStmt = db.prepare(`
-            SELECT id FROM chat_branches 
-            WHERE chat_id = ? AND is_active = TRUE 
-            LIMIT 1
-        `);
-        const activeBranch = activeBranchStmt.get(chatId);
-        
-        if (!activeBranch) {
-            return res.json({ turn_id: null, parent_turn_id: null });
-        }
-        
-        // Get the most recent message with a turn_id
+        // Get the most recent message with a turn_id from the entire chat
         const lastTurnStmt = db.prepare(`
             SELECT turn_id, parent_turn_id 
             FROM messages 
-            WHERE branch_id = ? AND turn_id IS NOT NULL
+            WHERE chat_id = ? AND turn_id IS NOT NULL
             ORDER BY id DESC 
             LIMIT 1
         `);
-        const lastTurn = lastTurnStmt.get(activeBranch.id);
+        const lastTurn = lastTurnStmt.get(chatId);
         
         if (lastTurn) {
             res.json({ turn_id: lastTurn.turn_id, parent_turn_id: lastTurn.parent_turn_id });
@@ -650,33 +581,16 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
             return res.status(400).json({ error: 'Invalid turn number' });
         }
         
-        // Get all messages for this turn from the current active branch
-        // First, get the active branch for this chat
-        const activeBranchStmt = db.prepare(`
-            SELECT id FROM chat_branches 
-            WHERE chat_id = ? AND is_active = TRUE 
-            LIMIT 1
+        // Get all messages for this turn from the chat
+        log(`[TURN-MESSAGES] Getting messages for turn ${turnNum} in chat ${chatId}`);
+        const stmt = db.prepare(`
+            SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
+                   edit_count, edited_at 
+            FROM messages 
+            WHERE chat_id = ? AND turn_number = ? 
+            ORDER BY timestamp ASC
         `);
-        const activeBranch = activeBranchStmt.get(chatId);
-        
-        let messages = [];
-        
-        if (activeBranch) {
-            // Get messages from the active branch
-            log(`[TURN-MESSAGES] Getting messages from active branch ${activeBranch.id} for turn ${turnNum}`);
-            const stmt = db.prepare(`
-                SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
-                       edit_count, edited_at 
-                FROM messages 
-                WHERE branch_id = ? AND turn_number = ? 
-                ORDER BY timestamp ASC
-            `);
-            messages = stmt.all(activeBranch.id, turnNum);
-        } else {
-            // Everything-is-a-branch: No active branch should never happen
-            log(`[TURN-MESSAGES] ERROR: No active branch found for chat ${chatId} - this violates everything-is-a-branch principle`);
-            return res.status(500).json({ error: `No active branch found for chat ${chatId}. Every chat must have a main branch.` });
-        }
+        const messages = stmt.all(chatId, turnNum);
         
         log(`[TURN-MESSAGES] Found ${messages.length} messages for turn ${turnNum} in chat ${chatId}`);
         
@@ -726,84 +640,6 @@ router.get('/chat/:id/turns', (req, res) => {
 // Main chat endpoint that frontend expects
 router.post('/chat', processChatRequest);
 
-// ===== TURN VERSIONING ENDPOINTS =====
-
-// Create new branch for retry from a specific turn
-router.post('/chat/:id/turn/:turnNumber/retry', async (req, res) => {
-    try {
-        const { id: chatId, turnNumber } = req.params;
-        const turnNum = parseInt(turnNumber, 10);
-        
-        if (isNaN(turnNum)) {
-            return res.status(400).json({ error: 'Invalid turn number' });
-        }
-        
-        const branchInfo = await createChatBranch(chatId, turnNum);
-        
-        // Set the new branch as active
-        await setActiveChatBranch(chatId, branchInfo.branchId);
-        
-        res.json({ 
-            success: true, 
-            branchId: branchInfo.branchId,
-            branchName: branchInfo.branchName,
-            branchPoint: branchInfo.branchPoint
-        });
-        
-    } catch (error) {
-        log('[RETRY] Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get all branches for a chat
-router.get('/chat/:id/branches', (req, res) => {
-    try {
-        const { id: chatId } = req.params;
-        
-        const branches = getChatBranches(chatId);
-        const activeBranch = getActiveChatBranch(chatId);
-        
-        const responseData = { 
-            branches,
-            activeBranch,
-            totalBranches: branches.length
-        };
-        
-        log(`[BRANCHES] API response for chat ${chatId}: activeBranch=${activeBranch?.branch_name}, totalBranches=${branches.length}`);
-        
-        res.json(responseData);
-        
-    } catch (error) {
-        log('[BRANCHES] Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Switch to a specific branch
-router.post('/chat/:id/branch/:branchId/activate', (req, res) => {
-    try {
-        const { id: chatId, branchId } = req.params;
-        const branchIdNum = parseInt(branchId, 10);
-        
-        if (isNaN(branchIdNum)) {
-            return res.status(400).json({ error: 'Invalid branch ID' });
-        }
-        
-        const success = setActiveChatBranch(chatId, branchIdNum);
-        
-        if (success) {
-            res.json({ success: true });
-        } else {
-            res.status(404).json({ error: 'Branch not found' });
-        }
-        
-    } catch (error) {
-        log('[ACTIVATE-BRANCH] Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
 module.exports = router;
 // Edit message content
 router.patch('/message/:id', async (req, res) => {
@@ -819,71 +655,37 @@ router.patch('/message/:id', async (req, res) => {
             return res.status(400).json({ error: 'Content is required' });
         }
         
-        // Try to find the message in messages first (for branching system)
-        let currentMessage = null;
-        let isInBranch = false;
-        
-        // First, try to find in messages table
-        const getBranchMessageStmt = db.prepare(`
-            SELECT content, edit_count, edited_at, branch_id 
+        // Find the message
+        const getMessageStmt = db.prepare(`
+            SELECT content, edit_count, edited_at 
             FROM messages 
             WHERE id = ?
         `);
-        currentMessage = getBranchMessageStmt.get(messageId);
-        
-        if (currentMessage) {
-            isInBranch = true;
-            log(`[EDIT] Found message ${messageId} in messages table`);
-        } else {
-            // Everything-is-a-branch: All messages should be in messages
-            log(`[EDIT] Message ${messageId} not found in messages - this shouldn't happen in everything-is-a-branch system`);
-        }
+        const currentMessage = getMessageStmt.get(messageId);
         
         if (!currentMessage) {
             return res.status(404).json({ error: 'Message not found' });
         }
         
         const newEditCount = (currentMessage.edit_count || 0) + 1;
-        let result;
         
-        if (isInBranch) {
-            // Update message in messages table (no original_content column here)
-            log(`[EDIT] Updating message ${messageId} in messages table`);
-            const updateBranchStmt = db.prepare(`
-                UPDATE messages 
-                SET content = ?, 
-                    original_content = ?,
-                    file_metadata = ?,
-                    edit_count = ?, 
-                    edited_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            `);
-            result = updateBranchStmt.run(
-                Array.isArray(content) ? JSON.stringify(content) : content,
-                original_content ? JSON.stringify(original_content) : null,
-                file_metadata ? JSON.stringify(file_metadata) : null,
-                newEditCount,
-                messageId
-            );
-        } else {
-            // Update message in original messages table (has original_content column)
-            log(`[EDIT] Updating message ${messageId} in original messages table`);
-            const originalContent = currentMessage.original_content || currentMessage.content;
-            const updateOriginalStmt = db.prepare(`
-                UPDATE messages 
-                SET content = ?, 
-                    original_content = ?, 
-                    edit_count = ?, 
-                    edited_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-            `);
-            result = updateOriginalStmt.run(
-                Array.isArray(content) ? JSON.stringify(content) : content,
-                originalContent,
-                newEditCount,
-                messageId
-            );
-        }
+        log(`[EDIT] Updating message ${messageId}`);
+        const updateStmt = db.prepare(`
+            UPDATE messages 
+            SET content = ?, 
+                original_content = ?,
+                file_metadata = ?,
+                edit_count = ?, 
+                edited_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        `);
+        const result = updateStmt.run(
+            Array.isArray(content) ? JSON.stringify(content) : content,
+            original_content ? JSON.stringify(original_content) : null,
+            file_metadata ? JSON.stringify(file_metadata) : null,
+            newEditCount,
+            messageId
+        );
         
         if (result.changes === 0) {
             return res.status(404).json({ error: 'Message not found' });

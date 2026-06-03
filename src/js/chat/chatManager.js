@@ -5,6 +5,9 @@ window.sidebarView = 'chat';
 window.currentProjectId = null;
 window.projects = [];
 
+// Turn navigation state: maps parent_turn_id → selected sibling turn_id
+let selectedSiblings = {};
+
 // Utility function to safely extract text content from multimodal or string content
 function getTextContent(content) {
     if (typeof content === 'string') {
@@ -350,7 +353,7 @@ async function switchToChat(chatId) {
 function groupMessagesByTurn(messages) {
     const groups = new Map();
     for (const msg of messages) {
-        const key = `${msg.turn_number || 0}::${msg.parent_turn_id || 'root'}`;
+        const key = `${msg.turn_id || 'missing'}::${msg.turn_number || 0}::${msg.parent_turn_id || 'root'}`;
         if (!groups.has(key)) {
             groups.set(key, []);
         }
@@ -358,13 +361,12 @@ function groupMessagesByTurn(messages) {
     }
     return Array.from(groups.entries())
         .sort(([a], [b]) => {
-            const [aTurn] = a.split('::');
-            const [bTurn] = b.split('::');
+            const [, aTurn] = a.split('::');
+            const [, bTurn] = b.split('::');
             return parseInt(aTurn) - parseInt(bTurn);
         })
         .map(([key, msgs]) => {
-            const [turnNumber, parentTurnId] = key.split('::');
-            const turnId = msgs[0]?.turnId || null;
+            const [turnId, turnNumber, parentTurnId] = key.split('::');
             return new Turn(parseInt(turnNumber), msgs.map(m => Message.fromObject(m)), turnId, parentTurnId === 'root' ? null : parentTurnId);
         });
 }
@@ -409,6 +411,49 @@ function hasToolCalls(msg) {
 
 // Track if we're already loading to prevent concurrent calls
 let isLoadingHistory = false;
+
+// Build the rendered turn list using lineage-based filtering.
+// Walks turns in turn_number order. At each branch point (siblings),
+// selects the sibling whose turn_id matches selectedSiblings[parentTurnId].
+// Only renders turns that are on the selected lineage path.
+function buildRenderedTurns(allTurns) {
+    const childrenByParent = new Map();
+    for (const turn of allTurns) {
+        const parentKey = turn.parentTurnId || 'root';
+        if (!childrenByParent.has(parentKey)) {
+            childrenByParent.set(parentKey, []);
+        }
+        childrenByParent.get(parentKey).push(turn);
+    }
+    
+    for (const children of childrenByParent.values()) {
+        children.sort((a, b) => a.turnNumber - b.turnNumber);
+    }
+    
+    const rendered = [];
+    const walk = (parentKey) => {
+        const children = childrenByParent.get(parentKey) || [];
+        if (children.length === 0) return;
+
+        const selectedTurnId = parentKey === 'root' ? null : selectedSiblings[parentKey];
+        const turn = selectedTurnId
+            ? children.find(child => child.turnId === selectedTurnId) || children[children.length - 1]
+            : children[children.length - 1];
+
+        if (parentKey !== 'root') {
+            selectedSiblings[parentKey] = turn.turnId;
+        }
+
+        if (turn) {
+            rendered.push(turn);
+            if (turn.turnId) walk(turn.turnId);
+        }
+    };
+
+    walk('root');
+    
+    return rendered;
+}
 
 // Load chat history for a specific chat
 async function loadChatHistory(chatId) {
@@ -455,9 +500,10 @@ async function loadChatHistory(chatId) {
         
         logger.info('[UNIFIED-RENDERING] Loading chat history through Turn.renderable()');
         
-        const turns = groupMessagesByTurn(history.messages);
+        const allTurns = groupMessagesByTurn(history.messages);
+        const renderedTurns = buildRenderedTurns(allTurns);
         
-        turns.forEach(turn => {
+        renderedTurns.forEach(turn => {
             const rto = turn.renderable();
             chatRenderer.renderTurn(rto, false);
         });

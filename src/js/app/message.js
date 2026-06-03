@@ -4,7 +4,6 @@
 class Message {
     constructor(data = {}) {
         this.id = data.id ?? null;
-        this.branchId = data.branch_id ?? null;
         this.role = data.role ?? 'other';
         this.content = data.content ?? '';
         this.turnNumber = data.turn_number ?? 0;
@@ -57,7 +56,6 @@ class Message {
 
         return new Message({
             id: data.original_message_id || data.id || null,
-            branch_id: data.branch_id || null,
             role: data.role,
             content: data.content,
             turn_number: data.turn_number,
