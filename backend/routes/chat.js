@@ -188,81 +188,15 @@ router.get("/chat/:id/history-complete", (req, res) => {
         `);
         const chatMessages = messagesStmt.all(chatId);
 
-        const messages = chatMessages.map((row) => {
-            const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;
+       const { parseDbRowToMessage } = require("../utils/messageConversions");
 
-            // Parse file metadata
-            let originalContent = null;
-            let fileMetadata = null;
-
-            if (row.original_content) {
-                try {
-                    originalContent =
-                        typeof row.original_content === "string" && row.original_content.startsWith("[")
-                            ? JSON.parse(row.original_content)
-                            : row.original_content;
-                } catch (e) {
-                    log(`[HISTORY-COMPLETE] Error parsing original_content: ${e.message}`);
-                }
-            }
-
-            if (row.file_metadata) {
-                try {
-                    fileMetadata = JSON.parse(row.file_metadata);
-                } catch (e) {
-                    log(`[HISTORY-COMPLETE] Error parsing file_metadata: ${e.message}`);
-                }
-            }
-
-            // Parse content
-            let parsedContent = row.content;
-            if (typeof row.content === "string" && row.content.startsWith("[")) {
-                try {
-                    parsedContent = JSON.parse(row.content);
-                } catch (e) {
-                    parsedContent = row.content;
-                }
-            }
-
-            const message = {
-                id: row.original_message_id || row.id,
-                role: row.role,
-                content: parsedContent,
-                timestamp: row.timestamp,
-                turn_number: row.turn_number,
-                turn_id: row.turn_id,
-                parent_turn_id: row.parent_turn_id,
-                edit_count: row.edit_count || 0,
-                edited_at: row.edited_at,
-                debug_data: debugData,
-                error_state: row.error_state // Include error state for UI
-            };
-
-            // Add file handling fields if present
-            if (originalContent !== null) {
-                message.original_content = originalContent;
-            }
-            if (fileMetadata !== null) {
-                message.file_metadata = fileMetadata;
-            }
-
-            // Add tool data if present
-            if (row.tool_calls) {
-                try {
-                    message.tool_calls = JSON.parse(row.tool_calls);
-                } catch (e) {
-                    log(`[HISTORY-COMPLETE] Error parsing tool_calls: ${e.message}`);
-                }
-            }
-            if (row.tool_call_id) {
-                message.tool_call_id = row.tool_call_id;
-            }
-            if (row.tool_name) {
-                message.tool_name = row.tool_name;
-            }
-
-            return message;
-        });
+        const messages = chatMessages.map((row) =>
+            parseDbRowToMessage(row, {
+                includeDebugData: true,
+                includeFileFields: true,
+                includeErrorState: true,
+            })
+        );
 
         log(`[HISTORY-COMPLETE] Retrieved ${messages.length} messages (including errors) from chat ${chatId}`);
         res.json({ messages });
@@ -288,81 +222,15 @@ router.get("/chat/:id/history", (req, res) => {
         `);
         const chatMessages = messagesStmt.all(chatId);
 
-        const messages = chatMessages.map((row) => {
-            const debugData = row.debug_data ? JSON.parse(row.debug_data) : null;
-            // Parse new file handling fields
-            let originalContent = null;
-            let fileMetadata = null;
+        const { parseDbRowToMessage } = require("../utils/messageConversions");
 
-            if (row.original_content) {
-                try {
-                    originalContent =
-                        typeof row.original_content === "string" && row.original_content.startsWith("[")
-                            ? JSON.parse(row.original_content)
-                            : row.original_content;
-                } catch (e) {
-                    log(`[HISTORY] Error parsing original_content: ${e.message}`);
-                }
-            }
-
-            if (row.file_metadata) {
-                try {
-                    fileMetadata = JSON.parse(row.file_metadata);
-                } catch (e) {
-                    log(`[HISTORY] Error parsing file_metadata: ${e.message}`);
-                }
-            }
-
-            // Parse content - handle both string and JSON (multimodal) content
-            let parsedContent = row.content;
-            if (typeof row.content === "string" && row.content.startsWith("[")) {
-                try {
-                    // Try to parse as JSON array (multimodal content)
-                    parsedContent = JSON.parse(row.content);
-                } catch (e) {
-                    // If parsing fails, keep as string
-                    parsedContent = row.content;
-                }
-            }
-
-            const message = {
-                id: row.original_message_id || row.id, // Use original ID if available for editing compatibility
-                role: row.role,
-                content: parsedContent,
-                timestamp: row.timestamp,
-                turn_number: row.turn_number,
-                turn_id: row.turn_id,
-                parent_turn_id: row.parent_turn_id,
-                edit_count: row.edit_count || 0,
-                edited_at: row.edited_at,
-                debug_data: debugData
-            };
-
-            // Add new file handling fields if present
-            if (originalContent !== null) {
-                message.original_content = originalContent;
-            }
-            if (fileMetadata !== null) {
-                message.file_metadata = fileMetadata;
-            }
-
-            // Add tool data if present
-            if (row.tool_calls) {
-                try {
-                    message.tool_calls = JSON.parse(row.tool_calls);
-                } catch (e) {
-                    log(`[HISTORY] Error parsing tool_calls: ${e.message}`);
-                }
-            }
-            if (row.tool_call_id) {
-                message.tool_call_id = row.tool_call_id;
-            }
-            if (row.tool_name) {
-                message.tool_name = row.tool_name;
-            }
-
-            return message;
-        });
+        const messages = chatMessages.map((row) =>
+            parseDbRowToMessage(row, {
+                includeDebugData: true,
+                includeFileFields: true,
+                includeErrorState: false,
+            })
+        );
 
         log(`[HISTORY] Retrieved ${messages.length} successful messages from chat ${chatId} (errors filtered out)`);
         res.json({ messages });
@@ -686,10 +554,13 @@ router.patch("/message/:id", async (req, res) => {
                 edited_at = CURRENT_TIMESTAMP 
             WHERE id = ?
         `);
+        const { serializeMessageForDb } = require("../utils/messageConversions");
+
+        const serialized = serializeMessageForDb({ content, original_content, file_metadata });
         const result = updateStmt.run(
-            Array.isArray(content) ? JSON.stringify(content) : content,
-            original_content ? JSON.stringify(original_content) : null,
-            file_metadata ? JSON.stringify(file_metadata) : null,
+            serialized.content,
+            serialized.originalContent,
+            serialized.fileMetadata,
             newEditCount,
             messageId
         );

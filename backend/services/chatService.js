@@ -446,7 +446,9 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
 
         log(`[CHAT-HISTORY] Retrieved ${chatMessages.length} successful messages (errors filtered out)`);
 
-        chatMessages.forEach((row) => {
+       const { parseDbRowToMessage, parseContent } = require("../utils/messageConversions");
+
+        const aiMessages = chatMessages.map((row) => {
             // Process saved messages to ensure AI gets correct content
             let finalContent = row.content;
 
@@ -471,46 +473,22 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
                 }
             }
 
-            // Parse content - handle both string and JSON (multimodal) content
-            let parsedContent = finalContent;
-            if (typeof finalContent === "string" && finalContent.startsWith("[")) {
-                try {
-                    // Try to parse as JSON array (multimodal content)
-                    parsedContent = JSON.parse(finalContent);
-                } catch (e) {
-                    // If parsing fails, keep as string
-                    parsedContent = finalContent;
-                }
-            }
+            // Use the base parser, then override content with the AI-processed version
+            const message = parseDbRowToMessage(row, {
+                includeDebugData: false,
+                includeFileFields: false,
+                includeErrorState: false,
+                includeIdFallback: false,
+            });
 
-            const message = {
-                role: row.role,
-                content: parsedContent,
-                turn_number: row.turn_number,
-                turn_id: row.turn_id,
-                parent_turn_id: row.parent_turn_id
-            };
+            // Override content with AI-processed content
+            message.content = parseContent(finalContent);
 
-            // Add tool data if present
-            if (row.tool_calls) {
-                try {
-                    message.tool_calls = JSON.parse(row.tool_calls);
-                } catch (e) {
-                    log(`[CHAT-HISTORY] Error parsing tool_calls: ${e.message}`);
-                }
-            }
-            if (row.tool_call_id) {
-                message.tool_call_id = row.tool_call_id;
-            }
-            if (row.tool_name) {
-                message.tool_name = row.tool_name;
-            }
-
-            messages.push(message);
+            return message;
         });
 
-        log(`[CHAT-HISTORY] Retrieved ${messages.length} messages from chat ${chat_id}`);
-        return messages;
+        log(`[CHAT-HISTORY] Retrieved ${aiMessages.length} messages from chat ${chat_id}`);
+        return aiMessages;
     } catch (err) {
         log("[CHAT-HISTORY] Error getting chat history:", err);
         throw new Error(`Failed to load chat history: ${err.message}`);
@@ -532,23 +510,13 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
     const { db } = require("../config/database");
 
     try {
+        const { serializeMessageForDb } = require("../utils/messageConversions");
+
         // Prepare message data
-        const content = Array.isArray(messageData.content)
-            ? JSON.stringify(messageData.content)
-            : messageData.content || "";
+        const serialized = serializeMessageForDb(messageData);
         const role = messageData.role || "user";
-        const toolCalls = messageData.tool_calls ? JSON.stringify(messageData.tool_calls) : null;
         const toolCallId = messageData.tool_call_id || null;
         const toolName = messageData.tool_name || null;
-        const debugData = messageData.debug_data ? JSON.stringify(messageData.debug_data) : null;
-
-        // Handle original content and file metadata
-        const originalContent = messageData.originalContent
-            ? Array.isArray(messageData.originalContent)
-                ? JSON.stringify(messageData.originalContent)
-                : messageData.originalContent
-            : null;
-        const fileMetadata = messageData.fileMetadata ? JSON.stringify(messageData.fileMetadata) : null;
 
         // Use turn number or get next
         let finalTurnNumber = turnNumber;
@@ -570,16 +538,16 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         const result = insertStmt.run(
             chatId,
             role,
-            content,
+            serialized.content,
             finalTurnNumber,
             turnId,
             parentTurnId,
-            toolCalls,
+            serialized.toolCalls,
             toolCallId,
             toolName,
-            debugData,
-            originalContent,
-            fileMetadata,
+            serialized.debugData,
+            serialized.originalContent,
+            serialized.fileMetadata,
             errorState
         );
 
