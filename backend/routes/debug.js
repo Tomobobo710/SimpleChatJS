@@ -1,9 +1,40 @@
 // Debug routes - Handle debug data and tool events
 const express = require('express');
 const { handleDebugDataRequest, handleToolEventsStream } = require('../services/toolEventService');
+const { db } = require('../config/database');
 const { log } = require('../utils/logger');
 
 const router = express.Router();
+
+// Database schema debug endpoint
+router.get('/debug/schema', (req, res) => {
+    try {
+        const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
+        const result = {};
+        for (const { name } of tables) {
+            const columns = db.prepare(`PRAGMA table_info(${name})`).all();
+            const rowCount = db.prepare(`SELECT COUNT(*) as count FROM ${name}`).get();
+            const sample = db.prepare(`SELECT * FROM ${name} LIMIT 20`).all();
+            // Exclude large debug_data columns from sample output
+            const debugColumns = new Set(['debug_data', 'file_metadata']);
+            const cleanSample = sample.map(row => {
+                const cleaned = { ...row };
+                for (const col of debugColumns) {
+                    if (col in cleaned) delete cleaned[col];
+                }
+                return cleaned;
+            });
+            result[name] = {
+                columns: columns.map(c => c.name),
+                count: rowCount.count,
+                data: cleanSample
+            };
+        }
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Debug data endpoint - completely separate from content
 router.get('/debug/:requestId', handleDebugDataRequest);
