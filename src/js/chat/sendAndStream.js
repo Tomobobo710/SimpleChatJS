@@ -158,8 +158,8 @@ async function streamAndRenderAssistant({
             try {
                 debugData.turn_id = savedAssistantTurn?.turn_id || null;
                 debugData.parent_turn_id = savedAssistantTurn?.parent_turn_id || null;
-                await saveTurnData(currentChatId, assistantTurnNumber, debugData);
-                logger.info(`[${inputMethod.toUpperCase()}] Saved assistant debug data for turn ${assistantTurnNumber}`);
+                await saveTurnData(currentChatId, savedAssistantTurn?.turn_id, debugData);
+                logger.info(`[${inputMethod.toUpperCase()}] Saved assistant debug data for turn_id=${savedAssistantTurn?.turn_id}`);
             } catch (error) {
                 logger.warn(`[${inputMethod.toUpperCase()}] Failed to save assistant debug data:`, error);
             }
@@ -182,7 +182,6 @@ async function streamAndRenderAssistant({
 // Top-level unified helper. All three flows call this with the variations
 // passed in as arguments / callbacks.
 async function sendAndStream({
-    message,
     userTurnNumber,
     parentTurnId = null,
     turnId = null,
@@ -246,7 +245,7 @@ async function sendAndStream({
     const effectiveRetriedTurnId = userTurnInfo ? userTurnInfo.turn_id : retriedTurnId;
 
     const requestInfo = initiateMessageRequest(
-        message, enabledToolsFlags, requestId,
+        enabledToolsFlags, requestId,
         effectiveParentTurnId, effectiveTurnId, effectiveRetriedTurnId
     );
 

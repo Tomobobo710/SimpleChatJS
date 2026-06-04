@@ -2,77 +2,24 @@
 
 const API_BASE = window.location.origin;
 
-// Send a chat message
-async function sendMessage(message) {
+// Turn data functions (keyed on turn_id after the M6 fix — sibling-safe).
+// Debug data is stored on the message row identified by turn_id; the
+// backend no longer keys on turn_number because two siblings can share
+// one turn_number after retry/edit-retry.
+async function saveTurnData(chatId, turnId, data) {
     try {
-        // Get enabled tools for filtering
-        const enabledTools = loadEnabledTools();
-        
-        const response = await fetch(`${API_BASE}/api/chat`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-           body: JSON.stringify({
-                message: message,
-                chat_id: currentChatId,
-                enabled_tools: enabledTools
-            })
-        });
-
-        if (!response.ok) {
-            throw Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        return response;
-    } catch (error) {
-        logger.error('Error sending message:', error, true);
-        throw error;
-    }
-}
-
-// Update debug data for a message
-async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
-    try {
-        const response = await fetch(`${API_BASE}/api/message/debug`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                chat_id: chatId,
-                role: role,
-                turn_number: turnNumber,
-                debug_data: debugData
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error updating message debug data:', error);
-        throw error;
-    }
-}
-
-// Turn data functions (clean RESTful API)
-async function saveTurnData(chatId, turnNumber, data) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turns/${turnNumber}`, {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turns/${turnId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({ data })
         });
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         return await response.json();
     } catch (error) {
         logger.error('Error saving turn data:', error);
@@ -80,32 +27,18 @@ async function saveTurnData(chatId, turnNumber, data) {
     }
 }
 
-async function getTurnData(chatId, turnNumber) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turns/${turnNumber}`);
-        
-        if (!response.ok) {
-            if (response.status === 404) {
-                return null; // No data for this turn
-            }
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error getting turn data:', error);
-        throw error;
-    }
-}
-
-// Initiate a request without awaiting the response (returns controller and requestId)
-function initiateMessageRequest(message, enabledToolsData = null, requestId = null, parentTurnId = null, turnId = null, retriedTurnId = null) {
+// Initiate a request without awaiting the response (returns controller and requestId).
+// Note (M7): the request body intentionally omits `message`. The LLM-bound
+// messages array is built exclusively from DB history on the backend; the
+// user-supplied `message` field had no effect on what the model saw, and
+// keeping it would only create an avenue for stale or attacker-controlled
+// input to reach the model.
+function initiateMessageRequest(enabledToolsData = null, requestId = null, parentTurnId = null, turnId = null, retriedTurnId = null) {
     try {
         // Generate requestId if not provided
         const generatedRequestId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+
         const requestBody = {
-            message: message,
             chat_id: currentChatId,
             enabled_tools: enabledToolsData,
             request_id: generatedRequestId,
@@ -113,25 +46,25 @@ function initiateMessageRequest(message, enabledToolsData = null, requestId = nu
             turn_id: turnId,
             retried_turn_id: retriedTurnId
         };
-        
+
         // Create abort controller for this request
         const abortController = new AbortController();
         currentAbortController = abortController;
-        
+
         // Log request size for debugging
         const requestBodyString = JSON.stringify(requestBody);
         const requestSizeMB = (requestBodyString.length / 1024 / 1024).toFixed(2);
         logger.debug(`[API] Request size: ${requestSizeMB}MB`);
-        
+
         if (requestSizeMB > 50) {
             logger.warn(`[API] Large request detected: ${requestSizeMB}MB - this may cause "headers too big" errors`);
             showError(`Warning: Large request (${requestSizeMB}MB) may fail. Consider reducing image sizes.`);
         }
-        
+
         if (requestSizeMB > 100) {
             throw new Error(`Request too large (${requestSizeMB}MB). Please reduce image sizes or remove some images.`);
         }
-        
+
         // Start the request but don't await it
         const fetchPromise = fetch(`${API_BASE}/api/chat`, {
             method: 'POST',
@@ -141,9 +74,9 @@ function initiateMessageRequest(message, enabledToolsData = null, requestId = nu
             body: requestBodyString,
             signal: abortController.signal
         });
-        
+
         logger.debug('[API] Initiated message request with requestId:', generatedRequestId);
-        
+
         // Return the information needed to track and await this request
         return {
             requestId: generatedRequestId,
@@ -152,38 +85,6 @@ function initiateMessageRequest(message, enabledToolsData = null, requestId = nu
         };
     } catch (error) {
         logger.error('[API] Error initiating message request:', error);
-        throw error;
-    }
-}
-
-async function sendMessageWithTools(message, toolDefinitions = [], requestId = null) {
-    try {
-        const requestBody = {
-            message: message,
-            chat_id: currentChatId,
-            enabled_tools: toolDefinitions,
-            ...(requestId && { request_id: requestId })
-        };
-        
-        // Create abort controller for this request
-        currentAbortController = new AbortController();
-        
-        const response = await fetch(`${API_BASE}/api/chat`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody),
-            signal: currentAbortController.signal
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        return response;
-    } catch (error) {
-        logger.error('Error sending message:', error, true);
         throw error;
     }
 }

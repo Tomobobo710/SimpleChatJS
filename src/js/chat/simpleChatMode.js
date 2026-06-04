@@ -149,10 +149,13 @@ async function handleSimpleChatAbort({ userTurnNumber, message, processor }) {
         const partialContent = processor.getRawContent() || '';
         logger.info(`[FRONTEND] Stopped message rendered, backend handles saving`);
 
+        // Aborted streams reach this point before the backend has assigned
+        // a turn_id to the assistant message, so there is no turn_id to
+        // key debug storage on. The backend's connection-error handler
+        // creates the assistant row from whatever it has on hand; the
+        // frontend's partial debug data is best-effort and is dropped here.
         stoppedDebugData.turn_id = null;
         stoppedDebugData.parent_turn_id = null;
-        await saveTurnData(currentChatId, assistantTurnNumber, stoppedDebugData);
-        logger.info(`[TURN-DEBUG] Saved stopped debug data for turn ${assistantTurnNumber}`);
 
         updateChatPreview(currentChatId, partialContent);
         updateChatTitleFromMessage(message);
@@ -187,7 +190,6 @@ async function handleSimpleChat(message, conversationHistory) {
 
     try {
         await sendAndStream({
-            message,
             userTurnNumber,
             parentTurnId: null,
             turnId: null,
@@ -244,8 +246,8 @@ async function handleSimpleChat(message, conversationHistory) {
                 savedUserDebugData = userDebugData;
 
                 try {
-                    await saveTurnData(currentChatId, userTurnNumber, userDebugData);
-                    logger.info(`[TURN-DEBUG] Saved user debug data for turn ${userTurnNumber}`);
+                    await saveTurnData(currentChatId, userTurnInfo.turn_id, userDebugData);
+                    logger.info(`[TURN-DEBUG] Saved user debug data for turn_id=${userTurnInfo.turn_id}`);
                 } catch (error) {
                     logger.warn('Failed to save user turn debug data:', error);
                 }

@@ -1,7 +1,7 @@
 // Chat routes - Handle chat operations and messaging
 const express = require('express');
 const { db } = require('../config/database');
-const { processChatRequest, saveTurnDebugData, getTurnDebugData, getAllTurnDebugData } = require('../services/chatService');
+const { processChatRequest, saveTurnDebugData, getTurnDebugData } = require('../services/chatService');
 const { log } = require('../utils/logger');
 
 const router = express.Router();
@@ -442,25 +442,22 @@ router.post('/message', async (req, res) => {
     }
 });
 
-// Turn data endpoints (RESTful design)
+// Turn data endpoints (RESTful design, keyed on turn_id after the M6 fix)
 // Save turn data
-router.post('/chat/:id/turns/:turnNumber', async (req, res) => {
+router.post('/chat/:id/turns/:turnId', async (req, res) => {
     try {
-        const { id: chatId, turnNumber } = req.params;
+        const { id: chatId, turnId } = req.params;
         const { data } = req.body;
-        const turnNum = parseInt(turnNumber, 10);
-        
-        if (isNaN(turnNum)) {
-            return res.status(400).json({ error: 'Invalid turn number' });
+
+        if (!turnId) {
+            return res.status(400).json({ error: 'turnId is required' });
         }
-        
         if (!data) {
             return res.status(400).json({ error: 'data is required' });
         }
-        
-        await saveTurnDebugData(chatId, turnNum, data);
+
+        await saveTurnDebugData(chatId, turnId, data);
         res.json({ success: true });
-        
     } catch (error) {
         log('[TURN-DATA-SAVE] Error:', error);
         res.status(500).json({ error: error.message });
@@ -468,23 +465,21 @@ router.post('/chat/:id/turns/:turnNumber', async (req, res) => {
 });
 
 // Get turn data
-router.get('/chat/:id/turns/:turnNumber', (req, res) => {
+router.get('/chat/:id/turns/:turnId', (req, res) => {
     try {
-        const { id: chatId, turnNumber } = req.params;
-        const turnNum = parseInt(turnNumber, 10);
-        
-        if (isNaN(turnNum)) {
-            return res.status(400).json({ error: 'Invalid turn number' });
+        const { id: chatId, turnId } = req.params;
+
+        if (!turnId) {
+            return res.status(400).json({ error: 'turnId is required' });
         }
-        
-        const turnData = getTurnDebugData(chatId, turnNum);
-        
+
+        const turnData = getTurnDebugData(chatId, turnId);
+
         if (turnData) {
             res.json(turnData);
         } else {
             res.status(404).json({ error: 'Turn data not found' });
         }
-        
     } catch (error) {
         log('[TURN-DATA-GET] Error:', error);
         res.status(500).json({ error: error.message });
@@ -548,18 +543,21 @@ router.get('/chat/:id/current-turn', (req, res) => {
 router.get('/chat/:id/last-turn-info', (req, res) => {
     const { id: chatId } = req.params;
     const { db } = require('../config/database');
-    
+
     try {
-        // Get the most recent message with a turn_id from the entire chat
+        // Return the most recent ASSISTANT turn's lineage info. Filtering
+        // by role='assistant' prevents tool messages, system-prompt rows
+        // (saved as siblings in the DB), or any other late-inserted row
+        // from shadowing the assistant the user actually saw (L7).
         const lastTurnStmt = db.prepare(`
-            SELECT turn_id, parent_turn_id 
-            FROM messages 
-            WHERE chat_id = ? AND turn_id IS NOT NULL
-            ORDER BY id DESC 
+            SELECT turn_id, parent_turn_id
+            FROM messages
+            WHERE chat_id = ? AND turn_id IS NOT NULL AND role = 'assistant'
+            ORDER BY id DESC
             LIMIT 1
         `);
         const lastTurn = lastTurnStmt.get(chatId);
-        
+
         if (lastTurn) {
             res.json({ turn_id: lastTurn.turn_id, parent_turn_id: lastTurn.parent_turn_id });
         } else {
@@ -624,23 +622,12 @@ router.get('/chat/:id/turn/:turnNumber', (req, res) => {
 });
 
 // Get all turn data for a chat
-router.get('/chat/:id/turns', (req, res) => {
-    try {
-        const { id: chatId } = req.params;
-        
-        const turnDataMap = getAllTurnDebugData(chatId);
-        res.json(turnDataMap);
-        
-    } catch (error) {
-        log('[ALL-TURN-DATA] Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+// (Removed: the /chat/:id/turns bulk endpoint had no frontend consumer
+// after the M6 fix. Individual turns are fetched via /chat/:id/turns/:turnId.)
 
 // Main chat endpoint that frontend expects
 router.post('/chat', processChatRequest);
 
-module.exports = router;
 // Edit message content
 router.patch('/message/:id', async (req, res) => {
     try {
@@ -733,3 +720,5 @@ router.get('/message/:id', (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+module.exports = router;

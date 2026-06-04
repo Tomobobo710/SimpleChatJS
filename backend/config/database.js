@@ -70,6 +70,13 @@ function initializeDatabase() {
                 error_state TEXT DEFAULT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (id)
             )`);
+
+            // Indexes for lineage-based queries (L5).
+            // The (chat_id, turn_id) and (chat_id, parent_turn_id) pairs are
+            // the two lookup shapes used by buildRenderedTurns,
+            // getAncestorTurnIds, and the retry/edit-retry history filter.
+            db.exec("CREATE INDEX IF NOT EXISTS idx_messages_chat_turn ON messages(chat_id, turn_id)");
+            db.exec("CREATE INDEX IF NOT EXISTS idx_messages_chat_parent ON messages(chat_id, parent_turn_id)");
             
             log('[DB] Database initialized successfully');
             resolve();

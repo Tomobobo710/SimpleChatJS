@@ -788,7 +788,6 @@ class ChatRenderer {
             }
 
             await sendAndStream({
-                message: parentUserMessage.content,
                 userTurnNumber: turnNumber,
                 parentTurnId: parentUserTurnId,
                 turnId: parentUserTurnId,
@@ -1814,7 +1813,6 @@ class ChatRenderer {
                 // Retract at this user turn (truncates history, new response becomes sibling)
 
                 await sendAndStream({
-                    message: editedContent,
                     userTurnNumber: retryTurnNumber,
                     parentTurnId: originalUserParentTurnId,
                     truncateFromTurnNumber: retryTurnNumber,
@@ -1894,8 +1892,8 @@ class ChatRenderer {
                         };
 
                         try {
-                            await saveTurnData(currentChatId, retryTurnNumber, userDebugData);
-                            logger.info(`[EDIT-RETRY] Saved new user debug data for turn ${retryTurnNumber}`);
+                            await saveTurnData(currentChatId, userTurnInfo.turn_id, userDebugData);
+                            logger.info(`[EDIT-RETRY] Saved new user debug data for turn_id=${userTurnInfo.turn_id}`);
                         } catch (error) {
                             logger.warn('[EDIT-RETRY] Failed to save new user turn debug data:', error);
                         }

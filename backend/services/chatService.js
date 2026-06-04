@@ -172,129 +172,71 @@ const { getCurrentSettings } = require('./settingsService');
 const { executeMCPTool, getAvailableToolsForChat } = require('./mcpService');
 const { addToolEvent, storeDebugData } = require('./toolEventService');
 
-// Update debug data for the most recent message of a specific role in a turn
-async function updateMessageDebugData(chatId, role, turnNumber, debugData) {
+// Turn-based debug data functions (keyed on turn_id to be sibling-safe —
+// M6). Two sibling turns can share a turn_number, so keying debug storage
+// on turn_id ensures each lineage's debug data is independent.
+async function saveTurnDebugData(chatId, turnId, debugData) {
     const { db } = require('../config/database');
-    
-    try {
-        const debugDataJson = debugData ? JSON.stringify(debugData) : null;
-        
-        // Update the most recent message of the specified role in the specified turn
-        const updateStmt = db.prepare(
-            'UPDATE messages SET debug_data = ? WHERE chat_id = ? AND role = ? AND turn_number = ? AND id = (SELECT MAX(id) FROM messages WHERE chat_id = ? AND role = ? AND turn_number = ?)'
-        );
-        const result = updateStmt.run(debugDataJson, chatId, role, turnNumber, chatId, role, turnNumber);
-        
-        if (result.changes > 0) {
-            log(`[CHAT-UPDATE] Updated debug data for ${role} message in turn ${turnNumber}`);
-        } else {
-            log(`[CHAT-UPDATE] No message found to update for ${role} in turn ${turnNumber}`);
-        }
-        
-    } catch (err) {
-        log('[CHAT-UPDATE] Error updating message debug data:', err);
-        throw err;
-    }
-}
 
-// Turn-based debug data functions
-async function saveTurnDebugData(chatId, turnNumber, debugData) {
-    const { db } = require('../config/database');
-    
     try {
-        const debugDataJson = JSON.stringify(debugData);
-        
-        // First check if a message exists for this turn
-        const checkStmt = db.prepare(`
-            SELECT id FROM messages 
-            WHERE chat_id = ? AND turn_number = ?
-            LIMIT 1
-        `);
-        const existing = checkStmt.get(chatId, turnNumber);
-        
-        let result;
-        if (existing) {
-            // Update existing message
-            const updateStmt = db.prepare(`
-                UPDATE messages 
-                SET debug_data = ?
-                WHERE chat_id = ? AND turn_number = ?
-            `);
-            result = updateStmt.run(debugDataJson, chatId, turnNumber);
-        } else {
-            // Insert placeholder message with debug data
-            const insertStmt = db.prepare(`
-                INSERT INTO messages (chat_id, turn_number, role, content, debug_data, timestamp)
-                VALUES (?, ?, 'user', '', ?, datetime('now'))
-            `);
-            result = insertStmt.run(chatId, turnNumber, debugDataJson);
+        if (!turnId) {
+            // Aborted streams reach saveTurnDebugData before the assistant
+            // message has a turn_id assigned by the backend. Skip rather
+            // than insert a placeholder row (the previous version of this
+            // function did `INSERT … VALUES (?, ?, 'user', '', …)`, which
+            // created ghost user rows and clobbered sibling debug data).
+            log(`[TURN-DEBUG] Skipping debug save for chat ${chatId}: no turn_id yet (aborted stream?)`);
+            return null;
         }
-        
-        log(`[TURN-DEBUG] Updated debug data for turn ${turnNumber} in chat ${chatId}`);
+
+        const debugDataJson = JSON.stringify(debugData);
+
+        // Update the existing message row. The caller is responsible for
+        // ensuring the row exists (it does — frontend saves the user row
+        // before sending, and the assistant row is created by handleChatWithTools
+        // before streamAndRenderAssistant fires saveTurnDebugData).
+        const updateStmt = db.prepare(`
+            UPDATE messages
+            SET debug_data = ?
+            WHERE chat_id = ? AND turn_id = ?
+        `);
+        const result = updateStmt.run(debugDataJson, chatId, turnId);
+
+        if (result.changes === 0) {
+            log(`[TURN-DEBUG] No message found for chat=${chatId} turn_id=${turnId}; debug data not saved`);
+        } else {
+            log(`[TURN-DEBUG] Saved debug data for turn_id=${turnId} in chat ${chatId}`);
+        }
         return result;
-        
     } catch (err) {
         log('[TURN-DEBUG] Error saving turn debug data:', err);
         throw err;
     }
 }
 
-function getTurnDebugData(chatId, turnNumber) {
+function getTurnDebugData(chatId, turnId) {
     const { db } = require('../config/database');
-    
+
     try {
-        // Get debug data from messages for the specific turn
         const stmt = db.prepare(`
-            SELECT debug_data 
-            FROM messages 
-            WHERE chat_id = ? AND turn_number = ? AND debug_data IS NOT NULL
+            SELECT debug_data
+            FROM messages
+            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
             LIMIT 1
         `);
-        const result = stmt.get(chatId, turnNumber);
-        
+        const result = stmt.get(chatId, turnId);
+
         if (result && result.debug_data) {
             const debugData = JSON.parse(result.debug_data);
-            log(`[TURN-DEBUG] Retrieved debug data for turn ${turnNumber} in chat ${chatId}`);
+            log(`[TURN-DEBUG] Retrieved debug data for turn_id=${turnId} in chat ${chatId}`);
             return debugData;
         } else {
-            log(`[TURN-DEBUG] No debug data found for turn ${turnNumber} in chat ${chatId}`);
+            log(`[TURN-DEBUG] No debug data found for turn_id=${turnId} in chat ${chatId}`);
             return null;
         }
-        
     } catch (err) {
         log('[TURN-DEBUG] Error getting turn debug data:', err);
         return null;
-    }
-}
-
-function getAllTurnDebugData(chatId) {
-    const { db } = require('../config/database');
-    
-    try {
-        // Get all debug data from messages
-        const stmt = db.prepare(`
-            SELECT turn_number, debug_data 
-            FROM messages 
-            WHERE chat_id = ? AND debug_data IS NOT NULL
-            ORDER BY turn_number ASC
-        `);
-        const rows = stmt.all(chatId);
-        
-        const turnDebugMap = {};
-        rows.forEach(row => {
-            try {
-                turnDebugMap[row.turn_number] = JSON.parse(row.debug_data);
-            } catch (parseError) {
-                log(`[TURN-DEBUG] Error parsing debug data for turn ${row.turn_number}:`, parseError);
-            }
-        });
-        
-        log(`[TURN-DEBUG] Retrieved debug data for ${rows.length} turns in chat ${chatId}`);
-        return turnDebugMap;
-        
-    } catch (err) {
-        log('[TURN-DEBUG] Error getting all turn debug data:', err);
-        return {};
     }
 }
 
@@ -1152,16 +1094,25 @@ async function executeToolCallsAndContinue(res, toolCalls, messages, tools, chat
 async function processChatRequest(req, res) {
     const { db } = require('../config/database');
     try {
-        const { message, chat_id, enabled_tools, request_id, parent_turn_id, turn_id, retried_turn_id } = req.body;
-        
-        if (!message) {
-            return res.status(400).json({ error: 'Message is required' });
-        }
+        // Note: req.body.message is intentionally NOT read here (M7).
+        // The LLM-bound messages array is built exclusively from DB history
+        // (getChatHistoryForAPI), so the user-supplied `message` field has
+        // no effect on what the model sees. Keeping the field would only
+        // create an avenue for a stale or attacker-controlled prefix to
+        // reach the model. The frontend was updated to stop sending it.
+        const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, retried_turn_id } = req.body;
+
                 
-        // Build messages for API - get chat history first
-        // If parent_turn_id is provided, this is a retry. Find the original assistant turn
-        // being retried (first assistant msg with this parent_turn_id) and filter history
-        // to only ancestors of the retried turn, plus all messages sharing those ancestors' turn_numbers.
+        // Build messages for API from chat history.
+        //   If `retried_turn_id` is provided, the history is filtered to
+        //   the lineage of that turn (the explicit anchor for both user
+        //   edit/retry and assistant retry).
+        //   Otherwise, if only `parent_turn_id` is provided, the history
+        //   is filtered to the lineage of the first assistant row with
+        //   that parent (fallback path).
+        //   The actual filter is getChatHistoryForAPI(chat_id, historyMaxTurnId)
+        //   and uses `turn_id IN (ancestorIds)` — pure lineage via
+        //   getAncestorTurnIds, with no turn-number sharing.
         log(`[CHAT] Request body: retried_turn_id=${retried_turn_id}, parent_turn_id=${parent_turn_id}`);
         let historyMaxTurnId = null;
         if (retried_turn_id) {
@@ -1184,21 +1135,12 @@ async function processChatRequest(req, res) {
                 log(`[CHAT] Retry detected (fallback): filtering history (maxTurnId=${historyMaxTurnId})`);
             }
         }
-        
+
         const messages = getChatHistoryForAPI(chat_id, historyMaxTurnId);
 
         // Log what's in history
         log(`[CHAT-DEBUG] Current history count: ${messages.length}`);
-        
-        // PROCESS MESSAGE FOR AI: Extract files and create concatenated content
-        const processedMessage = processMessageForAI(message);
-        const { aiContent, originalContent, fileMetadata } = processedMessage;
-        
-        // Log file processing details
-        if (fileMetadata.hasFiles) {
-            log(`[FILE-PROCESSING] Processed message with ${fileMetadata.fileCount} file(s) and ${fileMetadata.imageCount} image(s)`);
-        }
-        
+
         // Inject system prompt if this is the first message in the conversation/branch
         if (messages.length === 1) {
             const currentSettings = getCurrentSettings();
@@ -1215,9 +1157,16 @@ async function processChatRequest(req, res) {
                 // Save system prompt to database (it becomes part of chat history)
                 if (chat_id) {
                     try {
-                        const systemPromptTurnInfo = getTurnInfo(null);
-                        await saveCompleteMessageToDatabase(chat_id, systemMessage, null, null, systemPromptTurnInfo);
-                        log(`[SYSTEM-PROMPT] Saved system prompt to chat history`);
+                        // The system prompt is a Message in Turn 1, sharing the
+                        // first user message's turn_id. This makes it editable
+                        // like any other turn message (so plain "edit" can
+                        // change the next AI request) and prevents it from
+                        // being re-prepended on retries — once it's in the DB,
+                        // getChatHistoryForAPI includes it in the filtered
+                        // lineage and messages.length is no longer 1.
+                        const systemPromptTurnInfo = getTurnInfo(parent_turn_id, turn_id);
+                        await saveCompleteMessageToDatabase(chat_id, systemMessage, 1, null, systemPromptTurnInfo);
+                        log(`[SYSTEM-PROMPT] Saved system prompt to chat history as a message in turn_id=${turn_id}`);
                     } catch (error) {
                         log(`[SYSTEM-PROMPT] Error saving system prompt to history: ${error.message}`);
                     }
@@ -1227,8 +1176,11 @@ async function processChatRequest(req, res) {
         
         // Check if we have any messages at all
         if (messages.length === 0) {
-            // No chat_id and no message - this shouldn't happen but handle gracefully
-            throw new Error('No message provided and no chat history available');
+            // No chat history — the chat was never seeded with a user message.
+            // The frontend should have saved a user message before sending
+            // here, so this indicates either a missing POST /message call or
+            // a brand-new chat. Either way, the LLM has nothing to respond to.
+            throw new Error('No chat history available for this chat');
         }
         
         // Get available tools
@@ -1354,15 +1306,13 @@ module.exports = {
     handleChatWithTools,
     processChatRequest,
     saveCompleteMessageToDatabase,
-    updateMessageDebugData,
     getChatHistoryForAPI,
     getCurrentTurnNumber,
     getTurnInfo,
     incrementTurnNumber,
-    // Turn-based debug data functions
+    // Turn-based debug data functions (keyed on turn_id, M6)
     saveTurnDebugData,
     getTurnDebugData,
-    getAllTurnDebugData,
     // File handling functions
     extractFilesFromContent,
     concatenateFileContent,
