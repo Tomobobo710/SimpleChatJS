@@ -288,11 +288,15 @@ async function sendAndStream({
         }
     }
 
-    if (typeof chatRenderer !== 'undefined' && chatRenderer && chatRenderer.refreshBranchNavigation) {
-        setTimeout(async () => {
-            await chatRenderer.refreshBranchNavigation();
-        }, 100);
-    }
+    // No post-render refreshBranchNavigation sweep. The new assistant
+    // turn is the latest sibling of its parent user turn, but the
+    // user turn doesn't gain a new sibling from this — only the
+    // assistant's own branch-nav changes, and renderTurn already
+    // updates branch-nav per-turn (chatRenderer.js:661). A blanket
+    // sweep after every send is redundant. Earlier versions of this
+    // code did `setTimeout(refreshBranchNavigation, 100)` here as a
+    // superstition; the await on streamAndRenderAssistant already
+    // guarantees the assistant turn is in the DOM.
 
     return { userTurnInfo, assistantTurnInfo, requestId };
 }

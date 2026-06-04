@@ -1779,11 +1779,15 @@ class ChatRenderer {
                 delete turnDiv.dataset.shouldRetryAfterEdit;
                 delete turnDiv.dataset.editRetryTurnNumber;
                 delete turnDiv.dataset.editRetryTurnId;
-                
-                // Wait a moment to ensure edit save completes
-                await new Promise((resolve) => setTimeout(resolve, 100));
-                
-                // Get the edited content from UI (since we skipped saving to preserve original turn)
+
+                // Get the edited content from UI (since we skipped saving to preserve original turn).
+                // The edit save in saveAllMessages is `await`-ed before
+                // exitMessageEditMode runs, so by the time we get here the
+                // DB write is done. No wait is needed between the
+                // flag-clearing above and the textarea read below — the
+                // DOM is fully settled, and any prior version of this code
+                // that used `setTimeout(_, 100)` here was a superstition,
+                // not a real race fix.
                 const messageContainers = turnDiv.querySelectorAll("[data-message-id]");
                 let editedContent = null;
                 
@@ -1976,13 +1980,18 @@ class ChatRenderer {
                     },
                 });
             } else {
-                // Regular edit - reload chat and refresh branch navigation
+                // Regular edit (no retry) - reload chat. The non-retry
+                // path only edits the content of the existing turn; it
+                // does NOT create new turns or siblings, so other turns'
+                // branch-nav is unaffected. loadChatHistory re-renders
+                // every turn and renderTurn updates branch-nav per-turn
+                // (line 661), so a post-hoc refreshBranchNavigation
+                // sweep is redundant. Earlier versions of this code did
+                // a `setTimeout(refreshBranchNavigation, 100)` here as a
+                // superstition; the await on loadChatHistory already
+                // guarantees the DOM is settled, and there is no real
+                // race to paper over.
                 await loadChatHistory(currentChatId);
-
-                // Refresh branch navigation in case the edit created new sibling turns
-                setTimeout(async () => {
-                    await this.refreshBranchNavigation();
-                }, 100);
             }
         } catch (error) {
             console.error("[EDIT] Error in exitMessageEditMode:", error);
@@ -2195,14 +2204,18 @@ class ChatRenderer {
 
         // Re-render the chat history with the new sibling selected
         await loadChatHistory(currentChatId);
-        
-        // Scroll to the selected turn
-        setTimeout(() => {
-            const targetTurn = document.querySelector(`[data-turn-id="${targetTurnId}"]`);
-            if (targetTurn) {
-                targetTurn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }, 100);
+
+        // Scroll to the selected turn. loadChatHistory is `await`-ed, so
+        // the new turn is in the DOM by the time we get here — no wait
+        // is needed. The smooth scroll behavior itself animates the
+        // scroll, which is what the prior `setTimeout(_, 100)` was
+        // trying to simulate by deferring the scroll past the
+        // perceived render "flash". Direct call is both correct and
+        // faster.
+        const targetTurn = document.querySelector(`[data-turn-id="${targetTurnId}"]`);
+        if (targetTurn) {
+            targetTurn.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
     }
 
     // Refresh branch navigation for all turns
@@ -2276,27 +2289,30 @@ function createDebugPanel(turnDiv, messageId, debugData, turnNumber = null) {
     
     // Use the new sequential debug panel
     debugPanel.innerHTML = createDebugPanelContent(debugData);
-    
-    // Force width on all debug dropdowns
-    setTimeout(() => {
-        const dropdowns = debugPanel.querySelectorAll(".debug-dropdown");
-        dropdowns.forEach((dropdown) => {
-            dropdown.style.width = "100%";
-            dropdown.style.boxSizing = "border-box";
-            
-            const content = dropdown.querySelector(".debug-dropdown-content");
-            if (content) {
-                content.style.width = "100%";
-                content.style.boxSizing = "border-box";
-                
-                const pre = content.querySelector("pre");
-                if (pre) {
-                    pre.style.width = "100%";
-                    pre.style.boxSizing = "border-box";
-                }
+
+    // Force width on all debug dropdowns. Applied synchronously
+    // immediately after `innerHTML` is set; the children are in the
+    // DOM and queryable on the same line as the assignment. The
+    // prior `setTimeout(_, 0)` here was a superstition — these styles
+    // are `width: 100%` / `boxSizing: border-box`, which are box-level
+    // and don't require a paint cycle or layout pass to apply.
+    const dropdowns = debugPanel.querySelectorAll(".debug-dropdown");
+    dropdowns.forEach((dropdown) => {
+        dropdown.style.width = "100%";
+        dropdown.style.boxSizing = "border-box";
+
+        const content = dropdown.querySelector(".debug-dropdown-content");
+        if (content) {
+            content.style.width = "100%";
+            content.style.boxSizing = "border-box";
+
+            const pre = content.querySelector("pre");
+            if (pre) {
+                pre.style.width = "100%";
+                pre.style.boxSizing = "border-box";
             }
-        });
-    }, 0);
+        }
+    });
     
     return debugPanel;
 }
