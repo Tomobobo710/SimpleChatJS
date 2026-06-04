@@ -543,12 +543,18 @@ async function loadChatHistory(chatId) {
         // reload would lose the user's explicit prev/next picks (because
         // walk would default to "last sibling" again). The frontend map
         // is scoped per-chat (M2) — keys are `${chatId}::${parentKey}`.
-        // loadBranchSelections returns {} for an unknown chat; we treat
-        // that as "no overrides" and let the walk fall back. Errors throw
-        // — a broken DB read on a chat load is loud, not silent.
+        // loadBranchSelections returns the DB's `parent_key` column
+        // verbatim, which is already in the full scoped form
+        // (`<chatId>::root` or `<chatId>::<turnId>`) — do NOT add the
+        // `${chatId}::` prefix again here, that would produce
+        // `<chatId>::<chatId>::root` and the walk's scopeKey lookup
+        // would never find the loaded pick. loadBranchSelections returns
+        // {} for an unknown chat; we treat that as "no overrides" and let
+        // the walk fall back. Errors throw — a broken DB read on a chat
+        // load is loud, not silent.
         const persistedSelections = await loadBranchSelections(chatId);
         for (const [parentKey, selectedTurnId] of Object.entries(persistedSelections)) {
-            selectedSiblings[`${chatId}::${parentKey}`] = selectedTurnId;
+            selectedSiblings[parentKey] = selectedTurnId;
         }
         if (Object.keys(persistedSelections).length > 0) {
             console.log(`[LOAD-HISTORY] Restored ${Object.keys(persistedSelections).length} branch selection(s) for chat ${chatId}`);
