@@ -698,20 +698,30 @@ class ChatRenderer {
         try {
             // Get all messages for this turn
             const response = await getTurnMessages(currentChatId, turnNumber);
-            
+
             if (!response || !response.messages) {
                 showError("Cannot edit: Invalid response from server");
                 console.error("[EDIT] Invalid response:", response);
                 return;
             }
-            
-            const turnMessages = response.messages;
-            
+
+            // Phase 9 follow-up: filter to ONLY the active leaf's messages.
+            // The backend's /chat/:id/turn/:turnNumber endpoint returns every
+            // message with the given turn_number — siblings share turn_number
+            // (multiple user turns with turn_number=1 are valid after edits),
+            // so the unfiltered list contains every sibling's content. The
+            // edit modal should show the leaf the user is currently on (the
+            // one whose data-turn-id matches the clicked turn), not every
+            // sibling at that branch point. Filter client-side because the
+            // endpoint contract is used by other callers and the active leaf
+            // is determined by the frontend (selectedSiblings / DOM).
+            const turnMessages = response.messages.filter(m => m.turn_id === turnId);
+
             if (!Array.isArray(turnMessages) || turnMessages.length === 0) {
                 showError("Cannot edit: No messages found for this turn");
                 return;
             }
-            
+
             // Enter message-based edit mode
             this.enterMessageEditMode(turnDiv, turnMessages, turnNumber);
         } catch (error) {
@@ -1924,17 +1934,31 @@ class ChatRenderer {
                             logger.warn('[EDIT-RETRY] Failed to save new user turn debug data:', error);
                         }
 
-                        const newTurnDiv = this.renderTurn(
-                            {
-                                role: 'user',
-                                content: editedContent,
-                                turnNumber: retryTurnNumber,
-                                turnId: userTurnInfo.turn_id,
-                                parentTurnId: userTurnInfo.parent_turn_id,
-                                debugData: userDebugData
-                            },
-                            true
-                        );
+                        // Phase 9 follow-up: the new dog turn is the
+                        // user's active path now — set the in-memory
+                        // selectedSiblings entry so the next walk picks
+                        // the dog (not the cat, which was the previously-
+                        // active sibling at root). Without this, the
+                        // renderer's walkActiveBranch would default to
+                        // whichever sibling the previous render selected,
+                        // and a manual render would risk showing both
+                        // cat and dog at root.
+                        selectedSiblings[`${currentChatId}::root`] = userTurnInfo.turn_id;
+
+                        // Phase 9 follow-up: reload the renderer from DB
+                        // BEFORE the LLM call (streamAndRenderAssistant)
+                        // runs. sendAndStream's manual truncation +
+                        // renderUserBubble has a known issue with the
+                        // edit-and-retry case where the original cat and
+                        // the new dog share the same turn_number and the
+                        // renderer can briefly show both. Calling
+                        // loadChatHistory here wipes the DOM and rebuilds
+                        // it from the DB using the same walk that
+                        // loadChatHistory uses for chat switches — the
+                        // path that's been verified to render correctly.
+                        // The user sees the new dog turn rendered from
+                        // DB; then the assistant streams in normally.
+                        await loadChatHistory(currentChatId);
 
                         // Phase 8 Task 21 (L17): the new dog bubble is the
                         // result of an edit, so it gets an "(edited 1x)"
@@ -1943,6 +1967,9 @@ class ChatRenderer {
                         // the new turn's DB edit_count stays 0 since it
                         // was never edited itself — "1x" here means "this
                         // turn was produced by 1 edit of an earlier turn".
+                        const newTurnDiv = document.querySelector(
+                            `.turn[data-turn-id="${userTurnInfo.turn_id}"]`
+                        );
                         if (newTurnDiv) {
                             this.addEditIndicator(newTurnDiv, 1);
                         }
@@ -1951,7 +1978,7 @@ class ChatRenderer {
             } else {
                 // Regular edit - reload chat and refresh branch navigation
                 await loadChatHistory(currentChatId);
-                
+
                 // Refresh branch navigation in case the edit created new sibling turns
                 setTimeout(async () => {
                     await this.refreshBranchNavigation();
