@@ -65,7 +65,7 @@ class ChatRenderer {
         
         const turnDiv = document.createElement("div");
         const domId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+
         // Use the new turn-based class names
         if (role === "user") {
             turnDiv.className = "turn user-turn";
@@ -74,8 +74,7 @@ class ChatRenderer {
         } else {
             turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
         }
-        
-        turnDiv.dataset.domId = domId;
+
         if (id) {
             turnDiv.dataset.messageId = id;
         }
@@ -122,7 +121,7 @@ class ChatRenderer {
         turnDiv.appendChild(contentDiv);
         
         // Add message actions bar (passing turn_id and parent_turn_id from RTO)
-        this.addMessageActions(turnDiv, role, domId, turnNumber, id, turnId, parentTurnId);
+        this.addMessageActions(turnDiv, role, turnNumber, id, turnId, parentTurnId);
         
         // Add debug toggle and panel if debug data provided
         if (debugData) {
@@ -580,12 +579,9 @@ class ChatRenderer {
     }
     
     // Add message actions bar to turn
-    addMessageActions(turnDiv, role, domId, turnNumber = null, messageId = null, turnId = null, parentTurnId = null) {
+    addMessageActions(turnDiv, role, turnNumber = null, messageId = null, turnId = null, parentTurnId = null) {
         const actionsContainer = document.createElement("div");
         actionsContainer.className = "message-actions";
-        actionsContainer.dataset.domId = domId;
-        actionsContainer.dataset.role = role;
-        actionsContainer.dataset.turnNumber = turnNumber;
         if (messageId) {
             actionsContainer.dataset.messageId = messageId;
         }
@@ -791,7 +787,7 @@ class ChatRenderer {
                 userTurnNumber: turnNumber,
                 parentTurnId: parentUserTurnId,
                 turnId: parentUserTurnId,
-                retriedTurnId: parentUserTurnId,
+                lineageAnchorTurnId: parentUserTurnId,
                 truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
                 inputMethod: "retry",
@@ -1647,31 +1643,31 @@ class ChatRenderer {
             
             // Check if this is an "Edit & Retry" - if so, skip saving edits to preserve original turn
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
-            
+
             if (!isEditRetry) {
                 // Save each message (normal edit without retry)
                 const savePromises = Array.from(messageContainers).map(async (container) => {
                     const messageId = container.dataset.messageId;
                     const textarea = container.querySelector(".message-content-textarea");
                     const newTextContent = textarea.value;
-                    
+
                     if (messageId && newTextContent !== undefined) {
                         // Reconstruct content properly - _originalContent is always an array now
                         let finalContent;
-                        
+
                         if (Array.isArray(container._originalContent)) {
                             // Reconstruct content with text, images, AND files
                             const reconstructedArray = [];
-                            
+
                             // Add text part
                             if (newTextContent) {
                                 reconstructedArray.push({ type: 'text', text: newTextContent });
                             }
-                            
+
                             // Add existing images (unchanged)
                             const images = container._originalContent.filter(part => part.type === 'image');
                             reconstructedArray.push(...images);
-                            
+
                             // Add files from edit documents
                             if (container._editDocuments && container._editDocuments.length > 0) {
                                 reconstructedArray.push({
@@ -1679,11 +1675,11 @@ class ChatRenderer {
                                     files: container._editDocuments
                                 });
                             }
-                            
+
                             // Determine if we need multimodal format
-                            const hasMultipleTypes = reconstructedArray.length > 1 || 
+                            const hasMultipleTypes = reconstructedArray.length > 1 ||
                                                       reconstructedArray.some(part => part.type !== 'text');
-                            
+
                             if (hasMultipleTypes) {
                                 finalContent = reconstructedArray;
                             } else {
@@ -1693,19 +1689,45 @@ class ChatRenderer {
                             // Fallback for old format
                             finalContent = newTextContent;
                         }
-                        
+
                         console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
                             textContent: newTextContent,
                             hasFiles: container._editDocuments?.length > 0,
                             fileCount: container._editDocuments?.length || 0,
                             finalContent: typeof finalContent === 'string' ? 'string' : 'multimodal'
                         });
-                        
+
                         return editMessage(messageId, finalContent);
                     }
                 });
-                
+
                 await Promise.all(savePromises.filter(Boolean));
+            } else {
+                // Phase 8 Task 21 (L18): even in edit-retry, bump the
+                // original turn's edit_count so it shows "edited Nx" and
+                // has a recorded edit history. The original turn's content
+                // is preserved by passing _originalContent (so the user-
+                // visible cat bubble doesn't change). The new edited
+                // content lives in the new sibling (the dog) which
+                // saveUserMessage in exitMessageEditMode creates below.
+                const editRetryPromises = Array.from(messageContainers).map(async (container) => {
+                    const messageId = container.dataset.messageId;
+                    if (messageId) {
+                        // _originalContent is the unmodified content captured
+                        // when the user entered edit mode. Pass that back so
+                        // the DB write is a no-op on content/original_content
+                        // but still increments edit_count and sets edited_at.
+                        return editMessage(messageId, container._originalContent);
+                    }
+                });
+                const editResults = await Promise.all(editRetryPromises.filter(Boolean));
+                // Find the highest new edit_count to display on the cat.
+                const maxEditCount = editResults
+                    .filter(r => r && typeof r.edit_count === 'number')
+                    .reduce((max, r) => Math.max(max, r.edit_count), 0);
+                if (maxEditCount > 0) {
+                    this.addEditIndicator(turnDiv, maxEditCount);
+                }
             }
             
             // Exit edit mode and reload
@@ -1739,8 +1761,7 @@ class ChatRenderer {
             const shouldRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
             const retryTurnNumber = parseInt(turnDiv.dataset.editRetryTurnNumber);
             const retryTurnId = turnDiv.dataset.editRetryTurnId || null;
-            console.log('[EDIT-EXIT] shouldRetry=', shouldRetry, 'retryTurnNumber=', retryTurnNumber, 'dataset=', turnDiv.dataset);
-            
+
             turnDiv.classList.remove("editing");
             
             if (shouldRetry && retryTurnNumber) {
@@ -1829,10 +1850,15 @@ class ChatRenderer {
                             retryTurnNumber,
                             { parent_turn_id: originalUserParentTurnId }
                         );
-                        if (saveResult && saveResult.turn_id) {
-                            return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
+                        // Phase 6 Task 17 (M4): throw on failure rather than
+                        // returning null. Returning null lets the chat request
+                        // go out with no lineage anchor (H8 fallthrough) and
+                        // the user never sees an error. Throwing aborts the
+                        // flow and surfaces the failure in the outer catch.
+                        if (!saveResult || !saveResult.turn_id) {
+                            throw new Error('saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor');
                         }
-                        return null;
+                        return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
                     },
 
                     renderUserBubble: async (userTurnInfo, requestId) => {
@@ -1898,7 +1924,7 @@ class ChatRenderer {
                             logger.warn('[EDIT-RETRY] Failed to save new user turn debug data:', error);
                         }
 
-                        this.renderTurn(
+                        const newTurnDiv = this.renderTurn(
                             {
                                 role: 'user',
                                 content: editedContent,
@@ -1909,6 +1935,17 @@ class ChatRenderer {
                             },
                             true
                         );
+
+                        // Phase 8 Task 21 (L17): the new dog bubble is the
+                        // result of an edit, so it gets an "(edited 1x)"
+                        // indicator. The original cat bubble's edit_count
+                        // is bumped in saveAllMessages (L18, above), but
+                        // the new turn's DB edit_count stays 0 since it
+                        // was never edited itself — "1x" here means "this
+                        // turn was produced by 1 edit of an earlier turn".
+                        if (newTurnDiv) {
+                            this.addEditIndicator(newTurnDiv, 1);
+                        }
                     },
                 });
             } else {
@@ -1922,6 +1959,10 @@ class ChatRenderer {
             }
         } catch (error) {
             console.error("[EDIT] Error in exitMessageEditMode:", error);
+            // Phase 6 Task 17 (M4): make user-save failures visible. The
+            // throw from saveUserMessage (Task 17 fix) reaches this catch
+            // — surface it to the user instead of just logging.
+            showError(`Edit & retry failed: ${error.message}`);
         }
     }
     
@@ -1978,13 +2019,22 @@ class ChatRenderer {
                 return false;
             }
 
-            // Find all turns with the same parent_turn_id AND same role (siblings).
-            // Role filter is required because root-level messages (e.g. the saved
-            // system prompt) share parent_turn_id=null with user roots and would
-            // otherwise inflate the sibling count (e.g. "1/3" for a 2-branch chat).
+            // Find all turns that share this turn's parent_turn_id. Siblings
+            // are defined purely by lineage (Phase 9 follow-up to M11):
+            //   - Two user messages in a row share a parent and are siblings.
+            //   - Multiple assistant responses to the same user message are
+            //     siblings of each other.
+            //   - Mixed-role siblings are valid (the data model has no
+            //     user/assistant alternation constraint — turns are just
+            //     turns with a role attribute).
+            // System messages are filtered out: they are saved at root
+            // (parent_turn_id=null) for meta/debug and are never rendered,
+            // so they would otherwise inflate the sibling count on root
+            // user turns (e.g. "1/3" for a 2-branch chat).
             const siblingTurns = new Map();
             for (const msg of history.messages) {
-                if (msg.parent_turn_id === parentTurnId && msg.role === role) {
+                if (msg.role === 'system') continue;
+                if (msg.parent_turn_id === parentTurnId) {
                     const key = `${msg.turn_number || 0}::${msg.turn_id || 'unknown'}`;
                     if (!siblingTurns.has(key)) {
                         siblingTurns.set(key, []);
@@ -2098,12 +2148,24 @@ class ChatRenderer {
         targetBranchNav.querySelector(".branch-prev").disabled = newIndex <= 0;
         targetBranchNav.querySelector(".branch-next").disabled = newIndex >= siblings.length - 1;
 
-        // Update selectedSiblings state in chatManager. Normalize the key
-        // so the empty-string sentinel for root (Task 5) maps to 'root' to
-        // match the lookup in buildRenderedTurns.
+        // Update selectedSiblings state in chatManager. Scoped per-chat
+        // (M2) so the key is `${currentChatId}::${parentTurnId||'root'}`,
+        // matching buildRenderedTurns' scoped reads.
         const parentKey = parentTurnId || 'root';
-        selectedSiblings[parentKey] = targetTurnId;
-        
+        selectedSiblings[`${currentChatId}::${parentKey}`] = targetTurnId;
+
+        // Persist the user's explicit pick to the DB so it survives
+        // reloads. We send the full per-chat map (filtered from the
+        // in-memory cache); the server replaces the entire set for this
+        // chat. Errors throw — the in-memory state is correct for this
+        // session but the next reload would lose the pick; the loud throw
+        // makes the failure visible in the dev console.
+        const scopedMap = Object.fromEntries(
+            Object.entries(selectedSiblings).filter(([k]) =>
+                k.startsWith(`${currentChatId}::`))
+        );
+        await saveBranchSelections(currentChatId, scopedMap);
+
         // Re-render the chat history with the new sibling selected
         await loadChatHistory(currentChatId);
         

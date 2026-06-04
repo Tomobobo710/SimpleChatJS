@@ -5,7 +5,9 @@ window.sidebarView = 'chat';
 window.currentProjectId = null;
 window.projects = [];
 
-// Turn navigation state: maps parent_turn_id → selected sibling turn_id
+// Turn navigation state: maps `${chatId}::${parentTurnId}` → selected sibling
+// turn_id. Scoped per-chat (M2) so switching chats does not leak selections
+// from a different chat's branch tree.
 let selectedSiblings = {};
 
 // Utility function to safely extract text content from multimodal or string content
@@ -371,29 +373,6 @@ function groupMessagesByTurn(messages) {
         });
 }
 
-function getTurnsByParentTurnId(messages, parentTurnId) {
-    const groups = new Map();
-    for (const msg of messages) {
-        if (msg.parent_turn_id === parentTurnId) {
-            const key = `${msg.turn_number || 0}::${msg.turn_id || 'unknown'}`;
-            if (!groups.has(key)) {
-                groups.set(key, []);
-            }
-            groups.get(key).push(msg);
-        }
-    }
-    return Array.from(groups.entries())
-        .sort(([a], [b]) => {
-            const [aTurn] = a.split('::');
-            const [bTurn] = b.split('::');
-            return parseInt(aTurn) - parseInt(bTurn);
-        })
-        .map(([key, msgs]) => {
-            const [turnNumber, turnId] = key.split('::');
-            return new Turn(parseInt(turnNumber), msgs.map(m => Message.fromObject(m)), turnId, parentTurnId);
-        });
-}
-
 // Check if a message has tool calls
 function hasToolCalls(msg) {
     // Check if tool_calls field exists
@@ -414,9 +393,26 @@ let isLoadingHistory = false;
 
 // Build the rendered turn list using lineage-based filtering.
 // Walks turns in turn_number order. At each branch point (siblings),
-// selects the sibling whose turn_id matches selectedSiblings[parentTurnId].
+// selects the sibling whose turn_id matches selectedSiblings[`${chatId}::${parentTurnId}`].
 // Only renders turns that are on the selected lineage path.
-function buildRenderedTurns(allTurns) {
+// `chatId` scopes the selection so different chats don't leak (M2).
+function buildRenderedTurns(allTurns, chatId) {
+    return walkActiveBranch(allTurns, chatId);
+}
+
+// Walk the DAG down from 'root' using selectedSiblings picks and return
+// the array of chosen Turn objects in render order. This is the
+// authoritative "active branch" walk: the renderer, the fresh-send
+// parent resolver, and the branch-nav state all share this single
+// source of truth so they cannot drift (Phase 9 M11 follow-up).
+//
+// Side effect: writes back the default selected sibling for any parent
+// key that has no persisted choice (so the in-memory map stays
+// consistent with the walk's output). `chatId` scopes the selection so
+// different chats don't leak (M2).
+function walkActiveBranch(allTurns, chatId) {
+    const scopeKey = (parentKey) => `${chatId}::${parentKey}`;
+
     const childrenByParent = new Map();
     for (const turn of allTurns) {
         const parentKey = turn.parentTurnId || 'root';
@@ -425,13 +421,23 @@ function buildRenderedTurns(allTurns) {
         }
         childrenByParent.get(parentKey).push(turn);
     }
-    
+
     for (const children of childrenByParent.values()) {
         children.sort((a, b) => a.turnNumber - b.turnNumber);
     }
-    
+
     const rendered = [];
+    // `visited` guards against DB cycles (M3): a turn_id appears in at most
+    // one position in the lineage path; a second visit means a cycle, so we
+    // log and skip rather than recurse forever.
+    const visited = new Set();
     const walk = (parentKey) => {
+        if (visited.has(parentKey)) {
+            console.warn(`[RENDER-CYCLE] Skipping parentKey="${parentKey}" — already visited. Likely a DB cycle.`);
+            return;
+        }
+        visited.add(parentKey);
+
         const children = childrenByParent.get(parentKey) || [];
         if (children.length === 0) return;
 
@@ -439,12 +445,12 @@ function buildRenderedTurns(allTurns) {
         // Previously root siblings were hard-coded to ignore the selection,
         // which made the prev/next nav buttons on a root turn silently no-op
         // after a chat reload (H4).
-        const selectedTurnId = selectedSiblings[parentKey] ?? null;
+        const selectedTurnId = selectedSiblings[scopeKey(parentKey)] ?? null;
         const matched = selectedTurnId
             ? children.find(child => child.turnId === selectedTurnId)
             : null;
         const chosen = matched ?? children[children.length - 1];
-        selectedSiblings[parentKey] = chosen.turnId;
+        selectedSiblings[scopeKey(parentKey)] = chosen.turnId;
 
         if (chosen) {
             rendered.push(chosen);
@@ -453,22 +459,53 @@ function buildRenderedTurns(allTurns) {
     };
 
     walk('root');
-    
+
     return rendered;
+}
+
+// Resolve the turn_id of the deepest leaf on the currently selected
+// branch (the "active terminal"). Used as the parent_turn_id for new
+// user messages so a fresh send continues the active conversation
+// instead of creating a root-level sibling. Returns null for an empty
+// chat (first message in a new chat) or for a chat whose only turn is
+// filtered out (e.g. system-only). The DOM is NOT consulted — this is
+// pure data derived from the full history and selectedSiblings, so it
+// can be called before any rendering happens (Phase 9 M11 fix).
+async function getActiveTerminalTurnId(chatId) {
+    if (!chatId) return null;
+    const history = await getCompleteChatHistory(chatId);
+    if (!history?.messages || !Array.isArray(history.messages)) return null;
+
+    // System messages are meta-only (M9) and are filtered out of the
+    // render walk in loadChatHistory. Do the same here so the active
+    // terminal is always a real renderable turn.
+    const renderableMessages = history.messages.filter(msg => msg.role !== 'system');
+    if (renderableMessages.length === 0) return null;
+
+    const allTurns = groupMessagesByTurn(renderableMessages);
+    const active = walkActiveBranch(allTurns, chatId);
+    if (active.length === 0) return null;
+    return active[active.length - 1].turnId || null;
 }
 
 // Load chat history for a specific chat
 async function loadChatHistory(chatId) {
+    // Phase 8 Task 27 (L24): set the loading indicator before the guard
+    // so a duplicate click during a load still gives the user visible
+    // feedback (the spinner stays on). Previously the indicator was set
+    // inside the try, so a duplicate click was silently dropped with only
+    // a console.warn — the user saw nothing happen.
+    setLoading(true);
+
     if (isLoadingHistory) {
         console.warn(`[LOAD-GUARD] Already loading history, ignoring duplicate call for chatId: ${chatId}`);
         return;
     }
-    
+
     isLoadingHistory = true;
-    
+
     try {
-        setLoading(true);
-        
+
         const history = await getCompleteChatHistory(chatId);
         
         if (!history || !history.messages || !Array.isArray(history.messages)) {
@@ -500,7 +537,23 @@ async function loadChatHistory(chatId) {
             console.log(`[LOAD-HISTORY] Excluded ${validMessages.length - renderableMessages.length} system message(s) from rendering`);
         }
         history.messages = renderableMessages;
-        
+
+        // Load persisted branch navigation selections for this chat from
+        // the DB and seed the in-memory map. Without this step, every
+        // reload would lose the user's explicit prev/next picks (because
+        // walk would default to "last sibling" again). The frontend map
+        // is scoped per-chat (M2) — keys are `${chatId}::${parentKey}`.
+        // loadBranchSelections returns {} for an unknown chat; we treat
+        // that as "no overrides" and let the walk fall back. Errors throw
+        // — a broken DB read on a chat load is loud, not silent.
+        const persistedSelections = await loadBranchSelections(chatId);
+        for (const [parentKey, selectedTurnId] of Object.entries(persistedSelections)) {
+            selectedSiblings[`${chatId}::${parentKey}`] = selectedTurnId;
+        }
+        if (Object.keys(persistedSelections).length > 0) {
+            console.log(`[LOAD-HISTORY] Restored ${Object.keys(persistedSelections).length} branch selection(s) for chat ${chatId}`);
+        }
+
         await initializeTurnTrackingForChat(chatId);
         
         turnsContainer.innerHTML = '';
@@ -514,7 +567,7 @@ async function loadChatHistory(chatId) {
         logger.info('[UNIFIED-RENDERING] Loading chat history through Turn.renderable()');
         
         const allTurns = groupMessagesByTurn(history.messages);
-        const renderedTurns = buildRenderedTurns(allTurns);
+        const renderedTurns = buildRenderedTurns(allTurns, chatId);
         
         renderedTurns.forEach(turn => {
             const rto = turn.renderable();
@@ -586,36 +639,6 @@ function updateChatPreview(chatId, message) {
         }
         
         // Keep chat in its original position (ordered by creation time)
-    }
-}
-
-// Get chat history from backend
-async function getChatHistory(chatId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/history`);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error fetching chat history:', error);
-        throw error;
-    }
-}
-
-// Get complete chat history including error messages (for UI display)
-async function getCompleteChatHistory(chatId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/history-complete`);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        logger.error('Error fetching complete chat history:', error);
-        throw error;
     }
 }
 

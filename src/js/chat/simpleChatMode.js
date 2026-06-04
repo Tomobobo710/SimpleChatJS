@@ -143,7 +143,13 @@ async function handleSimpleChatAbort({ userTurnNumber, message, processor }) {
     chatRenderer.renderTurn(partialTurn.renderable(), true);
 
     try {
-        const assistantTurnNumber = getNextTurnNumber();
+        // Phase 8 Task 22 (L19): don't bump the in-memory turn counter here.
+        // The DB increments via the backend's connection-error handler when
+        // it saves the partial assistant row. Bumping the in-memory counter
+        // twice (once for the user at handleSimpleChat:start, once here) put
+        // it 1 ahead of the DB until the next chat load. Compute the
+        // assistant's number directly from the user's number.
+        const assistantTurnNumber = userTurnNumber + 1;
         stoppedDebugData.currentTurnNumber = assistantTurnNumber;
 
         const partialContent = processor.getRawContent() || '';
@@ -181,7 +187,7 @@ async function handleSimpleChatError({ error, message }) {
     chatRenderer.renderTurn(errorRto, true);
 }
 
-async function handleSimpleChat(message, conversationHistory) {
+async function handleSimpleChat(message, conversationHistory, parentTurnId = null) {
     logger.info('Starting simple chat');
 
     const userTurnNumber = getNextTurnNumber();
@@ -191,9 +197,9 @@ async function handleSimpleChat(message, conversationHistory) {
     try {
         await sendAndStream({
             userTurnNumber,
-            parentTurnId: null,
+            parentTurnId,
             turnId: null,
-            retriedTurnId: null,
+            lineageAnchorTurnId: null,
             inputMethod,
 
             saveUserMessage: async () => {
@@ -210,25 +216,46 @@ async function handleSimpleChat(message, conversationHistory) {
                         };
                     }
                 }
-                const saveResult = await saveCompleteMessage(currentChatId, messageForSaving, userTurnNumber);
-                if (saveResult && saveResult.turn_id) {
-                    return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
+                // Phase 9 M11 fix: pass the active terminal as the new
+                // user turn's parent_turn_id. Without this, saveCompleteMessage
+                // would call the backend's getTurnInfo with both args
+                // undefined and the new turn would be created at root — a
+                // sibling of the chat's other user messages, breaking the
+                // "fresh send continues the active branch" contract. With
+                // this, parentTurnId === null only for an empty chat (first
+                // message in a new chat), which is the correct root case.
+                const saveResult = await saveCompleteMessage(
+                    currentChatId, messageForSaving, userTurnNumber,
+                    parentTurnId ? { parent_turn_id: parentTurnId } : null
+                );
+                // Phase 6 Task 17 (M4): a failed save is a hard error. Don't
+                // return null — that lets the chat request go out with no
+                // lineage anchor (H8 fallthrough). Throw so sendAndStream
+                // aborts before the request, and the top-level handler in
+                // main.js shows the error to the user.
+                if (!saveResult || !saveResult.turn_id) {
+                    throw new Error('saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor');
                 }
-                return null;
+                return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
             },
 
             renderUserBubble: async (userTurnInfo, requestId) => {
                 if (!userTurnInfo) return;
 
+                // Phase 8 Task 28 (L20): pass turn_id and parent_turn_id
+                // to the Message constructor rather than constructing first
+                // and mutating in place. The Message constructor already
+                // accepts these fields (message.js:10-11), so no class
+                // changes needed — just pass them up front.
                 const userMessage = new Message({
                     id: null,
                     role: 'user',
                     content: message,
                     turn_number: userTurnNumber,
+                    turn_id: userTurnInfo.turn_id,
+                    parent_turn_id: userTurnInfo.parent_turn_id,
                     edit_count: 0,
                 });
-                userMessage.turnId = userTurnInfo.turn_id;
-                userMessage.parentTurnId = userTurnInfo.parent_turn_id;
 
                 const userTurn = new Turn(userTurnNumber, [userMessage], userTurnInfo.turn_id, userTurnInfo.parent_turn_id);
                 chatRenderer.renderTurn(userTurn.renderable(), true);

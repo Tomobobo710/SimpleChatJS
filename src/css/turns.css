@@ -66,10 +66,6 @@
     font-style: italic;
 }
 
-[data-block-id] {
-    margin: 4px 0;
-}
-
 /* Block debugging */
 .block-debug {
     font-size: 12px;

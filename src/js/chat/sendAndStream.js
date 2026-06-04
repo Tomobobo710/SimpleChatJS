@@ -66,6 +66,26 @@ async function streamAndRenderAssistant({
     try {
         const response = await fetchPromise;
 
+        // Read the assistant's turn identifiers from the response headers
+        // (Phase 6 Task 18). The backend sets X-Assistant-Turn-Id and
+        // X-Assistant-Parent-Turn-Id before streaming starts so the
+        // frontend doesn't need a follow-up getCompleteChatHistory fetch
+        // to stamp the rendered bubble. Both headers are required; if
+        // either is missing the server is misconfigured and we throw
+        // (no silent fallback to a DB lookup).
+        const assistantTurnId = response.headers.get('X-Assistant-Turn-Id');
+        const assistantParentTurnId = response.headers.get('X-Assistant-Parent-Turn-Id');
+        if (!assistantTurnId || !assistantParentTurnId) {
+            throw new Error(
+                `Backend did not emit required assistant-turn headers ` +
+                `(X-Assistant-Turn-Id=${assistantTurnId}, X-Assistant-Parent-Turn-Id=${assistantParentTurnId})`
+            );
+        }
+        const savedAssistantTurn = {
+            turn_id: assistantTurnId,
+            parent_turn_id: assistantParentTurnId,
+        };
+
         for await (const chunk of streamResponse(response)) {
             processor.addChunk(chunk);
             updateLiveRendering(processor, liveRenderer, tempContainer);
@@ -117,27 +137,6 @@ async function streamAndRenderAssistant({
         tempContainer.remove();
         assistantTurnDiv.remove();
 
-        // Look up the just-saved assistant. Use parent_turn_id (stable across
-        // turn-number drift); fall back to turn_number if userTurnInfo missing.
-        let savedAssistantTurn = null;
-        try {
-            const history = await getCompleteChatHistory(currentChatId);
-            const allMessages = history.messages || [];
-            let assistantTurns;
-            if (userTurnInfo?.turn_id) {
-                assistantTurns = allMessages.filter((msg) =>
-                    msg.role === 'assistant' && msg.parent_turn_id === userTurnInfo.turn_id && msg.turn_id
-                );
-            } else {
-                assistantTurns = allMessages.filter((msg) =>
-                    msg.role === 'assistant' && msg.turn_number === userTurnNumber && msg.turn_id
-                );
-            }
-            savedAssistantTurn = assistantTurns[assistantTurns.length - 1] || null;
-        } catch (error) {
-            logger.warn(`[${inputMethod.toUpperCase()}] Failed to load saved assistant turn metadata:`, error);
-        }
-
         const assistantTurnNumber = userTurnNumber + 1;
         if (debugData) {
             debugData.currentTurnNumber = assistantTurnNumber;
@@ -185,7 +184,7 @@ async function sendAndStream({
     userTurnNumber,
     parentTurnId = null,
     turnId = null,
-    retriedTurnId = null,
+    lineageAnchorTurnId = null,
 
     // Optional: persist the user message. Returns { turn_id, parent_turn_id } | null.
     saveUserMessage = null,
@@ -213,11 +212,13 @@ async function sendAndStream({
     let userTurnInfo = null;
 
     if (saveUserMessage) {
-        try {
-            userTurnInfo = await saveUserMessage(requestId);
-        } catch (error) {
-            logger.warn(`[${inputMethod.toUpperCase()}] Failed to save user message:`, error);
-        }
+        // Phase 6 Task 17 (M4): let the throw propagate. A failed user save
+        // is a hard error — returning null here would let the chat request
+        // go out with no lineage anchor (H8 fallthrough) and the user would
+        // never see an error. The throw reaches the top-level caller
+        // (main.js:handleSendMessage or chatRenderer.js:exitMessageEditMode)
+        // which calls showError.
+        userTurnInfo = await saveUserMessage(requestId);
     }
 
     // Truncate BEFORE rendering the new user bubble so the new bubble (which
@@ -239,14 +240,14 @@ async function sendAndStream({
 
     // For flows that saved a user message, derive the request's turn
     // identifiers from the saved user turn. Retry flows (no save) pass
-    // parentTurnId/turnId/retriedTurnId explicitly and userTurnInfo is null.
+    // parentTurnId/turnId/lineageAnchorTurnId explicitly and userTurnInfo is null.
     const effectiveParentTurnId = userTurnInfo ? userTurnInfo.parent_turn_id : parentTurnId;
     const effectiveTurnId = userTurnInfo ? userTurnInfo.turn_id : turnId;
-    const effectiveRetriedTurnId = userTurnInfo ? userTurnInfo.turn_id : retriedTurnId;
+    const effectiveLineageAnchorTurnId = userTurnInfo ? userTurnInfo.turn_id : lineageAnchorTurnId;
 
     const requestInfo = initiateMessageRequest(
         enabledToolsFlags, requestId,
-        effectiveParentTurnId, effectiveTurnId, effectiveRetriedTurnId
+        effectiveParentTurnId, effectiveTurnId, effectiveLineageAnchorTurnId
     );
 
     // For pure retry (no user save), userTurnInfo is still needed for the

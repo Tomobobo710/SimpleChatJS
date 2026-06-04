@@ -164,9 +164,17 @@ async function handleSendMessage() {
         // Use text for logging, but we'll send the full messageContent
         const logMessage = typeof messageContent === 'string' ? messageContent : textMessage || '[Images only]';
         const conversationHistory = await getCleanConversationHistory(currentChatId, logMessage);
-        
+
+        // Resolve the active terminal turn (deepest leaf on the currently
+        // selected branch) so the new user message continues the
+        // conversation instead of becoming a root-level sibling. The
+        // returned turn_id is used as the new message's parent_turn_id —
+        // null for a fresh/empty chat (first message becomes a root).
+        // See chatManager.getActiveTerminalTurnId and Phase 9 M11.
+        const activeParentTurnId = await getActiveTerminalTurnId(currentChatId);
+
         // Simple chat mode
-        await handleSimpleChat(messageContent, conversationHistory);
+        await handleSimpleChat(messageContent, conversationHistory, activeParentTurnId);
     } catch (error) {
         if (error.name === 'AbortError') {
             logger.info('Message generation was stopped by user');

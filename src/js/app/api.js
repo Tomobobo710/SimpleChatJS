@@ -33,10 +33,16 @@ async function saveTurnData(chatId, turnId, data) {
 // user-supplied `message` field had no effect on what the model saw, and
 // keeping it would only create an avenue for stale or attacker-controlled
 // input to reach the model.
-function initiateMessageRequest(enabledToolsData = null, requestId = null, parentTurnId = null, turnId = null, retriedTurnId = null) {
+function initiateMessageRequest(enabledToolsData = null, requestId = null, parentTurnId = null, turnId = null, lineageAnchorTurnId = null) {
     try {
-        // Generate requestId if not provided
-        const generatedRequestId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Phase 8 Task 24: require a requestId. The helper lives in
+        // sendAndStream.js:generateRequestId(); callers should always pass
+        // one. A missing requestId is a programmer error — throw rather
+        // than silently synthesize a fresh one (no silent fallbacks).
+        if (!requestId) {
+            throw new Error('initiateMessageRequest: requestId is required');
+        }
+        const generatedRequestId = requestId;
 
         const requestBody = {
             chat_id: currentChatId,
@@ -44,7 +50,7 @@ function initiateMessageRequest(enabledToolsData = null, requestId = null, paren
             request_id: generatedRequestId,
             parent_turn_id: parentTurnId,
             turn_id: turnId,
-            retried_turn_id: retriedTurnId
+            lineage_anchor_turn_id: lineageAnchorTurnId
         };
 
         // Create abort controller for this request
@@ -467,18 +473,47 @@ async function getCurrentTurnNumber(chatId) {
     }
 }
 
-// Get last turn info (turn_id and parent_turn_id) for a chat
-async function getLastTurnInfo(chatId) {
+// Load persisted branch navigation selections for a chat. Returns a
+// { parentKey: selectedTurnId } object map (parentKey is 'root' or a
+// turn_id). Empty object for a chat that has no persisted selections
+// — the caller should treat that as "no overrides" and let the walk
+// fall back to the last-sibling default.
+async function loadBranchSelections(chatId) {
     try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/last-turn-info`);
-        
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/branch-selections`);
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         return await response.json();
     } catch (error) {
-        logger.error('Error getting last turn info:', error);
+        logger.error(`Error loading branch selections for chat ${chatId}:`, error);
+        throw error;
+    }
+}
+
+// Save the full per-chat branch navigation map. The caller is
+// responsible for filtering the in-memory map down to just the
+// current chat's keys before sending. Replaces all rows for the chat
+// on the server side. Throws on failure — the in-memory state remains
+// correct for the current session but the next reload would lose the
+// pick; the loud throw makes that visible.
+async function saveBranchSelections(chatId, selections) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/branch-selections`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selections }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        logger.error(`Error saving branch selections for chat ${chatId}:`, error);
         throw error;
     }
 }

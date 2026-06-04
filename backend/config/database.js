@@ -77,7 +77,22 @@ function initializeDatabase() {
             // getAncestorTurnIds, and the retry/edit-retry history filter.
             db.exec("CREATE INDEX IF NOT EXISTS idx_messages_chat_turn ON messages(chat_id, turn_id)");
             db.exec("CREATE INDEX IF NOT EXISTS idx_messages_chat_parent ON messages(chat_id, parent_turn_id)");
-            
+
+            // Per-chat branch navigation selections (Phase 5+, persistence
+            // follow-up). The frontend's selectedSiblings map is keyed on
+            // `${chatId}::${parentKey}` (Phase 5 M2) where parentKey is
+            // 'root' or a turn_id. This table stores the same shape so
+            // selections survive reloads/restarts. PRIMARY KEY enforces
+            // one row per (chat, parent_key); no FK CASCADE — chat delete
+            // (chat.js:371) cleans up explicitly in its transaction to
+            // match the messages table pattern.
+            db.exec(`CREATE TABLE IF NOT EXISTS chat_branch_selections (
+                chat_id TEXT NOT NULL,
+                parent_key TEXT NOT NULL,
+                selected_turn_id TEXT NOT NULL,
+                PRIMARY KEY (chat_id, parent_key)
+            )`);
+
             log('[DB] Database initialized successfully');
             resolve();
         } catch (err) {

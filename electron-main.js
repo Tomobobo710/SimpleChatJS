@@ -95,7 +95,13 @@ function createWindow() {
       setTimeout(() => {
         mainWindow.loadURL('http://localhost:50505');
         mainWindow.show();
-        mainWindow.webContents.openDevTools();
+        // L3: only auto-open DevTools in dev (unpackaged) builds. In a
+        // packaged app, users shouldn't see DevTools by default. The
+        // `devTools: { enabled: true }` web-preference above is kept so
+        // manual opening via the View menu / keyboard shortcut still works.
+        if (!app.isPackaged) {
+            mainWindow.webContents.openDevTools();
+        }
     }, 2000);
     
  

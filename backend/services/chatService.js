@@ -240,6 +240,107 @@ function getTurnDebugData(chatId, turnId) {
     }
 }
 
+// Branch navigation selections: persisted per-chat, keyed by parent_key
+// ('root' or a turn_id). The frontend's selectedSiblings map is scoped
+// to chatId, but the DB stores one row per (chat_id, parent_key) which
+// is the natural shape for the underlying query. Used so a user's
+// explicit prev/next picks survive page reloads and app restarts.
+
+// Replace all branch selections for a chat. The frontend sends the full
+// current set of selections for this chat (filtered from its in-memory
+// map) so the DB stays consistent even if the user clicks before the
+// next load sees them.
+function saveBranchSelections(chatId, selections) {
+    const { db } = require('../config/database');
+    if (!chatId) {
+        throw new Error('saveBranchSelections: chatId is required');
+    }
+    if (selections && typeof selections !== 'object') {
+        throw new Error(`saveBranchSelections: selections must be an object map, got ${typeof selections}`);
+    }
+    const map = selections || {};
+
+    try {
+        const upsert = db.prepare(`
+            INSERT INTO chat_branch_selections (chat_id, parent_key, selected_turn_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(chat_id, parent_key) DO UPDATE SET selected_turn_id = excluded.selected_turn_id
+        `);
+        const remove = db.prepare(`
+            DELETE FROM chat_branch_selections
+            WHERE chat_id = ? AND parent_key NOT IN (${Object.keys(map).length ? Object.keys(map).map(() => '?').join(',') : 'NULL'})
+        `);
+
+        const tx = db.transaction(() => {
+            for (const [parentKey, selectedTurnId] of Object.entries(map)) {
+                if (typeof selectedTurnId !== 'string' || !selectedTurnId) {
+                    throw new Error(`saveBranchSelections: invalid selected_turn_id for parent_key="${parentKey}"`);
+                }
+                upsert.run(chatId, parentKey, selectedTurnId);
+            }
+            // Remove rows for parent_keys no longer in the map so the DB
+            // doesn't accumulate stale entries (e.g. parent_key was a
+            // turn_id that has since been deleted/edited).
+            if (Object.keys(map).length > 0) {
+                remove.run(chatId, ...Object.keys(map));
+            } else {
+                remove.run(chatId);
+            }
+        });
+        tx();
+        log(`[BRANCH-SEL] Saved ${Object.keys(map).length} selection(s) for chat ${chatId}`);
+        return { count: Object.keys(map).length };
+    } catch (err) {
+        log(`[BRANCH-SEL] Error saving selections for chat ${chatId}:`, err.message);
+        throw err;
+    }
+}
+
+// Return all branch selections for a chat as a { parentKey: turnId } map.
+// Returns {} for an unknown chat; throws on actual DB errors.
+function loadBranchSelections(chatId) {
+    const { db } = require('../config/database');
+    if (!chatId) {
+        throw new Error('loadBranchSelections: chatId is required');
+    }
+    try {
+        const rows = db.prepare(`
+            SELECT parent_key, selected_turn_id
+            FROM chat_branch_selections
+            WHERE chat_id = ?
+        `).all(chatId);
+        const result = {};
+        for (const row of rows) {
+            result[row.parent_key] = row.selected_turn_id;
+        }
+        log(`[BRANCH-SEL] Loaded ${rows.length} selection(s) for chat ${chatId}`);
+        return result;
+    } catch (err) {
+        log(`[BRANCH-SEL] Error loading selections for chat ${chatId}:`, err.message);
+        throw err;
+    }
+}
+
+// Delete all branch selections for a chat. Used by the chat-delete route
+// in its transaction; the FK relationship in messages has no CASCADE, so
+// we match that pattern explicitly here.
+function deleteBranchSelections(chatId) {
+    const { db } = require('../config/database');
+    if (!chatId) {
+        throw new Error('deleteBranchSelections: chatId is required');
+    }
+    try {
+        const result = db.prepare(`
+            DELETE FROM chat_branch_selections WHERE chat_id = ?
+        `).run(chatId);
+        log(`[BRANCH-SEL] Deleted ${result.changes} selection(s) for chat ${chatId}`);
+        return result;
+    } catch (err) {
+        log(`[BRANCH-SEL] Error deleting selections for chat ${chatId}:`, err.message);
+        throw err;
+    }
+}
+
 // Get current turn number for a chat
 function getCurrentTurnNumber(chat_id) {
     if (!chat_id) {
@@ -531,16 +632,30 @@ async function handleChatWithTools(res, messages, tools, chatId, debugData = nul
             'Content-Type': 'text/plain',
             'Transfer-Encoding': 'chunked'
         };
-        
+
         if (requestId) {
             headers['X-Request-Id'] = requestId;
         }
-        
+
         // Include the actual AI request in response headers for frontend debug panel
         if (requestData) {
             headers['X-Actual-Request'] = encodeURIComponent(JSON.stringify(requestData));
         }
-        
+
+        // Assistant turn identifiers, set up-front (turnInfo is built above
+        // at the assistant-row insert site) so the frontend can stamp the
+        // rendered bubble without a follow-up getCompleteChatHistory fetch
+        // (Phase 6 Task 18, replacing the old getLastTurnInfo round-trip).
+        // These IDs are stable for the entire tool-call chain because
+        // recursive handleChatWithTools calls reuse the same `res` object
+        // and the same turnInfo.
+        if (turnInfo?.turn_id) {
+            headers['X-Assistant-Turn-Id'] = turnInfo.turn_id;
+        }
+        if (turnInfo?.parent_turn_id) {
+            headers['X-Assistant-Parent-Turn-Id'] = turnInfo.parent_turn_id;
+        }
+
         res.writeHead(200, headers);
     }
     
@@ -1100,11 +1215,11 @@ async function processChatRequest(req, res) {
         // no effect on what the model sees. Keeping the field would only
         // create an avenue for a stale or attacker-controlled prefix to
         // reach the model. The frontend was updated to stop sending it.
-        const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, retried_turn_id } = req.body;
+        const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, lineage_anchor_turn_id } = req.body;
 
-                
+
         // Build messages for API from chat history.
-        //   If `retried_turn_id` is provided, the history is filtered to
+        //   If `lineage_anchor_turn_id` is provided, the history is filtered to
         //   the lineage of that turn (the explicit anchor for both user
         //   edit/retry and assistant retry).
         //   Otherwise, if only `parent_turn_id` is provided, the history
@@ -1113,25 +1228,25 @@ async function processChatRequest(req, res) {
         //   The actual filter is getChatHistoryForAPI(chat_id, historyMaxTurnId)
         //   and uses `turn_id IN (ancestorIds)` — pure lineage via
         //   getAncestorTurnIds, with no turn-number sharing.
-        log(`[CHAT] Request body: retried_turn_id=${retried_turn_id}, parent_turn_id=${parent_turn_id}`);
+        log(`[CHAT] Request body: lineage_anchor_turn_id=${lineage_anchor_turn_id}, parent_turn_id=${parent_turn_id}`);
         let historyMaxTurnId = null;
-        if (retried_turn_id) {
-            // retried_turn_id is the explicit history anchor. For user edit/retry and
+        if (lineage_anchor_turn_id) {
+            // lineage_anchor_turn_id is the explicit history anchor. For user edit/retry and
             // assistant retry this is the user turn the model should respond to.
-            const retriedMsg = db.prepare(
+            const anchorMsg = db.prepare(
                 'SELECT turn_id FROM messages WHERE chat_id = ? AND turn_id = ? LIMIT 1'
-            ).get(chat_id, retried_turn_id);
-            if (retriedMsg) {
-                historyMaxTurnId = retried_turn_id;
+            ).get(chat_id, lineage_anchor_turn_id);
+            if (anchorMsg) {
+                historyMaxTurnId = lineage_anchor_turn_id;
                 log(`[CHAT] Retry detected: filtering history to selected turn lineage (maxTurnId=${historyMaxTurnId})`);
             }
         } else if (parent_turn_id) {
             // Fallback: find first assistant with this parent_turn_id
-            const retriedAssistant = db.prepare(
+            const anchorAssistant = db.prepare(
                 'SELECT parent_turn_id FROM messages WHERE chat_id = ? AND parent_turn_id = ? AND role = ? ORDER BY timestamp ASC LIMIT 1'
             ).get(chat_id, parent_turn_id, 'assistant');
-            if (retriedAssistant) {
-                historyMaxTurnId = retriedAssistant.parent_turn_id;
+            if (anchorAssistant) {
+                historyMaxTurnId = anchorAssistant.parent_turn_id;
                 log(`[CHAT] Retry detected (fallback): filtering history (maxTurnId=${historyMaxTurnId})`);
             }
         }
@@ -1313,6 +1428,10 @@ module.exports = {
     // Turn-based debug data functions (keyed on turn_id, M6)
     saveTurnDebugData,
     getTurnDebugData,
+    // Branch selection persistence (per-chat, Phase 5+ follow-up).
+    saveBranchSelections,
+    loadBranchSelections,
+    deleteBranchSelections,
     // File handling functions
     extractFilesFromContent,
     concatenateFileContent,

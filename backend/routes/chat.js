@@ -378,10 +378,16 @@ router.delete('/chat/:id', (req, res) => {
         
         // Begin transaction
         db.prepare('BEGIN TRANSACTION').run();
-        
+
         // Delete all messages for this chat
         db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId);
-        
+
+        // Delete persisted branch navigation selections for this chat
+        // (chat_branch_selections has no ON DELETE CASCADE — matches the
+        // messages table pattern, explicit cleanup in the transaction).
+        const { deleteBranchSelections } = require('../services/chatService');
+        deleteBranchSelections(chatId);
+
         // Delete the chat itself
         db.prepare('DELETE FROM chats WHERE id = ?').run(chatId);
         
@@ -539,32 +545,37 @@ router.get('/chat/:id/current-turn', (req, res) => {
     }
 });
 
-// Get last turn info (turn_id and parent_turn_id) for a chat
-router.get('/chat/:id/last-turn-info', (req, res) => {
+// Load all branch navigation selections for a chat. Returns a
+// { parentKey: selectedTurnId } object map (parentKey is 'root' or a
+// turn_id). Empty object for a chat that has no persisted selections.
+// Used by the frontend on loadChatHistory to populate its in-memory
+// selectedSiblings map so explicit prev/next picks survive reloads.
+router.get('/chat/:id/branch-selections', (req, res) => {
     const { id: chatId } = req.params;
-    const { db } = require('../config/database');
-
     try {
-        // Return the most recent ASSISTANT turn's lineage info. Filtering
-        // by role='assistant' prevents tool messages, system-prompt rows
-        // (saved as siblings in the DB), or any other late-inserted row
-        // from shadowing the assistant the user actually saw (L7).
-        const lastTurnStmt = db.prepare(`
-            SELECT turn_id, parent_turn_id
-            FROM messages
-            WHERE chat_id = ? AND turn_id IS NOT NULL AND role = 'assistant'
-            ORDER BY id DESC
-            LIMIT 1
-        `);
-        const lastTurn = lastTurnStmt.get(chatId);
-
-        if (lastTurn) {
-            res.json({ turn_id: lastTurn.turn_id, parent_turn_id: lastTurn.parent_turn_id });
-        } else {
-            res.json({ turn_id: null, parent_turn_id: null });
-        }
+        const { loadBranchSelections } = require('../services/chatService');
+        const selections = loadBranchSelections(chatId);
+        res.json(selections);
     } catch (err) {
-        log('[LAST-TURN-INFO] Error:', err);
+        log('[BRANCH-SEL] GET error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Save branch navigation selections for a chat. Body shape:
+// { selections: { [parentKey]: selectedTurnId, ... } }
+// Replaces the entire set for this chat (the frontend sends its full
+// current per-chat map). Throws on invalid input — see
+// saveBranchSelections in chatService.js.
+router.post('/chat/:id/branch-selections', (req, res) => {
+    const { id: chatId } = req.params;
+    const { selections } = req.body || {};
+    try {
+        const { saveBranchSelections } = require('../services/chatService');
+        const result = saveBranchSelections(chatId, selections);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        log('[BRANCH-SEL] POST error:', err);
         res.status(500).json({ error: err.message });
     }
 });
