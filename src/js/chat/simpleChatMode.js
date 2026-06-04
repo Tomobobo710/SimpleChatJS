@@ -1,72 +1,49 @@
 // Simple Chat Mode - Direct streaming chat
 
-async function handleSimpleChat(message, conversationHistory) {
-    // These variables will be used across both user and assistant phases
-    let requestId, requestInfo;
-    logger.info('Starting simple chat');
-    
-    // Get enabled tools flags for filtering (do this ONCE)
+async function attachUserDebugPanel(userTurnNumber, userDebugData) {
+    const userMessages = turnsContainer.querySelectorAll('.turn.user-turn, .message.user');
+    const lastUserMessage = userMessages[userMessages.length - 1];
+    if (!lastUserMessage) return;
+
+    const messageId = lastUserMessage.dataset.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    lastUserMessage.dataset.messageId = messageId;
+
+    const existingDebug = lastUserMessage.querySelector('.debug-panel-container');
+    const existingToggle = lastUserMessage.querySelector('.debug-toggle');
+    if (existingDebug) existingDebug.remove();
+    if (existingToggle) existingToggle.remove();
+
+    lastUserMessage.classList.add('has-debug');
+
+    const debugToggle = document.createElement('button');
+    debugToggle.className = 'debug-toggle';
+    debugToggle.dataset.messageId = messageId;
+    debugToggle.innerHTML = '+';
+    debugToggle.title = 'Show debug info';
+
     const settings = loadSettings();
-    await loadEnabledToolsFromBackend(); // Ensure cache is loaded
-    const enabledToolsFlags = loadEnabledTools(); // Get flags like {"server.tool": false}
-    
-    // Generate requestId upfront - will be used for both user and assistant
-    requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    logger.debug('[SIMPLE-CHAT] Generated requestId:', requestId);
-    
-    // Get turn number for this user message (frontend manages turns now)
-    const userTurnNumber = getNextTurnNumber();
-    
-   // Add user message to UI using global chatRenderer (same as saved chats)
-    let userTurnInfo = null;
-    const userMessage = new Message({
-        id: null,
-        role: 'user',
-        content: message,
-        turn_number: userTurnNumber,
-        edit_count: 0,
+    if (!settings.debugPanels) {
+        debugToggle.style.display = 'none';
+    }
+
+    debugToggle.addEventListener('click', () => {
+        const debugPanel = lastUserMessage.querySelector('.debug-panel-container');
+        if (debugPanel) {
+            const isHidden = debugPanel.style.display === 'none';
+            debugPanel.style.display = isHidden ? 'block' : 'none';
+            debugToggle.innerHTML = isHidden ? '−' : '+';
+            debugToggle.classList.toggle('active', isHidden);
+        }
     });
-        
-    // Save user message with separated file structure
-    try {
-        // Extract file metadata from the message for storage
-        const messageForSaving = { role: 'user', content: message };
-        
-        // If message contains files, store original content and file metadata
-        if (Array.isArray(message)) {
-            const filesPart = message.find(part => part.type === 'files');
-            if (filesPart && filesPart.files) {
-                messageForSaving.original_content = message;
-                messageForSaving.file_metadata = {
-                    hasFiles: true,
-                    fileCount: filesPart.files.length,
-                    imageCount: message.filter(part => part.type === 'image').length,
-                    files: filesPart.files
-                };
-            }
-        }
-        
-        const saveResult = await saveCompleteMessage(currentChatId, messageForSaving, userTurnNumber);
-        if (saveResult && saveResult.turn_id) {
-            userTurnInfo = { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
-        }
-    } catch (error) {
-        logger.warn('Failed to save user message:', error);
-    }
-    
-    // Create and render user Turn with turn info
-    if (userMessage) {
-        if (userTurnInfo) {
-            userMessage.turnId = userTurnInfo.turn_id;
-            userMessage.parentTurnId = userTurnInfo.parent_turn_id;
-        }
-        const userTurn = new Turn(userTurnNumber, [userMessage], userTurnInfo?.turn_id, userTurnInfo?.parent_turn_id);
-        const userRto = userTurn.renderable();
-        chatRenderer.renderTurn(userRto, true);
-    }
-    
-    // Prepare debug data with the correct turn number
-    const userDebugData = {
+
+    lastUserMessage.appendChild(debugToggle);
+
+    const debugPanel = createDebugPanel(lastUserMessage, messageId, userDebugData, userTurnNumber);
+    lastUserMessage.appendChild(debugPanel);
+}
+
+function buildUserDebugData({ message, userTurnNumber, requestId, conversationHistory, inputMethod, enabledToolsFlags }) {
+    return {
         sequence: [
             {
                 type: 'user_input',
@@ -77,38 +54,32 @@ async function handleSimpleChat(message, conversationHistory) {
                         chat_id: currentChatId,
                         timestamp: new Date().toISOString(),
                         message_length: message.length,
-                        turn_number: userTurnNumber // Include turn number
+                        turn_number: userTurnNumber,
                     },
                     tools: {
                         total: Object.keys(enabledToolsFlags).length,
-                        flags: enabledToolsFlags
+                        flags: enabledToolsFlags,
                     },
                     context: {
-                        input_method: 'manual',
-                        current_chat: currentChatId
-                    }
+                        input_method: inputMethod,
+                        current_chat: currentChatId,
+                    },
                 },
-                timestamp: new Date().toISOString()
-            }
+                timestamp: new Date().toISOString(),
+            },
         ],
         metadata: {
             endpoint: 'user_input',
             timestamp: new Date().toISOString(),
-            tools: Object.keys(enabledToolsFlags).length
+            tools: Object.keys(enabledToolsFlags).length,
         },
-        currentTurnNumber: userTurnNumber // Add turn number at top level
-    };    
-    
-    // Use same field names as assistant debug data for consistency
-    userDebugData.completeMessageHistory = conversationHistory || [];
-    userDebugData.conversationHistory = conversationHistory || [];  // Keep for debug panel compatibility
-    userDebugData.currentTurnNumber = userTurnNumber;
-    
-    // INITIATE the API request here (but don't await the response)
-    requestInfo = initiateMessageRequest(message, enabledToolsFlags, requestId, userTurnInfo?.parent_turn_id, userTurnInfo?.turn_id);
-    logger.info('[SIMPLE-CHAT] Initiated API request with requestId:', requestId);
-    
-    // Add API request info to debug data
+        currentTurnNumber: userTurnNumber,
+        completeMessageHistory: conversationHistory || [],
+        conversationHistory: conversationHistory || [],
+    };
+}
+
+function addApiRequestToDebugData(userDebugData, { requestId, message, userTurnNumber, enabledToolsFlags }) {
     userDebugData.sequence.push({
         type: 'ai_http_request',
         step: userDebugData.sequence.length + 1,
@@ -118,343 +89,189 @@ async function handleSimpleChat(message, conversationHistory) {
             endpoint: 'chat',
             message: message,
             tools_enabled: Object.keys(enabledToolsFlags).length,
-            turn_number: userTurnNumber // Include turn number here too
-        }
+            turn_number: userTurnNumber,
+        },
     });
     userDebugData.apiRequest = {
         url: `${window.location.origin}/api/chat`,
         method: 'POST',
         requestId: requestId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
     };
-    
-    // Save user debug data to turn-based storage
-    try {
-        await saveTurnData(currentChatId, userTurnNumber, userDebugData);
-        logger.info(`[TURN-DEBUG] Saved user debug data for turn ${userTurnNumber}`);
-    } catch (error) {
-        logger.warn('Failed to save user turn debug data:', error);
+}
+
+function updateChatTitleFromMessage(message) {
+    const currentTitle = document.getElementById('chatTitle').textContent;
+    if (currentTitle === 'New Chat' || currentTitle === 'Chat') {
+        const titleFromMessage = getTextContent(message);
+        const shortTitle = titleFromMessage.length > 30 ? titleFromMessage.substring(0, 30) + '...' : titleFromMessage;
+        updateChatTitle(shortTitle);
     }
-    
-    // Update user turn with debug data - find the last user message and update it
-    const userMessages = turnsContainer.querySelectorAll('.turn.user-turn, .message.user');
-    const lastUserMessage = userMessages[userMessages.length - 1];
-    if (lastUserMessage) {
-        // Add debug panel to existing user message
-        const messageId = lastUserMessage.dataset.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        lastUserMessage.dataset.messageId = messageId;
-        
-        // Remove existing debug panel if any
-        const existingDebug = lastUserMessage.querySelector('.debug-panel-container');
-        const existingToggle = lastUserMessage.querySelector('.debug-toggle');
-        if (existingDebug) existingDebug.remove();
-        if (existingToggle) existingToggle.remove();
-        
-        // Add debug panel using the same method as ChatRenderer
-        lastUserMessage.classList.add('has-debug');
-        
-        const debugToggle = document.createElement('button');
-        debugToggle.className = 'debug-toggle';
-        debugToggle.dataset.messageId = messageId;
-        debugToggle.innerHTML = '+';
-        debugToggle.title = 'Show debug info';
-        
-        const settings = loadSettings();
-        if (!settings.debugPanels) {
-            debugToggle.style.display = 'none';
-        }
-        
-        debugToggle.addEventListener('click', () => {
-            const debugPanel = lastUserMessage.querySelector('.debug-panel-container');
-            if (debugPanel) {
-                const isHidden = debugPanel.style.display === 'none';
-                debugPanel.style.display = isHidden ? 'block' : 'none';
-                debugToggle.innerHTML = isHidden ? '−' : '+';
-                debugToggle.classList.toggle('active', isHidden);
-            }
-        });
-        
-        lastUserMessage.appendChild(debugToggle);
-        
-        // Create debug panel
-        const debugPanel = createDebugPanel(lastUserMessage, messageId, userDebugData, userTurnNumber);
-        lastUserMessage.appendChild(debugPanel);
-    }
-    
-    // Prepare for assistant response
-    let assistantTurnInfo = null;
-    const assistantTurnDiv = document.createElement('div');
-    assistantTurnDiv.className = 'turn assistant-turn';
-    assistantTurnDiv.innerHTML = '';
-    turnsContainer.appendChild(assistantTurnDiv);
-    
-    // Removed fullResponse accumulation to prevent concatenation
-    let debugData = null;
-    let toolEventSource = null; // Declare outside try block so catch can access it
-    let wasAborted = false; // Track if we aborted
-    
-    // Create the streaming processor (no rendering - just creates blocks)
-    const processor = new StreamingMessageProcessor();
-    
-    // Create a temporary container for real-time rendering during streaming
-    const tempContainer = document.createElement('div');
-    tempContainer.style.width = '100%';
-    tempContainer.style.boxSizing = 'border-box';
-    assistantTurnDiv.appendChild(tempContainer);
-    const liveRenderer = new ChatRenderer(tempContainer);
-    
+}
+
+async function handleSimpleChatAbort({ userTurnNumber, message, processor }) {
+    logger.info('Simple chat stopped by user');
+
+    const stoppedDebugData = {
+        sequence: [{
+            type: 'user_stopped',
+            step: 1,
+            timestamp: new Date().toISOString(),
+            data: {
+                message: 'Generation stopped by user',
+                partial_content: processor.getDisplayContent() || '',
+            },
+        }],
+        metadata: {
+            endpoint: 'stopped_generation',
+            timestamp: new Date().toISOString(),
+            partial: true,
+        },
+    };
+
+    processor.finalize();
+
+    const partialAssistantMessage = new Message({
+        id: null,
+        role: 'assistant',
+        content: processor.getRawContent() || '',
+        turn_number: 0,
+        debug_data: stoppedDebugData,
+        edit_count: 0,
+    });
+    const partialTurn = new Turn(0, [partialAssistantMessage]);
+    chatRenderer.renderTurn(partialTurn.renderable(), true);
+
     try {
-        // Connect to tool events stream for the requestId that was generated in the user bubble phase
-        // requestId and requestInfo are now already available from the user bubble phase
-        logger.debug('[SIMPLE-CHAT] Connecting to SSE:', `${window.location.origin}/api/tools/${requestId}`);
-        toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
-        toolEventSource.onmessage = (event) => {
-            const toolEvent = JSON.parse(event.data);
-            logger.debug('[SIMPLE-CHAT] Received tool event:', toolEvent.type, toolEvent.data);
-            processor.handleToolEvent(toolEvent);
-            updateLiveRendering(processor, liveRenderer, tempContainer);
-        };
-        toolEventSource.onerror = (error) => {
-            logger.error('[SIMPLE-CHAT] SSE error:', error);
-        };
-        
-        // Now AWAIT the response from the request that was already initiated in the user bubble phase
-        logger.debug('[SIMPLE-CHAT] Awaiting response for requestId:', requestId);
-        const response = await requestInfo.fetchPromise;
-        
-        // Stream the response cleanly - no debug parsing needed!
-        for await (const chunk of streamResponse(response)) {
-            // Don't accumulate fullResponse to avoid concatenation across tool calls
-            processor.addChunk(chunk);
-            // Update live rendering
-            updateLiveRendering(processor, liveRenderer, tempContainer);
-            
-            // Smart scroll during streaming (throttled for UI responsiveness)
-            smartScrollToBottom(scrollContainer);
-        }
-        
-        // Close tool events stream when done
-        if (toolEventSource) {
-            toolEventSource.close();
-        }
-        
-        // After streaming completes, fetch debug data separately
-        let debugData = null;
-        
-        logger.info('[DEBUG-SEPARATION] Using pre-generated request ID:', requestId);
-        
-        if (requestId) {
-            try {
-                const debugResponse = await fetch(`${window.location.origin}/api/debug/${requestId}`);
-                if (debugResponse.ok) {
-                    const rawDebugData = await debugResponse.json();
-                    
-                    // Use sequential debug data directly
-                    if (rawDebugData.sequence) {
-                        debugData = rawDebugData;
-                    } 
-                } else {
-                    logger.warn('No debug data available for request:', requestId);
-                }
-            } catch (error) {
-                logger.warn('Failed to fetch debug data:', error);
-            }
-        }
-        
-        // Finalize the processor to handle any remaining content
-        processor.finalize();
-        
-        // Capture dropdown states before removing temp container
-        const dropdownStates = {};
-        const streamingDropdowns = tempContainer.querySelectorAll('.streaming-dropdown');
-        let thinkingIndex = 0;
-        let toolIndex = 0;
-        
-        streamingDropdowns.forEach(streamingDropdown => {
-            const instance = streamingDropdown._streamingDropdownInstance;
-            if (instance) {
-                let stateKey;
-                if (instance.type === 'thinking') {
-                    stateKey = 'thinking_' + thinkingIndex;
-                    thinkingIndex++;
-                } else if (instance.type === 'tool') {
-                    stateKey = 'tool_' + toolIndex;
-                    toolIndex++;
-                }
-                if (stateKey) {
-                    dropdownStates[stateKey] = !instance.isCollapsed;
-                }
-            }
-        });
-        
-        // Remove temp content and re-render using the SAME method as live renderer
-        tempContainer.remove();
-        assistantTurnDiv.remove();
-        
-        // Get the last turn info to use as parent for assistant turn
-        try {
-            assistantTurnInfo = await getLastTurnInfo(currentChatId);
-        } catch (error) {
-            logger.warn('Failed to get last turn info:', error);
-        }
-        
         const assistantTurnNumber = getNextTurnNumber();
-        if (debugData) {
-            debugData.currentTurnNumber = assistantTurnNumber;
-        }
-        
-       const rto = RenderableTurnObject.fromStreamingProcessor({
-            processor,
-            turnNumber: assistantTurnNumber,
-            turnId: assistantTurnInfo?.turn_id,
-            parentTurnId: assistantTurnInfo?.parent_turn_id,
-            debugData,
-            dropdownStates,
-        });
-        
-        const renderedTurn = chatRenderer.renderTurn(rto, true);
-        
-        // Save assistant message and debug data separately
-        try {
-            const fullContent = processor.getRawContent() || '';
-            
-            // For now, skip frontend saving entirely - let backend handle everything during tool execution
-            // TODO: Determine if frontend should save non-tool messages
-            logger.info(`[FRONTEND] Message rendered, backend handles saving`);
-            
-            // Save debug data to turn-based storage
-            if (debugData) {
-                debugData.turn_id = assistantTurnInfo?.turn_id || null;
-                debugData.parent_turn_id = assistantTurnInfo?.parent_turn_id || null;
-                await saveTurnData(currentChatId, assistantTurnNumber, debugData);
-                logger.info(`[TURN-DEBUG] Saved assistant debug data for turn ${assistantTurnNumber}`);
-            }
-            
-            // For chat preview, use assistant response for preview (like before)
-            const assistantContent = processor.getRawContent() || '';
-            updateChatPreview(currentChatId, assistantContent);
-            
-            // Auto-generate title from first user message if still "New Chat"
-            const currentTitle = document.getElementById('chatTitle').textContent;
-            if (currentTitle === 'New Chat' || currentTitle === 'Chat') {
-                const titleFromMessage = getTextContent(message);
-                const shortTitle = titleFromMessage.length > 30 ? titleFromMessage.substring(0, 30) + '...' : titleFromMessage;
-                updateChatTitle(shortTitle);
-            }
-        } catch (error) {
-            logger.error('Failed to save assistant message or debug data:', error);
-        }
-        
-        logger.info('Simple chat completed successfully');
-        
-    } catch (error) {
-        // Handle AbortError separately
-        if (error.name === 'AbortError') {
-            logger.info('Simple chat stopped by user');
-            
-            // Close tool events stream if it exists
-            if (toolEventSource) {
-                toolEventSource.close();
-            }
-            
-            // Clean up temp container tracking
-            delete tempContainer._renderedBlocks;
-            delete tempContainer._blockElements;
-            
-            // Remove temp elements
-            tempContainer.remove();
-            assistantTurnDiv.remove();
-            
-            // Simple debug data for stopped request
-            const stoppedDebugData = {
-                sequence: [{
-                    type: 'user_stopped',
-                    step: 1,
-                    timestamp: new Date().toISOString(),
-                    data: {
-                        message: 'Generation stopped by user',
-                        partial_content: processor.getDisplayContent() || ''
+        stoppedDebugData.currentTurnNumber = assistantTurnNumber;
+
+        const partialContent = processor.getRawContent() || '';
+        logger.info(`[FRONTEND] Stopped message rendered, backend handles saving`);
+
+        stoppedDebugData.turn_id = null;
+        stoppedDebugData.parent_turn_id = null;
+        await saveTurnData(currentChatId, assistantTurnNumber, stoppedDebugData);
+        logger.info(`[TURN-DEBUG] Saved stopped debug data for turn ${assistantTurnNumber}`);
+
+        updateChatPreview(currentChatId, partialContent);
+        updateChatTitleFromMessage(message);
+    } catch (saveError) {
+        logger.warn('Failed to save stopped message:', saveError);
+    }
+}
+
+async function handleSimpleChatError({ error, message }) {
+    logger.error('Simple chat failed:', error, true);
+
+    const errorMessage = new Message({
+        id: null,
+        role: 'assistant',
+        content: `[ERROR] ${error.message}`,
+        turn_number: 0,
+        debug_data: null,
+        edit_count: 0,
+        error_state: error.message,
+    });
+    const errorTurn = new Turn(0, [errorMessage]);
+    const errorRto = errorTurn.renderable();
+    chatRenderer.renderTurn(errorRto, true);
+}
+
+async function handleSimpleChat(message, conversationHistory) {
+    logger.info('Starting simple chat');
+
+    const userTurnNumber = getNextTurnNumber();
+    const inputMethod = 'manual';
+    let savedUserDebugData = null;
+
+    try {
+        await sendAndStream({
+            message,
+            userTurnNumber,
+            parentTurnId: null,
+            turnId: null,
+            retriedTurnId: null,
+            inputMethod,
+
+            saveUserMessage: async () => {
+                const messageForSaving = { role: 'user', content: message };
+                if (Array.isArray(message)) {
+                    const filesPart = message.find(part => part.type === 'files');
+                    if (filesPart && filesPart.files) {
+                        messageForSaving.original_content = message;
+                        messageForSaving.file_metadata = {
+                            hasFiles: true,
+                            fileCount: filesPart.files.length,
+                            imageCount: message.filter(part => part.type === 'image').length,
+                            files: filesPart.files,
+                        };
                     }
-                }],
-                metadata: {
-                    endpoint: 'stopped_generation',
-                    timestamp: new Date().toISOString(),
-                    partial: true
                 }
-            };
-            
-            // Finalize processor and render with debug panel using global chatRenderer
-            processor.finalize();
-            
-            // Render the partial message using Turn.renderable()
-            const partialAssistantMessage = new Message({
-                id: null,
-                role: 'assistant',
-                content: processor.getRawContent() || '',
-                turn_number: 0,
-                debug_data: stoppedDebugData,
-                edit_count: 0,
-            });
-            const partialTurn = new Turn(0, [partialAssistantMessage]);
-            const partialRto = partialTurn.renderable();
-            chatRenderer.renderTurn(partialRto, true);
-            
-            // Save whatever content the AI actually generated (even if empty)
-            try {
-                const assistantTurnNumber = getNextTurnNumber();
-                
-                // Inject turn number into debug data for proper debug panel display
-                if (stoppedDebugData) {
-                    stoppedDebugData.currentTurnNumber = assistantTurnNumber;
+                const saveResult = await saveCompleteMessage(currentChatId, messageForSaving, userTurnNumber);
+                if (saveResult && saveResult.turn_id) {
+                    return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
                 }
-                
-                const partialContent = processor.getRawContent() || '';
-                
-                // For stopped messages, let backend handle saving
-                logger.info(`[FRONTEND] Stopped message rendered, backend handles saving`);
-                
-                // Save debug data to turn-based storage
-                if (stoppedDebugData) {
-                    stoppedDebugData.turn_id = assistantTurnInfo?.turn_id || null;
-                    stoppedDebugData.parent_turn_id = assistantTurnInfo?.parent_turn_id || null;
-                    await saveTurnData(currentChatId, assistantTurnNumber, stoppedDebugData);
-                    logger.info(`[TURN-DEBUG] Saved stopped debug data for turn ${assistantTurnNumber}`);
+                return null;
+            },
+
+            renderUserBubble: async (userTurnInfo, requestId) => {
+                if (!userTurnInfo) return;
+
+                const userMessage = new Message({
+                    id: null,
+                    role: 'user',
+                    content: message,
+                    turn_number: userTurnNumber,
+                    edit_count: 0,
+                });
+                userMessage.turnId = userTurnInfo.turn_id;
+                userMessage.parentTurnId = userTurnInfo.parent_turn_id;
+
+                const userTurn = new Turn(userTurnNumber, [userMessage], userTurnInfo.turn_id, userTurnInfo.parent_turn_id);
+                chatRenderer.renderTurn(userTurn.renderable(), true);
+
+                const enabledToolsFlags = loadEnabledTools();
+                const userDebugData = buildUserDebugData({
+                    message,
+                    userTurnNumber,
+                    requestId,
+                    conversationHistory,
+                    inputMethod,
+                    enabledToolsFlags,
+                });
+                addApiRequestToDebugData(userDebugData, { requestId, message, userTurnNumber, enabledToolsFlags });
+                savedUserDebugData = userDebugData;
+
+                try {
+                    await saveTurnData(currentChatId, userTurnNumber, userDebugData);
+                    logger.info(`[TURN-DEBUG] Saved user debug data for turn ${userTurnNumber}`);
+                } catch (error) {
+                    logger.warn('Failed to save user turn debug data:', error);
                 }
-                
-                // For chat preview, use assistant response for preview (like before)
+
+                attachUserDebugPanel(userTurnNumber, userDebugData);
+            },
+
+            onAssistantRendered: async ({ processor }) => {
                 const assistantContent = processor.getRawContent() || '';
                 updateChatPreview(currentChatId, assistantContent);
-                
-                // Auto-generate title from first user message if still "New Chat"
-                const currentTitle = document.getElementById('chatTitle').textContent;
-                if (currentTitle === 'New Chat' || currentTitle === 'Chat') {
-                    const titleFromMessage = getTextContent(message);
-                    const shortTitle = titleFromMessage.length > 30 ? titleFromMessage.substring(0, 30) + '...' : titleFromMessage;
-                    updateChatTitle(shortTitle);
+                updateChatTitleFromMessage(message);
+            },
+
+            onError: (error, processor) => {
+                if (error.name === 'AbortError') {
+                    handleSimpleChatAbort({ userTurnNumber, message, processor });
+                } else {
+                    handleSimpleChatError({ error, message });
                 }
-            } catch (saveError) {
-                logger.warn('Failed to save stopped message:', saveError);
-            }
-            
-            return;
-        }
-        
-        // Handle other errors
-        logger.error('Simple chat failed:', error, true);
-        assistantTurnDiv.remove();
-        
-        // Show error using global chatRenderer
-        const errorMessage = new Message({
-            id: null,
-            role: 'assistant',
-            content: `[ERROR] ${error.message}`,
-            turn_number: 0,
-            debug_data: debugData,
-            edit_count: 0,
-            error_state: error.message,
+            },
         });
-        const errorTurn = new Turn(0, [errorMessage]);
-        const errorRto = errorTurn.renderable();
-        chatRenderer.renderTurn(errorRto, true);
+
+        logger.info('Simple chat completed successfully');
+    } catch (error) {
+        // onError callback already handled partial/error rendering. Re-throw
+        // only if the user wants to see the error in the console.
+        logger.debug('[SIMPLE-CHAT] Error caught at outer level:', error);
     }
 }

@@ -435,18 +435,20 @@ function buildRenderedTurns(allTurns) {
         const children = childrenByParent.get(parentKey) || [];
         if (children.length === 0) return;
 
-        const selectedTurnId = parentKey === 'root' ? null : selectedSiblings[parentKey];
-        const turn = selectedTurnId
-            ? children.find(child => child.turnId === selectedTurnId) || children[children.length - 1]
-            : children[children.length - 1];
+        // Honor selectedSiblings for ALL parent keys, including 'root'.
+        // Previously root siblings were hard-coded to ignore the selection,
+        // which made the prev/next nav buttons on a root turn silently no-op
+        // after a chat reload (H4).
+        const selectedTurnId = selectedSiblings[parentKey] ?? null;
+        const matched = selectedTurnId
+            ? children.find(child => child.turnId === selectedTurnId)
+            : null;
+        const chosen = matched ?? children[children.length - 1];
+        selectedSiblings[parentKey] = chosen.turnId;
 
-        if (parentKey !== 'root') {
-            selectedSiblings[parentKey] = turn.turnId;
-        }
-
-        if (turn) {
-            rendered.push(turn);
-            if (turn.turnId) walk(turn.turnId);
+        if (chosen) {
+            rendered.push(chosen);
+            if (chosen.turnId) walk(chosen.turnId);
         }
     };
 
@@ -481,12 +483,23 @@ async function loadChatHistory(chatId) {
             }
             return true;
         });
-        
+
         if (validMessages.length !== history.messages.length) {
             console.warn(`[LOAD-HISTORY] Filtered out ${history.messages.length - validMessages.length} malformed messages`);
         }
-        
-        history.messages = validMessages;
+
+        // System prompts are saved as root-level messages (parent_turn_id=null)
+        // in processChatRequest, but they are meta-only — never rendered as
+        // turns and never valid siblings of user/assistant turns. Including
+        // them in the walk would either inflate the sibling count (Issue 1:
+        // "1/3" for a 2-branch chat) or — worse — the root walk would land
+        // on the system prompt as the "last root child" and stop there,
+        // wiping every other turn from the renderer (Issue 2).
+        const renderableMessages = validMessages.filter(msg => msg.role !== 'system');
+        if (renderableMessages.length !== validMessages.length) {
+            console.log(`[LOAD-HISTORY] Excluded ${validMessages.length - renderableMessages.length} system message(s) from rendering`);
+        }
+        history.messages = renderableMessages;
         
         await initializeTurnTrackingForChat(chatId);
         

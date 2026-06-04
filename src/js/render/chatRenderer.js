@@ -85,9 +85,11 @@ class ChatRenderer {
         if (turnId) {
             turnDiv.dataset.turnId = turnId;
         }
-        if (parentTurnId) {
-            turnDiv.dataset.parentTurnId = parentTurnId;
-        }
+        // Always write data-parent-turn-id; empty string is the sentinel for
+        // "this turn is a root (no parent)". Readers must use `|| null` to
+        // convert back. Previously root turns had no attribute at all, which
+        // made branch navigation silently skip them (H3).
+        turnDiv.dataset.parentTurnId = parentTurnId || '';
         
         // Create content container
         const contentDiv = document.createElement("div");
@@ -660,7 +662,7 @@ class ChatRenderer {
             branchNav.appendChild(nextBtn);
             
             // Check if this turn should show branch navigation
-            this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId }).catch((error) => {
+            this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role }).catch((error) => {
                 console.error("[BRANCH-NAV] Error loading branch info:", error);
                 // Hide navigation on error
                 branchNav.style.display = "none";
@@ -751,12 +753,12 @@ class ChatRenderer {
         if (role !== "assistant") {
             return;
         }
-        
+
         if (!turnNumber) {
             console.error("[RETRY] Cannot retry: Turn number not available");
             return;
         }
-        
+
         try {
             // Show loading state
             const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
@@ -767,9 +769,8 @@ class ChatRenderer {
                     retryBtn.disabled = true;
                 }
             }
-            
-            // 1. Get complete history and anchor this retry to the parent user turn
-            // of the assistant message being retried.
+
+            // Anchor this retry to the parent user turn of the assistant being retried.
             const history = await getCompleteChatHistory(currentChatId);
             const allMessages = history.messages || [];
 
@@ -785,50 +786,17 @@ class ChatRenderer {
                 console.error("[RETRY] Could not find parent user message for assistant retry", { parentUserTurnId });
                 return;
             }
-            
-            // 2. Truncate UI to show only messages up to the last user message
-            // Remove all turns after the user turn we're retrying from
-            const allTurns = this.container.querySelectorAll(".turn");
-            let foundRetryPoint = false;
-            
-            for (let i = allTurns.length - 1; i >= 0; i--) {
-                const turn = allTurns[i];
-                const turnTurnNumber = parseInt(turn.dataset.turnNumber);
-                
-                if (turnTurnNumber >= turnNumber) {
-                    turn.remove();
-                    foundRetryPoint = true;
-                }
-            }
-            
-            if (!foundRetryPoint) {
-                console.warn(`[RETRY] Could not find turn ${turnNumber} to truncate from`);
-            }
-            
-            // 3. Generate assistant response using the same pattern as simpleChatMode
-            const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            await loadEnabledToolsFromBackend(); // Ensure cache is loaded
-            const enabledToolsFlags = loadEnabledTools(); // Get flags like {"server.tool": false}
-            
-            // Pass the retried turn's turn_id so backend can filter history
-            const requestInfo = initiateMessageRequest(
-                parentUserMessage.content,
-                enabledToolsFlags,
-                requestId,
-                parentUserTurnId,
-                parentUserTurnId,
-                parentUserTurnId
-            );
-            const response = await requestInfo.fetchPromise;
-            
-            // 5. Process the streaming response like normal chat
-            await this.processRetryResponse(response, currentChatId, turnNumber, requestId, parentUserTurnId);
-            
-            // 6. Update branch navigation for all turns after retry
-            // Give a small delay to ensure the DOM has been updated
-            setTimeout(async () => {
-                await this.refreshBranchNavigation();
-            }, 100); // Shorter delay since we're not reloading everything
+
+            await sendAndStream({
+                message: parentUserMessage.content,
+                userTurnNumber: turnNumber,
+                parentTurnId: parentUserTurnId,
+                turnId: parentUserTurnId,
+                retriedTurnId: parentUserTurnId,
+                truncateFromTurnNumber: turnNumber,
+                truncateContainer: this.container,
+                inputMethod: "retry",
+            });
         } catch (error) {
             console.error("[RETRY] Error:", error);
         } finally {
@@ -1838,142 +1806,113 @@ class ChatRenderer {
                     return;
                 }
                 
-                // Get the user's turn_id from history for lineage filtering
+                // Get the user's parent_turn_id from history for the new user bubble
                 const history = await getCompleteChatHistory(currentChatId);
                 const userMsg = (history.messages || []).find(m => m.role === 'user' && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId);
-                const originalUserTurnId = userMsg?.turn_id || retryTurnId || null;
                 const originalUserParentTurnId = userMsg?.parent_turn_id || null;
-                
+
                 // Retract at this user turn (truncates history, new response becomes sibling)
-                
-                // CRITICAL: Save the edited user message so it persists on reload
-                // The original turn keeps the original message unchanged
-                // Convert multimodal arrays to JSON strings for database storage
-                const contentForSave = Array.isArray(editedContent) ? JSON.stringify(editedContent) : editedContent;
-                
-                const saveResult = await saveCompleteMessage(
-                    currentChatId,
-                    { role: "user", content: contentForSave },
-                    retryTurnNumber,
-                    { parent_turn_id: originalUserParentTurnId }
-                );
-                const editedUserTurnId = saveResult?.turn_id || null;
-                const editedUserParentTurnId = saveResult?.parent_turn_id || originalUserParentTurnId;
-                
-                // Truncate UI - remove all turns after the edited turn (keep existing turns up to edit point)
-                const allTurns = this.container.querySelectorAll(".turn");
-                
-                for (let i = allTurns.length - 1; i >= 0; i--) {
-                    const turn = allTurns[i];
-                    const turnTurnNumber = parseInt(turn.dataset.turnNumber);
-                    const role = turn.classList.contains("user-turn") ? "user" : "assistant";
-                    
-                    if (turnTurnNumber >= retryTurnNumber) {
-                        turn.remove();
-                    }
-                }
-                
-                // Generate new requestId for this retried request
-                const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                await loadEnabledToolsFromBackend(); // Ensure cache is loaded
-                const enabledToolsFlags = loadEnabledTools(); // Get flags like {"server.tool": false}
-                
-                // Construct user debug data for the new user turn
-                const userDebugData = {
-                    sequence: [
-                        {
-                            type: "user_input",
-                            step: 1,
-                            data: {
-                                userQuery: {
-                                    message: editedContent,
-                                    chat_id: currentChatId,
-                                    timestamp: new Date().toISOString(),
-                                    message_length: Array.isArray(editedContent) ? JSON.stringify(editedContent).length : editedContent.length,
-                                    turn_number: retryTurnNumber,
-                                    is_multimodal: Array.isArray(editedContent)
-                                },
-                                tools: {
-                                    total: Object.keys(enabledToolsFlags).length,
-                                    flags: enabledToolsFlags
-                                },
-                              context: {
-                                    input_method: "edit_retry",
-                                    current_chat: currentChatId
-                                }
-                            },
-                            timestamp: new Date().toISOString()
+
+                await sendAndStream({
+                    message: editedContent,
+                    userTurnNumber: retryTurnNumber,
+                    parentTurnId: originalUserParentTurnId,
+                    truncateFromTurnNumber: retryTurnNumber,
+                    truncateContainer: this.container,
+                    inputMethod: 'edit_retry',
+
+                    saveUserMessage: async () => {
+                        // Save the edited user message so it persists on reload
+                        // The original turn keeps the original message unchanged
+                        const contentForSave = Array.isArray(editedContent) ? JSON.stringify(editedContent) : editedContent;
+                        const saveResult = await saveCompleteMessage(
+                            currentChatId,
+                            { role: 'user', content: contentForSave },
+                            retryTurnNumber,
+                            { parent_turn_id: originalUserParentTurnId }
+                        );
+                        if (saveResult && saveResult.turn_id) {
+                            return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
                         }
-                    ],
-                    metadata: {
-                        endpoint: "user_input_retry",
-                        timestamp: new Date().toISOString(),
-                        tools: Object.keys(enabledToolsFlags).length
+                        return null;
                     },
-                    currentTurnNumber: retryTurnNumber
-                };
-                
-                // Add API request info to debug data
-                userDebugData.sequence.push({
-                    type: "ai_http_request",
-                    step: userDebugData.sequence.length + 1,
-                    timestamp: new Date().toISOString(),
-                    data: {
-                        requestId: requestId,
-                        endpoint: "chat",
-                        message: editedContent,
-                        tools_enabled: Object.keys(enabledToolsFlags).length,
-                        turn_number: retryTurnNumber
-                    }
+
+                    renderUserBubble: async (userTurnInfo, requestId) => {
+                        if (!userTurnInfo) return;
+                        const enabledToolsFlags = loadEnabledTools();
+                        const userDebugData = {
+                            sequence: [
+                                {
+                                    type: 'user_input',
+                                    step: 1,
+                                    data: {
+                                        userQuery: {
+                                            message: editedContent,
+                                            chat_id: currentChatId,
+                                            timestamp: new Date().toISOString(),
+                                            message_length: Array.isArray(editedContent) ? JSON.stringify(editedContent).length : editedContent.length,
+                                            turn_number: retryTurnNumber,
+                                            is_multimodal: Array.isArray(editedContent)
+                                        },
+                                        tools: {
+                                            total: Object.keys(enabledToolsFlags).length,
+                                            flags: enabledToolsFlags
+                                        },
+                                        context: {
+                                            input_method: 'edit_retry',
+                                            current_chat: currentChatId
+                                        }
+                                    },
+                                    timestamp: new Date().toISOString()
+                                }
+                            ],
+                            metadata: {
+                                endpoint: 'user_input_retry',
+                                timestamp: new Date().toISOString(),
+                                tools: Object.keys(enabledToolsFlags).length
+                            },
+                            currentTurnNumber: retryTurnNumber
+                        };
+
+                        userDebugData.sequence.push({
+                            type: 'ai_http_request',
+                            step: userDebugData.sequence.length + 1,
+                            timestamp: new Date().toISOString(),
+                            data: {
+                                requestId: requestId,
+                                endpoint: 'chat',
+                                message: editedContent,
+                                tools_enabled: Object.keys(enabledToolsFlags).length,
+                                turn_number: retryTurnNumber
+                            }
+                        });
+                        userDebugData.apiRequest = {
+                            url: `${window.location.origin}/api/chat`,
+                            method: 'POST',
+                            requestId: requestId,
+                            timestamp: new Date().toISOString()
+                        };
+
+                        try {
+                            await saveTurnData(currentChatId, retryTurnNumber, userDebugData);
+                            logger.info(`[EDIT-RETRY] Saved new user debug data for turn ${retryTurnNumber}`);
+                        } catch (error) {
+                            logger.warn('[EDIT-RETRY] Failed to save new user turn debug data:', error);
+                        }
+
+                        this.renderTurn(
+                            {
+                                role: 'user',
+                                content: editedContent,
+                                turnNumber: retryTurnNumber,
+                                turnId: userTurnInfo.turn_id,
+                                parentTurnId: userTurnInfo.parent_turn_id,
+                                debugData: userDebugData
+                            },
+                            true
+                        );
+                    },
                 });
-                userDebugData.apiRequest = {
-                    url: `${window.location.origin}/api/chat`,
-                    method: "POST",
-                    requestId: requestId,
-                    timestamp: new Date().toISOString()
-                };
-                
-                // Save the newly generated user debug data to turn-based storage
-                try {
-                    await saveTurnData(currentChatId, retryTurnNumber, userDebugData);
-                    logger.info(`[EDIT-RETRY] Saved new user debug data for turn ${retryTurnNumber}`);
-                } catch (error) {
-                    logger.warn("[EDIT-RETRY] Failed to save new user turn debug data:", error);
-                }
-                
-                // Manually create the edited user bubble (like simpleChatMode does)
-                this.renderTurn(
-                    {
-                        role: "user",
-                        content: editedContent,
-                        turnNumber: retryTurnNumber,
-                        turnId: editedUserTurnId,
-                        parentTurnId: editedUserParentTurnId,
-                        debugData: userDebugData // Pass the newly generated debug data
-                    },
-                    true
-                );
-                
-            // Generate assistant response to the edited user message
-                // Send the proper content format to the AI (multimodal array or text string)
-                // Pass the user's turn_id as retried_turn_id so backend filters to ancestors only
-                const requestInfo = initiateMessageRequest(
-                    editedContent,
-                    enabledToolsFlags,
-                    requestId,
-                    editedUserParentTurnId,
-                    editedUserTurnId,
-                    editedUserTurnId
-                );
-                const response = await requestInfo.fetchPromise;
-                
-                // Process the streaming response
-                await this.processRetryResponse(response, currentChatId, retryTurnNumber + 1, requestId, editedUserTurnId);
-                
-                // Update branch navigation
-                setTimeout(async () => {
-                    await this.refreshBranchNavigation();
-                }, 100);
             } else {
                 // Regular edit - reload chat and refresh branch navigation
                 await loadChatHistory(currentChatId);
@@ -2024,28 +1963,30 @@ class ChatRenderer {
             branchNavElement.style.display = "none";
             return;
         }
-        
+
         try {
-            // Get turn data from RTO if not provided
-            const rto = branchNavElement.closest('.turn')?.dataset?.rto;
-            const parentTurnId = turnData?.parentTurnId || rto?.parentTurnId;
-            
-            if (!parentTurnId) {
+            const parentTurnId = turnData?.parentTurnId;
+            const role = turnData?.role;
+
+            if (parentTurnId === undefined || !role) {
                 branchNavElement.style.display = "none";
                 return false;
             }
-            
+
             // Get all messages to find siblings
             const history = await getCompleteChatHistory(currentChatId);
             if (!history?.messages) {
                 branchNavElement.style.display = "none";
                 return false;
             }
-            
-            // Find all turns with the same parent_turn_id but different turn_id (siblings)
+
+            // Find all turns with the same parent_turn_id AND same role (siblings).
+            // Role filter is required because root-level messages (e.g. the saved
+            // system prompt) share parent_turn_id=null with user roots and would
+            // otherwise inflate the sibling count (e.g. "1/3" for a 2-branch chat).
             const siblingTurns = new Map();
             for (const msg of history.messages) {
-                if (msg.parent_turn_id === parentTurnId) {
+                if (msg.parent_turn_id === parentTurnId && msg.role === role) {
                     const key = `${msg.turn_number || 0}::${msg.turn_id || 'unknown'}`;
                     if (!siblingTurns.has(key)) {
                         siblingTurns.set(key, []);
@@ -2067,7 +2008,7 @@ class ChatRenderer {
             }
             
             // Find current sibling index
-            const currentTurnId = turnData?.turnId || rto?.turnId;
+            const currentTurnId = turnData?.turnId;
             let currentIndex = -1;
             for (let i = 0; i < sortedSiblings.length; i++) {
                 const [, msgs] = sortedSiblings[i];
@@ -2151,18 +2092,19 @@ class ChatRenderer {
         // Get the parent_turn_id from the turn element
         const turnElement = targetBranchNav.closest('.turn');
         const parentTurnId = turnElement?.dataset?.parentTurnId;
-        
+
         // Update the nav element state
         targetBranchNav._currentIndex = newIndex;
         const indicator = targetBranchNav.querySelector(".branch-indicator");
         indicator.textContent = `${newIndex + 1}/${siblings.length}`;
         targetBranchNav.querySelector(".branch-prev").disabled = newIndex <= 0;
         targetBranchNav.querySelector(".branch-next").disabled = newIndex >= siblings.length - 1;
-        
-        // Update selectedSiblings state in chatManager
-        if (parentTurnId) {
-            selectedSiblings[parentTurnId] = targetTurnId;
-        }
+
+        // Update selectedSiblings state in chatManager. Normalize the key
+        // so the empty-string sentinel for root (Task 5) maps to 'root' to
+        // match the lookup in buildRenderedTurns.
+        const parentKey = parentTurnId || 'root';
+        selectedSiblings[parentKey] = targetTurnId;
         
         // Re-render the chat history with the new sibling selected
         await loadChatHistory(currentChatId);
@@ -2180,155 +2122,27 @@ class ChatRenderer {
     async refreshBranchNavigation() {
         try {
             const allTurns = document.querySelectorAll(".user-turn, .assistant-turn");
-            
+
             for (const turn of allTurns) {
                 const branchNav = turn.querySelector(".branch-nav");
                 const turnNumber = parseInt(turn.dataset.turnNumber);
-                
+
                 if (branchNav && turnNumber) {
-                    await this.updateBranchNavigation(branchNav, turnNumber);
+                    // Reconstruct turn data from the DOM. Task 5 ensures
+                    // data-parent-turn-id is always present (empty string for
+                    // root); `|| null` converts the sentinel back to null.
+                    const turnId = turn.dataset.turnId || null;
+                    const parentTurnId = turn.dataset.parentTurnId || null;
+                    const role = turn.classList.contains("user-turn")
+                        ? "user"
+                        : turn.classList.contains("assistant-turn")
+                        ? "assistant"
+                        : null;
+                    await this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role });
                 }
             }
         } catch (error) {
             console.error("[BRANCH-NAV] Error refreshing branch navigation:", error);
-        }
-    }
-    
-    // Process streaming response for retry (without creating new user message)
-    async processRetryResponse(response, chatId, turnNumber, requestId, parentUserTurnId = null) {
-        try {
-            const processor = new StreamingMessageProcessor();
-            const tempContainer = document.createElement("div");
-            const liveRenderer = new ChatRenderer(tempContainer);
-            
-            // Set up tool event source for live rendering using provided requestId
-            let toolEventSource = null;
-            try {
-                const eventSourceUrl = `${window.location.origin}/api/tools/${requestId}`;
-                toolEventSource = new EventSource(eventSourceUrl);
-                
-                toolEventSource.onmessage = function (event) {
-                    try {
-                        const eventData = JSON.parse(event.data);
-                        processor.handleToolEvent(eventData);
-                        updateLiveRendering(processor, liveRenderer, tempContainer);
-                    } catch (parseError) {
-                        console.warn("Failed to parse tool event:", parseError);
-                    }
-                };
-            } catch (error) {
-                logger.warn("Failed to connect to tool events:", error);
-            }
-            
-            // Create assistant turn div manually (like simpleChatMode does)
-            const assistantTurnDiv = document.createElement("div");
-            assistantTurnDiv.className = "turn assistant-turn";
-            assistantTurnDiv.innerHTML = "";
-            this.container.appendChild(assistantTurnDiv);
-            
-            // Add temp container for live rendering
-            assistantTurnDiv.appendChild(tempContainer);
-            
-            // Process streaming response
-            for await (const chunk of streamResponse(response)) {
-                processor.addChunk(chunk);
-                updateLiveRendering(processor, liveRenderer, tempContainer);
-                smartScrollToBottom(scrollContainer);
-            }
-            
-            // Close tool events stream
-            if (toolEventSource) {
-                toolEventSource.close();
-            }
-            
-            // Finalize the processor
-            processor.finalize();
-            
-            // Get debug data
-            let debugData = null;
-            if (requestId) {
-                try {
-                    const debugResponse = await fetch(`${window.location.origin}/api/debug/${requestId}`);
-                    if (debugResponse.ok) {
-                        debugData = await debugResponse.json();
-                    }
-                } catch (error) {
-                    logger.warn("Failed to fetch debug data:", error);
-                }
-            }
-            
-            // Get dropdown states before removing temp container
-            const dropdownStates = {};
-            const streamingDropdowns = tempContainer.querySelectorAll(".streaming-dropdown");
-            let thinkingIndex = 0;
-            let toolIndex = 0;
-            
-            streamingDropdowns.forEach((streamingDropdown) => {
-                const instance = streamingDropdown._streamingDropdownInstance;
-                if (instance) {
-                    let stateKey;
-                    if (instance.type === "thinking") {
-                        stateKey = "thinking_" + thinkingIndex;
-                        thinkingIndex++;
-                    } else if (instance.type === "tool") {
-                        stateKey = "tool_" + toolIndex;
-                        toolIndex++;
-                    }
-                    if (stateKey) {
-                        dropdownStates[stateKey] = !instance.isCollapsed;
-                    }
-                }
-            });
-            
-            // Remove temp content and re-render
-            tempContainer.remove();
-            assistantTurnDiv.remove();
-            
-            if (debugData) {
-                debugData.currentTurnNumber = turnNumber;
-            }
-
-            let savedAssistantTurn = null;
-            try {
-                const history = await getCompleteChatHistory(chatId);
-                const allMessages = history.messages || [];
-                let assistantTurns;
-                if (parentUserTurnId) {
-                    assistantTurns = allMessages.filter((msg) =>
-                        msg.role === "assistant" && msg.parent_turn_id === parentUserTurnId && msg.turn_id
-                    );
-                } else {
-                    assistantTurns = allMessages.filter((msg) =>
-                        msg.role === "assistant" && msg.turn_number === turnNumber && msg.turn_id
-                    );
-                }
-                savedAssistantTurn = assistantTurns[assistantTurns.length - 1] || null;
-            } catch (error) {
-                logger.warn("[RETRY] Failed to load saved assistant turn metadata:", error);
-            }
-            
-            const renderedTurn = this.renderTurn(
-                RenderableTurnObject.fromStreamingProcessor({
-                    processor,
-                    turnNumber,
-                    turnId: savedAssistantTurn?.turn_id || null,
-                    parentTurnId: savedAssistantTurn?.parent_turn_id || null,
-                    debugData,
-                    dropdownStates,
-                }),
-                true
-            );
-            
-            // Save debug data
-            if (debugData) {
-                await saveTurnData(chatId, turnNumber, debugData);
-                logger.info(`[RETRY] Saved debug data for turn ${turnNumber}`);
-            }
-            
-            logger.info("[RETRY] Assistant response completed successfully");
-        } catch (error) {
-            logger.error("[RETRY] Error processing response:", error);
-            throw error;
         }
     }
 }
