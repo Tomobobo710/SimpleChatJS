@@ -11,7 +11,7 @@ function generateRequestId() {
 // Remove DOM turns whose data-turn-number is >= the given threshold.
 function truncateTurnsInContainer(container, fromTurnNumber) {
     if (fromTurnNumber == null || !container) return;
-    const allTurns = container.querySelectorAll('.turn');
+    const allTurns = container.querySelectorAll(".turn");
     for (let i = allTurns.length - 1; i >= 0; i--) {
         const turn = allTurns[i];
         if (parseInt(turn.dataset.turnNumber) >= fromTurnNumber) {
@@ -30,17 +30,17 @@ async function streamAndRenderAssistant({
     container,
     userTurnNumber,
     inputMethod,
-    onError = null,
+    onError = null
 }) {
     const processor = new StreamingMessageProcessor();
-    const tempContainer = document.createElement('div');
-    tempContainer.style.width = '100%';
-    tempContainer.style.boxSizing = 'border-box';
+    const tempContainer = document.createElement("div");
+    tempContainer.style.width = "100%";
+    tempContainer.style.boxSizing = "border-box";
     const liveRenderer = new ChatRenderer(tempContainer);
 
-    const assistantTurnDiv = document.createElement('div');
-    assistantTurnDiv.className = 'turn assistant-turn';
-    assistantTurnDiv.innerHTML = '';
+    const assistantTurnDiv = document.createElement("div");
+    assistantTurnDiv.className = "turn assistant-turn";
+    assistantTurnDiv.innerHTML = "";
     container.appendChild(assistantTurnDiv);
     assistantTurnDiv.appendChild(tempContainer);
 
@@ -53,43 +53,38 @@ async function streamAndRenderAssistant({
                 processor.handleToolEvent(toolEvent);
                 updateLiveRendering(processor, liveRenderer, tempContainer);
             } catch (parseError) {
-                logger.warn('Failed to parse tool event:', parseError);
+                logger.warn("Failed to parse tool event:", parseError);
             }
         };
         toolEventSource.onerror = () => {
             // Errors are normal at stream end; logged at higher verbosity if needed
         };
     } catch (error) {
-        logger.warn('Failed to connect to tool events:', error);
+        logger.warn("Failed to connect to tool events:", error);
     }
 
     try {
         const response = await fetchPromise;
 
-        // Read the assistant's turn identifiers from the response headers
-        // (Phase 6 Task 18). The backend sets X-Assistant-Turn-Id and
-        // X-Assistant-Parent-Turn-Id before streaming starts so the
-        // frontend doesn't need a follow-up getCompleteChatHistory fetch
-        // to stamp the rendered bubble. Both headers are required; if
-        // either is missing the server is misconfigured and we throw
-        // (no silent fallback to a DB lookup).
-        const assistantTurnId = response.headers.get('X-Assistant-Turn-Id');
-        const assistantParentTurnId = response.headers.get('X-Assistant-Parent-Turn-Id');
+        // Read assistant turn identifiers from response headers. Both
+        // headers are required; missing headers throw.
+        const assistantTurnId = response.headers.get("X-Assistant-Turn-Id");
+        const assistantParentTurnId = response.headers.get("X-Assistant-Parent-Turn-Id");
         if (!assistantTurnId || !assistantParentTurnId) {
             throw new Error(
                 `Backend did not emit required assistant-turn headers ` +
-                `(X-Assistant-Turn-Id=${assistantTurnId}, X-Assistant-Parent-Turn-Id=${assistantParentTurnId})`
+                    `(X-Assistant-Turn-Id=${assistantTurnId}, X-Assistant-Parent-Turn-Id=${assistantParentTurnId})`
             );
         }
         const savedAssistantTurn = {
             turn_id: assistantTurnId,
-            parent_turn_id: assistantParentTurnId,
+            parent_turn_id: assistantParentTurnId
         };
 
         for await (const chunk of streamResponse(response)) {
             processor.addChunk(chunk);
             updateLiveRendering(processor, liveRenderer, tempContainer);
-            if (typeof smartScrollToBottom === 'function') {
+            if (typeof smartScrollToBottom === "function") {
                 smartScrollToBottom(scrollContainer);
             }
         }
@@ -110,22 +105,22 @@ async function streamAndRenderAssistant({
                 }
             }
         } catch (error) {
-            logger.warn('Failed to fetch debug data:', error);
+            logger.warn("Failed to fetch debug data:", error);
         }
 
         const dropdownStates = {};
-        const streamingDropdowns = tempContainer.querySelectorAll('.streaming-dropdown');
+        const streamingDropdowns = tempContainer.querySelectorAll(".streaming-dropdown");
         let thinkingIndex = 0;
         let toolIndex = 0;
         streamingDropdowns.forEach((streamingDropdown) => {
             const instance = streamingDropdown._streamingDropdownInstance;
             if (instance) {
                 let stateKey;
-                if (instance.type === 'thinking') {
-                    stateKey = 'thinking_' + thinkingIndex;
+                if (instance.type === "thinking") {
+                    stateKey = "thinking_" + thinkingIndex;
                     thinkingIndex++;
-                } else if (instance.type === 'tool') {
-                    stateKey = 'tool_' + toolIndex;
+                } else if (instance.type === "tool") {
+                    stateKey = "tool_" + toolIndex;
                     toolIndex++;
                 }
                 if (stateKey) {
@@ -148,7 +143,7 @@ async function streamAndRenderAssistant({
             turnId: savedAssistantTurn?.turn_id || null,
             parentTurnId: savedAssistantTurn?.parent_turn_id || null,
             debugData,
-            dropdownStates,
+            dropdownStates
         });
 
         chatRenderer.renderTurn(rto, true);
@@ -158,7 +153,9 @@ async function streamAndRenderAssistant({
                 debugData.turn_id = savedAssistantTurn?.turn_id || null;
                 debugData.parent_turn_id = savedAssistantTurn?.parent_turn_id || null;
                 await saveTurnData(currentChatId, savedAssistantTurn?.turn_id, debugData);
-                logger.info(`[${inputMethod.toUpperCase()}] Saved assistant debug data for turn_id=${savedAssistantTurn?.turn_id}`);
+                logger.info(
+                    `[${inputMethod.toUpperCase()}] Saved assistant debug data for turn_id=${savedAssistantTurn?.turn_id}`
+                );
             } catch (error) {
                 logger.warn(`[${inputMethod.toUpperCase()}] Failed to save assistant debug data:`, error);
             }
@@ -172,7 +169,11 @@ async function streamAndRenderAssistant({
         tempContainer.remove();
         assistantTurnDiv.remove();
         if (onError) {
-            try { onError(error, processor); } catch (_) { /* swallow */ }
+            try {
+                onError(error, processor);
+            } catch (_) {
+                /* swallow */
+            }
         }
         throw error;
     }
@@ -204,7 +205,7 @@ async function sendAndStream({
     // message on AbortError).
     onError = null,
 
-    inputMethod = 'manual',
+    inputMethod = "manual"
 }) {
     // Generate requestId early so user-side callbacks can include it in debug data.
     const requestId = generateRequestId();
@@ -212,12 +213,7 @@ async function sendAndStream({
     let userTurnInfo = null;
 
     if (saveUserMessage) {
-        // Phase 6 Task 17 (M4): let the throw propagate. A failed user save
-        // is a hard error — returning null here would let the chat request
-        // go out with no lineage anchor (H8 fallthrough) and the user would
-        // never see an error. The throw reaches the top-level caller
-        // (main.js:handleSendMessage or chatRenderer.js:exitMessageEditMode)
-        // which calls showError.
+        // Throw on failed user save — a hard error that aborts the request.
         userTurnInfo = await saveUserMessage(requestId);
     }
 
@@ -246,18 +242,18 @@ async function sendAndStream({
     const effectiveLineageAnchorTurnId = userTurnInfo ? userTurnInfo.turn_id : lineageAnchorTurnId;
 
     const requestInfo = initiateMessageRequest(
-        enabledToolsFlags, requestId,
-        effectiveParentTurnId, effectiveTurnId, effectiveLineageAnchorTurnId
+        enabledToolsFlags,
+        requestId,
+        effectiveParentTurnId,
+        effectiveTurnId,
+        effectiveLineageAnchorTurnId
     );
 
     // For pure retry (no user save), userTurnInfo is still needed for the
     // assistant lookup; the retry caller passes the parent user turn id via
     // turnId, so synthesize a userTurnInfo.
-    const effectiveUserTurnInfo = userTurnInfo || (
-        inputMethod === 'retry' && turnId
-            ? { turn_id: turnId, parent_turn_id: parentTurnId }
-            : null
-    );
+    const effectiveUserTurnInfo =
+        userTurnInfo || (inputMethod === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
 
     const container = truncateContainer || turnsContainer;
     const { savedAssistantTurn, debugData, processor } = await streamAndRenderAssistant({
@@ -267,7 +263,7 @@ async function sendAndStream({
         container,
         userTurnNumber,
         inputMethod,
-        onError,
+        onError
     });
 
     const assistantTurnInfo = savedAssistantTurn
@@ -281,22 +277,15 @@ async function sendAndStream({
                 assistantTurnInfo,
                 requestId,
                 debugData,
-                processor,
+                processor
             });
         } catch (error) {
             logger.warn(`[${inputMethod.toUpperCase()}] onAssistantRendered failed:`, error);
         }
     }
 
-    // No post-render refreshBranchNavigation sweep. The new assistant
-    // turn is the latest sibling of its parent user turn, but the
-    // user turn doesn't gain a new sibling from this — only the
-    // assistant's own branch-nav changes, and renderTurn already
-    // updates branch-nav per-turn (chatRenderer.js:661). A blanket
-    // sweep after every send is redundant. Earlier versions of this
-    // code did `setTimeout(refreshBranchNavigation, 100)` here as a
-    // superstition; the await on streamAndRenderAssistant already
-    // guarantees the assistant turn is in the DOM.
+    // No post-render branch-nav sweep needed — renderTurn updates
+    // branch-nav per-turn.
 
     return { userTurnInfo, assistantTurnInfo, requestId };
 }

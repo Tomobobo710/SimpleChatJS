@@ -4,7 +4,7 @@ class ChatRenderer {
     constructor(containerElement) {
         this.container = containerElement;
     }
-    
+
     // Main render method - handles only blocks - no more content parsing
     renderTurn(turnData, shouldScroll = true) {
         try {
@@ -25,133 +25,128 @@ class ChatRenderer {
 
             // Validate required data
             if (!role || turnNumber === undefined) {
-                console.error('[RENDER-ERROR] Missing required turn data:', { role, turnNumber, turnData });
+                console.error("[RENDER-ERROR] Missing required turn data:", { role, turnNumber, turnData });
                 return null;
             }
-        
-        // Check if this turn already exists in DOM
-        if (turnId) {
-            const existingTurns = document.querySelectorAll(`[data-turn-id="${turnId}"]`);
-            if (existingTurns.length > 0 && role === "assistant") {
-                console.warn(
-                    `[DUPLICATE-GUARD] Turn ${turnId} already exists in DOM! SKIPPING RENDER`
-                );
-                return existingTurns[0];
-            }
-        } else {
-            const existingTurns = document.querySelectorAll(`[data-turn-number="${turnNumber}"]`);
-            if (existingTurns.length > 0 && role === "assistant") {
-                console.warn(
-                    `[DUPLICATE-GUARD] Turn ${turnNumber} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
-                );
-                return existingTurns[0];
-            }
-        }
-        
-        // Handle blocks: Required for assistant messages, optional for user messages
-        let finalBlocks;
-        if (!blocks) {
-            if (role === "assistant") {
-                // Auto-generate blocks for assistant messages when missing
-                console.warn("[AUTO-BLOCKS] Creating blocks for assistant message from content");
-                finalBlocks = this.createBlocksFromContent(content);
+
+            // Check if this turn already exists in DOM
+            if (turnId) {
+                const existingTurns = document.querySelectorAll(`[data-turn-id="${turnId}"]`);
+                if (existingTurns.length > 0 && role === "assistant") {
+                    console.warn(`[DUPLICATE-GUARD] Turn ${turnId} already exists in DOM! SKIPPING RENDER`);
+                    return existingTurns[0];
+                }
             } else {
-                // User messages can render without blocks
-                finalBlocks = [{ type: "chat", content: content || "", metadata: {} }];
+                const existingTurns = document.querySelectorAll(`[data-turn-number="${turnNumber}"]`);
+                if (existingTurns.length > 0 && role === "assistant") {
+                    console.warn(
+                        `[DUPLICATE-GUARD] Turn ${turnNumber} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
+                    );
+                    return existingTurns[0];
+                }
             }
-        } else {
-            finalBlocks = blocks;
-        }
-        
-        const turnDiv = document.createElement("div");
-        const domId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-        // Use the new turn-based class names
-        if (role === "user") {
-            turnDiv.className = "turn user-turn";
-        } else if (role === "assistant") {
-            turnDiv.className = "turn assistant-turn";
-        } else {
-            turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
-        }
+            // Handle blocks: Required for assistant messages, optional for user messages
+            let finalBlocks;
+            if (!blocks) {
+                if (role === "assistant") {
+                    // Auto-generate blocks for assistant messages when missing
+                    console.warn("[AUTO-BLOCKS] Creating blocks for assistant message from content");
+                    finalBlocks = this.createBlocksFromContent(content);
+                } else {
+                    // User messages can render without blocks
+                    finalBlocks = [{ type: "chat", content: content || "", metadata: {} }];
+                }
+            } else {
+                finalBlocks = blocks;
+            }
 
-        if (id) {
-            turnDiv.dataset.messageId = id;
-        }
-        if (turnNumber) {
-            turnDiv.dataset.turnNumber = turnNumber;
-        }
-        if (turnId) {
-            turnDiv.dataset.turnId = turnId;
-        }
-        // Always write data-parent-turn-id; empty string is the sentinel for
-        // "this turn is a root (no parent)". Readers must use `|| null` to
-        // convert back. Previously root turns had no attribute at all, which
-        // made branch navigation silently skip them (H3).
-        turnDiv.dataset.parentTurnId = parentTurnId || '';
-        
-        // Create content container
-        const contentDiv = document.createElement("div");
-        contentDiv.className = "turn-content";
-        
-        // Always render blocks - no conditionals needed
-        let thinkingIndex = 0;
-        let toolIndex = 0;
-        
-        finalBlocks.forEach((blockData) => {
-            let stateKey;
-            let isOpen = false;
-            
-            if (blockData.type === "thinking") {
-                stateKey = "thinking_" + thinkingIndex;
-                thinkingIndex++;
-            } else if (blockData.type === "tool") {
-                stateKey = "tool_" + toolIndex;
-                toolIndex++;
+            const turnDiv = document.createElement("div");
+            const domId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            // Use the new turn-based class names
+            if (role === "user") {
+                turnDiv.className = "turn user-turn";
+            } else if (role === "assistant") {
+                turnDiv.className = "turn assistant-turn";
+            } else {
+                turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
             }
-            
-            if (stateKey) {
-                isOpen = dropdownStates[stateKey] || false;
+
+            if (id) {
+                turnDiv.dataset.messageId = id;
             }
-            
-            const blockElement = this.renderBlock(blockData, isOpen);
-            contentDiv.appendChild(blockElement);
-        });
-        
-        turnDiv.appendChild(contentDiv);
-        
-        // Add message actions bar (passing turn_id and parent_turn_id from RTO)
-        this.addMessageActions(turnDiv, role, turnNumber, id, turnId, parentTurnId);
-        
-        // Add debug toggle and panel if debug data provided
-        if (debugData) {
-            this.addDebugPanel(turnDiv, domId, debugData, turnNumber);
-        }
-        
-        this.container.appendChild(turnDiv);
-        
-        // Handle scrolling
-        if (shouldScroll) {
-            smartScrollToBottom(scrollContainer);
-        }
-        
-        // Update chat preview and handle title generation
-        this.handleTurnMeta(
-            role,
-            finalBlocks
-                .filter((b) => b.type === "chat")
-                .map((b) => b.content)
-                .join(" ")
-        );
-        
-        return turnDiv;
-            
+            if (turnNumber) {
+                turnDiv.dataset.turnNumber = turnNumber;
+            }
+            if (turnId) {
+                turnDiv.dataset.turnId = turnId;
+            }
+            // Always write data-parent-turn-id; empty string is the sentinel for
+            // "root". Readers convert with `|| null`.
+            turnDiv.dataset.parentTurnId = parentTurnId || "";
+
+            // Create content container
+            const contentDiv = document.createElement("div");
+            contentDiv.className = "turn-content";
+
+            // Always render blocks - no conditionals needed
+            let thinkingIndex = 0;
+            let toolIndex = 0;
+
+            finalBlocks.forEach((blockData) => {
+                let stateKey;
+                let isOpen = false;
+
+                if (blockData.type === "thinking") {
+                    stateKey = "thinking_" + thinkingIndex;
+                    thinkingIndex++;
+                } else if (blockData.type === "tool") {
+                    stateKey = "tool_" + toolIndex;
+                    toolIndex++;
+                }
+
+                if (stateKey) {
+                    isOpen = dropdownStates[stateKey] || false;
+                }
+
+                const blockElement = this.renderBlock(blockData, isOpen);
+                contentDiv.appendChild(blockElement);
+            });
+
+            turnDiv.appendChild(contentDiv);
+
+            // Add message actions bar (passing turn_id and parent_turn_id from RTO)
+            this.addMessageActions(turnDiv, role, turnNumber, id, turnId, parentTurnId);
+
+            // Add debug toggle and panel if debug data provided
+            if (debugData) {
+                this.addDebugPanel(turnDiv, domId, debugData, turnNumber);
+            }
+
+            this.container.appendChild(turnDiv);
+
+            // Handle scrolling
+            if (shouldScroll) {
+                smartScrollToBottom(scrollContainer);
+            }
+
+            // Update chat preview and handle title generation
+            this.handleTurnMeta(
+                role,
+                finalBlocks
+                    .filter((b) => b.type === "chat")
+                    .map((b) => b.content)
+                    .join(" ")
+            );
+
+            return turnDiv;
         } catch (error) {
-            console.error('[RENDER-ERROR] Error rendering turn:', error, turnData);
-            
+            console.error("[RENDER-ERROR] Error rendering turn:", error, turnData);
+
             // Create a simple error message instead of crashing
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'turn assistant-turn error';
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "turn assistant-turn error";
             errorDiv.innerHTML = `
                 <div class="turn-content">
                     <div class="error-message">Error rendering message: ${error.message}</div>
@@ -160,11 +155,11 @@ class ChatRenderer {
             return errorDiv;
         }
     }
-    
+
     // Render individual block based on type
     renderBlock(blockData, isOpen = false) {
         const { type, content, metadata = {} } = blockData;
-        
+
         switch (type) {
             case "thinking":
                 return this.renderThinkingBlock(content, metadata, isOpen);
@@ -182,7 +177,7 @@ class ChatRenderer {
                 return this.renderChatBlock(content);
         }
     }
-    
+
     // Render thinking block as dropdown
     renderThinkingBlock(content, metadata, isOpen = false) {
         const dropdownId = `thinking-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -192,11 +187,11 @@ class ChatRenderer {
         dropdown.setContent(content);
         return dropdown.element;
     }
-    
+
     // Render tool block as dropdown
     renderToolBlock(content, metadata, isOpen = false) {
         const dropdownId = `tool-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+
         // Extract tool name from metadata or content
         let toolName = metadata?.toolName;
         if (!toolName) {
@@ -205,23 +200,23 @@ class ChatRenderer {
                 toolName = toolMatch[1];
             }
         }
-        
+
         // Create title with just the tool name (no "Tool:" prefix)
         const title = toolName || "unknown_tool";
-        
+
         // Format the content with Arguments and Result sections
         const formattedContent = formatToolContent(content, toolName, metadata?.toolArgs);
-        
+
         const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen);
         dropdown.setContent(formattedContent);
         return dropdown.element;
     }
-    
+
     // Render live streaming code block
     renderCodeBlock(content, metadata) {
         const div = document.createElement("div");
         div.className = "live-code-block";
-        
+
         // Add language label if present
         if (metadata.language) {
             const langLabel = document.createElement("div");
@@ -229,17 +224,17 @@ class ChatRenderer {
             langLabel.textContent = metadata.language;
             div.appendChild(langLabel);
         }
-        
+
         // Create the code element
         const pre = document.createElement("pre");
         const code = document.createElement("code");
-        
+
         // Add language class and streaming indicator
         let codeClass = "";
         if (metadata.language) {
             codeClass = `language-${metadata.language}`;
         }
-        
+
         if (metadata.isStreaming) {
             code.className = `streaming-code ${codeClass}`.trim();
             // For streaming, escape HTML and add cursor
@@ -247,12 +242,14 @@ class ChatRenderer {
         } else {
             code.className = codeClass;
             // For final content, use SimpleSyntax highlighting
-            code.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(content, metadata.language) : escapeHtml(content);
+            code.innerHTML = window.SimpleSyntax
+                ? SimpleSyntax.highlight(content, metadata.language)
+                : escapeHtml(content);
         }
-        
+
         pre.appendChild(code);
         div.appendChild(pre);
-        
+
         // Add copy button
         const copyBtn = document.createElement("button");
         copyBtn.className = "code-copy-btn";
@@ -261,72 +258,75 @@ class ChatRenderer {
             this.copyCodeToClipboard(content);
         });
         div.appendChild(copyBtn);
-        
+
         return div;
     }
-    
+
     // Render error block as dropdown with debug information
     renderErrorBlock(content, metadata, isOpen = false) {
         const dropdownId = `error-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const errorType = metadata?.error_type || 'unknown_error';
-        const title = `Error: ${errorType.replace('_', ' ').toUpperCase()}`;
-        
+        const errorType = metadata?.error_type || "unknown_error";
+        const title = `Error: ${errorType.replace("_", " ").toUpperCase()}`;
+
         // Create error dropdown with red styling
         const dropdown = new StreamingDropdown(dropdownId, title, "error", !isOpen);
-        
+
         // Format error content with debug information
         let errorContent = `**Error Message:**\n${content}\n\n`;
-        
+
         if (metadata?.debug_data) {
             errorContent += `**Debug Information:**\n\`\`\`json\n${JSON.stringify(metadata.debug_data, null, 2)}\n\`\`\``;
         }
-        
+
         dropdown.setContent(errorContent);
-        
+
         // Add error-specific styling
-        dropdown.element.classList.add('error-dropdown');
-        dropdown.element.style.borderLeft = '4px solid #ff4444';
-        
+        dropdown.element.classList.add("error-dropdown");
+        dropdown.element.style.borderLeft = "4px solid #ff4444";
+
         // Style the dropdown toggle (header) - use correct selector and add null check
-        const dropdownToggle = dropdown.element.querySelector('.dropdown-toggle');
+        const dropdownToggle = dropdown.element.querySelector(".dropdown-toggle");
         if (dropdownToggle) {
-            dropdownToggle.style.backgroundColor = '#4a1a1a'; // Dark red background
-            dropdownToggle.style.color = '#ff9999'; // Light red text
-            dropdownToggle.style.borderLeft = '3px solid #cc0000';
+            dropdownToggle.style.backgroundColor = "#4a1a1a"; // Dark red background
+            dropdownToggle.style.color = "#ff9999"; // Light red text
+            dropdownToggle.style.borderLeft = "3px solid #cc0000";
         }
-        
+
         return dropdown.element;
     }
-    
+
     // Copy code content to clipboard, stripping markdown backticks
     copyCodeToClipboard(content) {
         // Remove leading/trailing backticks and language identifier
         let cleanContent = content;
-        
+
         // Remove opening backticks and language (e.g., "```python\n")
-        cleanContent = cleanContent.replace(/^```[a-zA-Z]*\n?/, '');
-        
+        cleanContent = cleanContent.replace(/^```[a-zA-Z]*\n?/, "");
+
         // Remove closing backticks
-        cleanContent = cleanContent.replace(/\n?```$/, '');
-        
+        cleanContent = cleanContent.replace(/\n?```$/, "");
+
         // Copy to clipboard
-        navigator.clipboard.writeText(cleanContent).then(() => {
-            // Provide visual feedback
-            const copyBtns = document.querySelectorAll('.code-copy-btn');
-            copyBtns.forEach(btn => {
-                if (btn.textContent === 'Copy') {
-                    const originalText = btn.textContent;
-                    btn.textContent = 'Copied!';
-                    setTimeout(() => {
-                        btn.textContent = originalText;
-                    }, 1000);
-                }
+        navigator.clipboard
+            .writeText(cleanContent)
+            .then(() => {
+                // Provide visual feedback
+                const copyBtns = document.querySelectorAll(".code-copy-btn");
+                copyBtns.forEach((btn) => {
+                    if (btn.textContent === "Copy") {
+                        const originalText = btn.textContent;
+                        btn.textContent = "Copied!";
+                        setTimeout(() => {
+                            btn.textContent = originalText;
+                        }, 1000);
+                    }
+                });
+            })
+            .catch((err) => {
+                console.error("Failed to copy code:", err);
             });
-        }).catch(err => {
-            console.error('Failed to copy code:', err);
-        });
     }
-    
+
     // Render regular chat content
 
     showFileContentModal(metadata) {
@@ -346,23 +346,23 @@ class ChatRenderer {
                 </div>
             </div>
         `;
-        
+
         // Add to body
         document.body.appendChild(modal);
-        
+
         // Close handlers
         const closeBtn = modal.querySelector(".modal-close");
         const overlay = modal.querySelector(".modal-overlay");
-        
+
         const closeModal = () => {
             document.body.removeChild(modal);
         };
-        
+
         closeBtn.addEventListener("click", closeModal);
         overlay.addEventListener("click", (e) => {
             if (e.target === overlay) closeModal();
         });
-        
+
         // ESC key to close
         const escHandler = (e) => {
             if (e.key === "Escape") {
@@ -372,14 +372,14 @@ class ChatRenderer {
         };
         document.addEventListener("keydown", escHandler);
     }
-    
+
     renderChatBlock(content) {
         const div = document.createElement("div");
         div.className = "chat-block";
-        
+
         // Handle cases where content might be JSON stringified
         let processedContent = content;
-        if (typeof content === 'string' && content.startsWith('[')) {
+        if (typeof content === "string" && content.startsWith("[")) {
             try {
                 processedContent = JSON.parse(content);
             } catch (e) {
@@ -387,69 +387,69 @@ class ChatRenderer {
                 processedContent = content;
             }
         }
-        
+
         // Handle multimodal content (array) or simple text content (string)
         if (Array.isArray(processedContent)) {
             // Multimodal content - render each part
-            processedContent.forEach(part => {
+            processedContent.forEach((part) => {
                 switch (part.type) {
-                    case 'text':
-                        if (part.text !== undefined && part.text !== null && part.text !== '') {
-                            const textDiv = document.createElement('div');
-                            textDiv.className = 'content-part text-part';
+                    case "text":
+                        if (part.text !== undefined && part.text !== null && part.text !== "") {
+                            const textDiv = document.createElement("div");
+                            textDiv.className = "content-part text-part";
                             textDiv.innerHTML = formatMessage(escapeHtml(part.text));
                             div.appendChild(textDiv);
                         }
                         break;
-                    
-                    case 'image':
-                        const imageDiv = document.createElement('div');
-                        imageDiv.className = 'content-part image-part';
-                        
-                        const img = document.createElement('img');
+
+                    case "image":
+                        const imageDiv = document.createElement("div");
+                        imageDiv.className = "content-part image-part";
+
+                        const img = document.createElement("img");
                         img.src = `data:${part.mimeType};base64,${part.imageData}`;
-                        img.className = 'message-image';
-                        img.loading = 'lazy';
+                        img.className = "message-image";
+                        img.loading = "lazy";
                         img.onclick = () => this.openImageModal(img.src);
-                        
+
                         imageDiv.appendChild(img);
                         div.appendChild(imageDiv);
                         break;
-                    
-                    case 'files':
+
+                    case "files":
                         if (part.files && Array.isArray(part.files) && part.files.length > 0) {
-                            const filesDiv = document.createElement('div');
-                            filesDiv.className = 'content-part files-part';
-                            
-                            part.files.forEach(file => {
-                                const filePreview = document.createElement('div');
-                                filePreview.className = 'file-attachment';
-                                
-                                const icon = document.createElement('span');
-                                icon.className = 'file-icon';
+                            const filesDiv = document.createElement("div");
+                            filesDiv.className = "content-part files-part";
+
+                            part.files.forEach((file) => {
+                                const filePreview = document.createElement("div");
+                                filePreview.className = "file-attachment";
+
+                                const icon = document.createElement("span");
+                                icon.className = "file-icon";
                                 icon.textContent = getFileIcon(file.fileName);
-                                
-                                const info = document.createElement('div');
-                                info.className = 'file-info';
-                                
-                                const name = document.createElement('div');
-                                name.className = 'file-name';
+
+                                const info = document.createElement("div");
+                                info.className = "file-info";
+
+                                const name = document.createElement("div");
+                                name.className = "file-name";
                                 name.textContent = file.fileName;
                                 name.title = file.fileName;
-                                
-                                const size = document.createElement('div');
-                                size.className = 'file-size';
+
+                                const size = document.createElement("div");
+                                size.className = "file-size";
                                 size.textContent = `${(file.size / 1024).toFixed(1)}KB`;
-                                
+
                                 info.appendChild(name);
                                 info.appendChild(size);
-                                
+
                                 filePreview.appendChild(icon);
                                 filePreview.appendChild(info);
-                                
+
                                 // Add click handler to show file content
-                                filePreview.style.cursor = 'pointer';
-                                filePreview.addEventListener('click', () => {
+                                filePreview.style.cursor = "pointer";
+                                filePreview.addEventListener("click", () => {
                                     this.showFileContentModal({
                                         fileName: file.fileName,
                                         extractedText: file.extractedText,
@@ -457,65 +457,65 @@ class ChatRenderer {
                                         type: file.type
                                     });
                                 });
-                                
+
                                 filesDiv.appendChild(filePreview);
                             });
-                            
+
                             div.appendChild(filesDiv);
                         }
                         break;
-                    
+
                     default:
-                        console.warn('Unknown content part type:', part.type);
+                        console.warn("Unknown content part type:", part.type);
                         break;
                 }
             });
         } else {
             // Simple text content (backward compatible)
-            div.innerHTML = formatMessage(escapeHtml(String(processedContent || '')));
+            div.innerHTML = formatMessage(escapeHtml(String(processedContent || "")));
         }
-        
+
         return div;
     }
-    
+
     // Open image in modal for full view
     openImageModal(imageSrc) {
         // Create modal if it doesn't exist
-        let modal = document.getElementById('imageModal');
+        let modal = document.getElementById("imageModal");
         if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'imageModal';
-            modal.className = 'image-modal hidden';
-            
-            const img = document.createElement('img');
-            img.id = 'modalImage';
+            modal = document.createElement("div");
+            modal.id = "imageModal";
+            modal.className = "image-modal hidden";
+
+            const img = document.createElement("img");
+            img.id = "modalImage";
             modal.appendChild(img);
-            
+
             // Close modal on click
-            modal.addEventListener('click', () => {
-                modal.classList.add('hidden');
+            modal.addEventListener("click", () => {
+                modal.classList.add("hidden");
             });
-            
+
             // Close modal on Escape key
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-                    modal.classList.add('hidden');
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+                    modal.classList.add("hidden");
                 }
             });
-            
+
             document.body.appendChild(modal);
         }
-        
+
         // Set image and show modal
-        const modalImg = document.getElementById('modalImage');
+        const modalImg = document.getElementById("modalImage");
         modalImg.src = imageSrc;
-        modal.classList.remove('hidden');
+        modal.classList.remove("hidden");
     }
-    
+
     // Simple phase marker rendering - no more complexity!
     renderPhaseMarkerBlock(content, metadata) {
         const settings = loadSettings();
-        
+
         const div = document.createElement("div");
         div.className = "phase-marker";
         div.innerHTML = `
@@ -523,25 +523,25 @@ class ChatRenderer {
                 <span class="phase-text">${escapeHtml(content)}</span>
             </div>
         `;
-        
+
         return div;
     }
-    
+
     // Add debug panel to message
     addDebugPanel(turnDiv, messageId, debugData, turnNumber = null) {
         const settings = loadSettings();
         turnDiv.classList.add("has-debug");
-        
+
         const debugToggle = document.createElement("button");
         debugToggle.className = "debug-toggle";
         debugToggle.dataset.messageId = messageId;
         debugToggle.innerHTML = "+";
         debugToggle.title = "Show debug info";
-        
+
         if (!settings.debugPanels) {
             debugToggle.style.display = "none";
         }
-        
+
         // Add click handler to toggle debug panel
         debugToggle.addEventListener("click", () => {
             const debugPanel = turnDiv.querySelector(".debug-panel-container");
@@ -552,32 +552,32 @@ class ChatRenderer {
                 debugToggle.classList.toggle("active", isHidden);
             }
         });
-        
+
         turnDiv.appendChild(debugToggle);
-        
+
         // Add turn ID and message ID to debug data
         if (!debugData) {
             debugData = {};
         }
-        
+
         // Get the turn element that contains this message
         const turnElement = turnDiv.closest(".turn");
         if (turnElement) {
             debugData.turnId = turnElement.dataset.turnId || "unknown";
         }
-        
+
         // Add message ID
         debugData.messageId = messageId || "unknown";
-        
+
         // Add turn number if provided
         if (turnNumber !== null && turnNumber !== undefined) {
             debugData.currentTurnNumber = turnNumber;
         }
-        
+
         const debugPanel = createDebugPanel(turnDiv, messageId, debugData, turnNumber);
         turnDiv.appendChild(debugPanel);
     }
-    
+
     // Add message actions bar to turn
     addMessageActions(turnDiv, role, turnNumber = null, messageId = null, turnId = null, parentTurnId = null) {
         const actionsContainer = document.createElement("div");
@@ -585,89 +585,89 @@ class ChatRenderer {
         if (messageId) {
             actionsContainer.dataset.messageId = messageId;
         }
-        
+
         // Action buttons container
         const actionButtons = document.createElement("div");
         actionButtons.className = "action-buttons";
-        
+
         // Edit button
         const editBtn = document.createElement("button");
         editBtn.className = "action-btn edit-btn";
         editBtn.title = "Edit message";
         editBtn.textContent = "Edit";
         editBtn.addEventListener("click", () => this.handleEditMessage(turnId, role, turnNumber, messageId));
-        
+
         // Edit and retry button (for user messages)
         const editRetryBtn = document.createElement("button");
         editRetryBtn.className = "action-btn edit-retry-btn";
         editRetryBtn.title = "Edit your message and regenerate conversation from this point";
         editRetryBtn.textContent = "Edit & Retry";
         editRetryBtn.addEventListener("click", () => this.handleEditAndRetry(turnId, role, turnNumber, messageId));
-        
+
         // Retry button (for assistant messages)
         const retryBtn = document.createElement("button");
         retryBtn.className = "action-btn retry-btn";
         retryBtn.title = "Generate a different response to the same prompt";
         retryBtn.textContent = "Retry";
         retryBtn.addEventListener("click", () => this.handleRetryMessage(turnId, role, turnNumber, messageId));
-        
+
         // Add buttons to container
         actionButtons.appendChild(editBtn);
-        
+
         // Only show "Edit & Retry" for user messages (lets them rephrase and regenerate)
         if (role === "user") {
             actionButtons.appendChild(editRetryBtn);
         }
-        
+
         // Only show "Retry" for assistant messages (regenerate response)
         if (role === "assistant") {
             actionButtons.appendChild(retryBtn);
         }
-        
+
         // Assemble the actions container - add action buttons first (left side)
         actionsContainer.appendChild(actionButtons);
-        
+
         // Add branch navigation to both user and assistant turns (both can be branched)
         if ((role === "user" || role === "assistant") && turnNumber) {
             // Branch navigation container
             const branchNav = document.createElement("div");
             branchNav.className = "branch-nav";
             branchNav.style.display = "none"; // Will be shown when this turn has branches
-            
+
             // Previous branch button
             const prevBtn = document.createElement("button");
             prevBtn.className = "nav-btn branch-prev";
             prevBtn.innerHTML = "<";
             prevBtn.title = "Previous branch";
             prevBtn.addEventListener("click", () => this.navigateBranch("prev", branchNav));
-            
+
             // Branch indicator
             const branchIndicator = document.createElement("span");
             branchIndicator.className = "branch-indicator";
             branchIndicator.textContent = "1/1";
-            
+
             // Next branch button
             const nextBtn = document.createElement("button");
             nextBtn.className = "nav-btn branch-next";
             nextBtn.innerHTML = ">";
             nextBtn.title = "Next branch";
             nextBtn.addEventListener("click", () => this.navigateBranch("next", branchNav));
-            
+
             branchNav.appendChild(prevBtn);
             branchNav.appendChild(branchIndicator);
             branchNav.appendChild(nextBtn);
-            
+
             // Check if this turn should show branch navigation
             this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role }).catch((error) => {
                 console.error("[BRANCH-NAV] Error loading branch info:", error);
                 // Hide navigation on error
                 branchNav.style.display = "none";
             });
-            
+
             // Add branch nav to actions container after action buttons
             actionsContainer.appendChild(branchNav);
         }
-        
+
         // Insert before debug toggle if it exists, otherwise just append
         const debugToggle = turnDiv.querySelector(".debug-toggle");
         if (debugToggle) {
@@ -676,25 +676,25 @@ class ChatRenderer {
             turnDiv.appendChild(actionsContainer);
         }
     }
-    
+
     // Handle turn-level editing - show all messages in the turn
     async handleEditMessage(turnId, role, turnNumber, messageId) {
         if (!turnNumber) {
             showError("Cannot edit: Turn number not available");
             return;
         }
-        
+
         const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (!turnDiv) {
             showError("Cannot edit: Turn element not found");
             return;
         }
-        
+
         // Check if already in edit mode
         if (turnDiv.classList.contains("editing")) {
             return;
         }
-        
+
         try {
             // Get all messages for this turn
             const response = await getTurnMessages(currentChatId, turnNumber);
@@ -705,17 +705,9 @@ class ChatRenderer {
                 return;
             }
 
-            // Phase 9 follow-up: filter to ONLY the active leaf's messages.
-            // The backend's /chat/:id/turn/:turnNumber endpoint returns every
-            // message with the given turn_number — siblings share turn_number
-            // (multiple user turns with turn_number=1 are valid after edits),
-            // so the unfiltered list contains every sibling's content. The
-            // edit modal should show the leaf the user is currently on (the
-            // one whose data-turn-id matches the clicked turn), not every
-            // sibling at that branch point. Filter client-side because the
-            // endpoint contract is used by other callers and the active leaf
-            // is determined by the frontend (selectedSiblings / DOM).
-            const turnMessages = response.messages.filter(m => m.turn_id === turnId);
+            // Filter to the active leaf's messages only — siblings share
+            // turn_number, so the unfiltered list contains all siblings.
+            const turnMessages = response.messages.filter((m) => m.turn_id === turnId);
 
             if (!Array.isArray(turnMessages) || turnMessages.length === 0) {
                 showError("Cannot edit: No messages found for this turn");
@@ -729,17 +721,17 @@ class ChatRenderer {
             showError(`Error loading turn for editing: ${error.message}`);
         }
     }
-    
+
     async handleEditAndRetry(turnId, role, turnNumber, messageId) {
         // Only allow edit & retry for user messages
         if (role !== "user") {
             return;
         }
-        
+
         if (!turnNumber) {
             return;
         }
-        
+
         // Set a flag that this turn should retry after editing
         const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (turnDiv) {
@@ -749,11 +741,11 @@ class ChatRenderer {
                 turnDiv.dataset.editRetryTurnId = turnId;
             }
         }
-        
+
         // Call the regular edit function - it will use the proper modal
         await this.handleEditMessage(turnId, role, turnNumber, messageId);
     }
-    
+
     async handleRetryMessage(turnId, role, turnNumber, messageId) {
         // Only allow retry for assistant messages
         if (role !== "assistant") {
@@ -787,7 +779,9 @@ class ChatRenderer {
             }
 
             const parentUserTurnId = retriedAssistant.parent_turn_id;
-            const parentUserMessage = allMessages.find((msg) => msg.role === "user" && msg.turn_id === parentUserTurnId);
+            const parentUserMessage = allMessages.find(
+                (msg) => msg.role === "user" && msg.turn_id === parentUserTurnId
+            );
             if (!parentUserMessage) {
                 console.error("[RETRY] Could not find parent user message for assistant retry", { parentUserTurnId });
                 return;
@@ -800,7 +794,7 @@ class ChatRenderer {
                 lineageAnchorTurnId: parentUserTurnId,
                 truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
-                inputMethod: "retry",
+                inputMethod: "retry"
             });
         } catch (error) {
             console.error("[RETRY] Error:", error);
@@ -816,46 +810,46 @@ class ChatRenderer {
             }
         }
     }
-    
+
     // Enter edit mode for a message
     enterEditMode(turnDiv, chatBlock, messageData, messageId) {
         // Mark as editing
         turnDiv.classList.add("editing");
-        
+
         // Store original content
         const originalHtml = chatBlock.innerHTML;
-        
+
         // Create edit container
         const editContainer = document.createElement("div");
         editContainer.className = "edit-container";
-        
+
         // Create textarea with current content
         const textarea = document.createElement("textarea");
         textarea.className = "edit-textarea";
         textarea.value = messageData.content;
         textarea.rows = Math.max(3, messageData.content.split("\n").length + 1);
-        
+
         // Create edit controls
         const editControls = document.createElement("div");
         editControls.className = "edit-controls";
-        
+
         const saveBtn = document.createElement("button");
         saveBtn.className = "btn btn-success edit-btn-save";
         saveBtn.textContent = "Save";
-        
+
         const cancelBtn = document.createElement("button");
         cancelBtn.className = "btn btn-danger edit-btn-cancel";
         cancelBtn.textContent = "Cancel";
-        
+
         // Add event handlers
         saveBtn.addEventListener("click", () => {
             this.saveEdit(turnDiv, chatBlock, textarea.value, messageId, originalHtml);
         });
-        
+
         cancelBtn.addEventListener("click", () => {
             this.cancelEdit(turnDiv, chatBlock, originalHtml);
         });
-        
+
         // Handle Escape key to cancel
         textarea.addEventListener("keydown", (e) => {
             if (e.key === "Escape") {
@@ -866,45 +860,45 @@ class ChatRenderer {
                 this.saveEdit(turnDiv, chatBlock, textarea.value, messageId, originalHtml);
             }
         });
-        
+
         // Assemble edit UI
         editControls.appendChild(saveBtn);
         editControls.appendChild(cancelBtn);
         editContainer.appendChild(textarea);
         editContainer.appendChild(editControls);
-        
+
         // Replace chat block content with edit UI
         chatBlock.innerHTML = "";
         chatBlock.appendChild(editContainer);
-        
+
         // Focus the textarea
         textarea.focus();
         textarea.select();
     }
-    
+
     // Save the edited message
     async saveEdit(turnDiv, chatBlock, newContent, messageId, originalHtml) {
         if (!newContent.trim()) {
             showError("Message cannot be empty");
             return;
         }
-        
+
         try {
             // Show loading state
             const saveBtn = turnDiv.querySelector(".edit-btn-save");
             const originalSaveText = saveBtn.textContent;
             saveBtn.textContent = "Saving...";
             saveBtn.disabled = true;
-            
+
             // Call API to update message
             const result = await editMessage(messageId, newContent.trim());
-            
+
             // Update the UI with new content
             chatBlock.innerHTML = formatMessage(escapeHtml(newContent.trim()));
-            
+
             // Exit edit mode
             turnDiv.classList.remove("editing");
-            
+
             // Show edit indicator if this was edited
             if (result.edit_count > 1) {
                 this.addEditIndicator(turnDiv, result.edit_count);
@@ -912,19 +906,19 @@ class ChatRenderer {
         } catch (error) {
             console.error("[EDIT] Error saving message:", error);
             showError(`Error saving message: ${error.message}`);
-            
+
             // Restore original content on error
             chatBlock.innerHTML = originalHtml;
             turnDiv.classList.remove("editing");
         }
     }
-    
+
     // Cancel editing and restore original content
     cancelEdit(turnDiv, chatBlock, originalHtml) {
         chatBlock.innerHTML = originalHtml;
         turnDiv.classList.remove("editing");
     }
-    
+
     // Add visual indicator that message was edited
     addEditIndicator(turnDiv, editCount) {
         // Remove existing indicator
@@ -932,89 +926,89 @@ class ChatRenderer {
         if (existing) {
             existing.remove();
         }
-        
+
         // Add new indicator
         const indicator = document.createElement("span");
         indicator.className = "edit-indicator";
         indicator.textContent = `(edited ${editCount}x)`;
         indicator.title = "This message has been edited";
-        
+
         // Insert after the turn content
         const turnContent = turnDiv.querySelector(".turn-content");
         if (turnContent) {
             turnContent.appendChild(indicator);
         }
     }
-    
+
     // Find message ID for a turn by looking it up in the database
     async findMessageIdForTurn(turnNumber, role) {
         try {
             // Use global variables
             const apiBase = window.location.origin;
             const chatId = currentChatId; // Global variable from utils.js
-            
+
             if (!chatId) {
                 console.error("[EDIT] No current chat ID available");
                 return null;
             }
-            
+
             // Get current chat history to find the message
             const response = await fetch(`${apiBase}/api/chat/${chatId}/history`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
+
             const history = await response.json();
-            
+
             // Find message with matching turn number and role
             const message = history.messages.find((msg) => msg.turn_number === turnNumber && msg.role === role);
-            
+
             return message ? message.id : null;
         } catch (error) {
             console.error("[EDIT] Error finding message ID:", error);
             return null;
         }
     }
-    
+
     // Legacy function - removed, use enterMessageEditMode instead
     enterTurnEditMode() {
         throw new Error("This function has been replaced by enterMessageEditMode");
     }
-    
+
     // ===== UTILITY METHODS =====
-    
+
     // Utility function to safely extract text content from multimodal or string content
     getTextContent(content) {
-        if (typeof content === 'string') {
+        if (typeof content === "string") {
             return content;
         }
         if (Array.isArray(content)) {
             // Extract text from multimodal array
-            const textPart = content.find(part => part.type === 'text');
-            return textPart ? textPart.text : '[Images only]';
+            const textPart = content.find((part) => part.type === "text");
+            return textPart ? textPart.text : "[Images only]";
         }
-        return String(content || '');
+        return String(content || "");
     }
-    
+
     // Create blocks from content (for assistant messages that don't have blocks)
     createBlocksFromContent(content) {
         if (!content) {
             return [{ type: "chat", content: "", metadata: {} }];
         }
-        
+
         // If content is already a string, create a simple chat block
-        if (typeof content === 'string') {
+        if (typeof content === "string") {
             return [{ type: "chat", content: content, metadata: {} }];
         }
-        
+
         // If content is an array (multimodal), convert to appropriate blocks
         if (Array.isArray(content)) {
             const blocks = [];
-            
-            content.forEach(part => {
-                if (part.type === 'text' && part.text) {
+
+            content.forEach((part) => {
+                if (part.type === "text" && part.text) {
                     blocks.push({ type: "chat", content: part.text, metadata: {} });
-                } else if (part.type === 'image') {
+                } else if (part.type === "image") {
                     // Create an image block
                     blocks.push({
                         type: "image",
@@ -1026,32 +1020,35 @@ class ChatRenderer {
                     });
                 }
             });
-            
+
             // If no blocks were created, add an empty chat block
             if (blocks.length === 0) {
                 blocks.push({ type: "chat", content: "", metadata: {} });
             }
-            
+
             return blocks;
         }
-        
+
         // Fallback for unexpected content types
         return [{ type: "chat", content: String(content), metadata: {} }];
     }
-    
+
     // ===== EDIT SYSTEM =====
-    
+
     // Remove an image from the edit modal
     removeImageFromEdit(messageContainer, imageIndex) {
         if (!messageContainer._originalContent || !Array.isArray(messageContainer._originalContent)) {
-            console.warn('[IMAGE-REMOVE] Cannot remove image - content is not multimodal', messageContainer._originalContent);
+            console.warn(
+                "[IMAGE-REMOVE] Cannot remove image - content is not multimodal",
+                messageContainer._originalContent
+            );
             return;
         }
-        
+
         // Remove the image from the original content array
         let imageCount = 0;
-        messageContainer._originalContent = messageContainer._originalContent.filter(part => {
-            if (part.type === 'image') {
+        messageContainer._originalContent = messageContainer._originalContent.filter((part) => {
+            if (part.type === "image") {
                 if (imageCount === imageIndex) {
                     imageCount++;
                     return false; // Remove this image
@@ -1060,144 +1057,142 @@ class ChatRenderer {
             }
             return true; // Keep text parts and other images
         });
-        
+
         // Update the hasImages flag
-        const remainingImages = messageContainer._originalContent.filter(part => part.type === 'image');
+        const remainingImages = messageContainer._originalContent.filter((part) => part.type === "image");
         messageContainer._hasImages = remainingImages.length > 0;
-        
+
         // Update the textarea placeholder
-        const textarea = messageContainer.querySelector('.message-content-textarea');
+        const textarea = messageContainer.querySelector(".message-content-textarea");
         if (textarea) {
-            textarea.placeholder = remainingImages.length > 0 ? 
-                "Edit text content (images shown above)" : 
-                "Enter message content";
+            textarea.placeholder =
+                remainingImages.length > 0 ? "Edit text content (images shown above)" : "Enter message content";
         }
-        
+
         // Regenerate the images display
         this.updateImagesDisplay(messageContainer);
-        
+
         console.log(`[IMAGE-REMOVE] Removed image ${imageIndex}, ${remainingImages.length} images remaining`);
     }
-    
+
     // Handle file selection in edit modal
     handleEditImageSelect(event, messageContainer) {
         const files = Array.from(event.target.files);
-        this.handleEditImageFiles(files, messageContainer, 'file');
+        this.handleEditImageFiles(files, messageContainer, "file");
         // Clear the input so the same file can be selected again
-        event.target.value = '';
+        event.target.value = "";
     }
-    
+
     // Handle image files in edit modal (similar to main handleImageFiles)
-    handleEditImageFiles(files, messageContainer, source = 'file') {
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    handleEditImageFiles(files, messageContainer, source = "file") {
+        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
 
-    if (imageFiles.length === 0) {
-        console.warn('[EDIT-IMAGES] No valid image files selected');
-        return;
-    }
-
-    if (source === 'paste' || source === 'clipboard') {
-        const textarea = messageContainer.querySelector('.message-content-textarea');
-        if (textarea) {
-            const originalPlaceholder = textarea.placeholder;
-            textarea.placeholder = `✓ Pasted ${imageFiles.length} image${imageFiles.length > 1 ? 's' : ''}`;
-            setTimeout(() => {
-                textarea.placeholder = originalPlaceholder;
-            }, 2000);
+        if (imageFiles.length === 0) {
+            console.warn("[EDIT-IMAGES] No valid image files selected");
+            return;
         }
-    }
 
-    let processedCount = 0;
-
-    imageFiles.forEach(async (file) => {
-        try {
-            // Use shared image processing logic
-            const processedImage = await processImageFile(file);
-            
-            // Convert to edit modal format
-            const imageData = {
-                type: 'image',
-                imageData: processedImage.data, // Convert 'data' to 'imageData'
-                mimeType: processedImage.mimeType,
-                name: processedImage.name,
-                size: processedImage.size
-            };
-
-            if (!Array.isArray(messageContainer._originalContent)) {
-                const currentText = messageContainer.querySelector('.message-content-textarea').value;
-                messageContainer._originalContent = [
-                    { type: 'text', text: currentText }
-                ];
-                console.warn('[EDIT-IMAGES] Had to convert _originalContent to array format');
-            }
-
-            messageContainer._originalContent.push(imageData);
-            messageContainer._hasImages = true;
-
-            const textarea = messageContainer.querySelector('.message-content-textarea');
+        if (source === "paste" || source === "clipboard") {
+            const textarea = messageContainer.querySelector(".message-content-textarea");
             if (textarea) {
-                textarea.placeholder = "Edit text content (images shown above)";
+                const originalPlaceholder = textarea.placeholder;
+                textarea.placeholder = `✓ Pasted ${imageFiles.length} image${imageFiles.length > 1 ? "s" : ""}`;
+                setTimeout(() => {
+                    textarea.placeholder = originalPlaceholder;
+                }, 2000);
             }
-
-            processedCount++;
-            if (processedCount === imageFiles.length) {
-                this.updateImagesDisplay(messageContainer);
-            }
-
-            console.log(`[EDIT-IMAGES] Added image: ${processedImage.name} (${(processedImage.originalSize / 1024).toFixed(1)}KB → ${(processedImage.size / 1024).toFixed(1)}KB)`);
-
-        } catch (error) {
-            console.error(`[EDIT-IMAGES] Error processing image ${file.name}:`, error);
         }
-    });
-}
-    
+
+        let processedCount = 0;
+
+        imageFiles.forEach(async (file) => {
+            try {
+                // Use shared image processing logic
+                const processedImage = await processImageFile(file);
+
+                // Convert to edit modal format
+                const imageData = {
+                    type: "image",
+                    imageData: processedImage.data, // Convert 'data' to 'imageData'
+                    mimeType: processedImage.mimeType,
+                    name: processedImage.name,
+                    size: processedImage.size
+                };
+
+                if (!Array.isArray(messageContainer._originalContent)) {
+                    const currentText = messageContainer.querySelector(".message-content-textarea").value;
+                    messageContainer._originalContent = [{ type: "text", text: currentText }];
+                    console.warn("[EDIT-IMAGES] Had to convert _originalContent to array format");
+                }
+
+                messageContainer._originalContent.push(imageData);
+                messageContainer._hasImages = true;
+
+                const textarea = messageContainer.querySelector(".message-content-textarea");
+                if (textarea) {
+                    textarea.placeholder = "Edit text content (images shown above)";
+                }
+
+                processedCount++;
+                if (processedCount === imageFiles.length) {
+                    this.updateImagesDisplay(messageContainer);
+                }
+
+                console.log(
+                    `[EDIT-IMAGES] Added image: ${processedImage.name} (${(processedImage.originalSize / 1024).toFixed(1)}KB → ${(processedImage.size / 1024).toFixed(1)}KB)`
+                );
+            } catch (error) {
+                console.error(`[EDIT-IMAGES] Error processing image ${file.name}:`, error);
+            }
+        });
+    }
+
     // Setup drag & drop for edit modal message container
     setupEditDragAndDrop(messageContainer) {
         // Drag & drop support
-        messageContainer.addEventListener('dragover', (e) => {
+        messageContainer.addEventListener("dragover", (e) => {
             e.preventDefault();
-            messageContainer.classList.add('drag-over');
+            messageContainer.classList.add("drag-over");
         });
-        
-        messageContainer.addEventListener('dragleave', (e) => {
+
+        messageContainer.addEventListener("dragleave", (e) => {
             e.preventDefault();
             // Only remove drag-over if we're actually leaving the container
             if (!messageContainer.contains(e.relatedTarget)) {
-                messageContainer.classList.remove('drag-over');
+                messageContainer.classList.remove("drag-over");
             }
         });
-        
-        messageContainer.addEventListener('drop', (e) => {
+
+        messageContainer.addEventListener("drop", (e) => {
             e.preventDefault();
-            messageContainer.classList.remove('drag-over');
+            messageContainer.classList.remove("drag-over");
             const files = Array.from(e.dataTransfer.files);
             if (files.length > 0) {
-                this.handleEditFiles(files, messageContainer, 'drop');
+                this.handleEditFiles(files, messageContainer, "drop");
             }
         });
-        
+
         // Clipboard paste support
-        const textarea = messageContainer.querySelector('.message-content-textarea');
+        const textarea = messageContainer.querySelector(".message-content-textarea");
         if (textarea) {
-            textarea.addEventListener('paste', (e) => {
+            textarea.addEventListener("paste", (e) => {
                 this.handleEditClipboardPaste(e, messageContainer);
             });
         }
     }
-    
+
     // Handle clipboard paste in edit modal
     handleEditClipboardPaste(event, messageContainer) {
         const clipboardData = event.clipboardData || window.clipboardData;
         const items = clipboardData.items;
-        
+
         let hasFiles = false;
         const pastedFiles = [];
-        
+
         // Check for file items in clipboard
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            if (item.kind === 'file') {
+            if (item.kind === "file") {
                 hasFiles = true;
                 const file = item.getAsFile();
                 if (file) {
@@ -1205,103 +1200,104 @@ class ChatRenderer {
                 }
             }
         }
-        
+
         // If we found files, prevent default paste and handle them
         if (hasFiles && pastedFiles.length > 0) {
             event.preventDefault();
-            this.handleEditFiles(pastedFiles, messageContainer, 'paste');
+            this.handleEditFiles(pastedFiles, messageContainer, "paste");
             console.log(`[EDIT-FILES] Pasted ${pastedFiles.length} file(s) from clipboard`);
         }
     }
-    
+
     // Handle file selection in edit modal (images + documents)
     handleEditFileSelect(event, messageContainer) {
         const files = Array.from(event.target.files);
-        this.handleEditFiles(files, messageContainer, 'file');
+        this.handleEditFiles(files, messageContainer, "file");
         // Clear the input so the same file can be selected again
-        event.target.value = '';
+        event.target.value = "";
     }
-    
+
     // Handle all file types in edit modal
-    handleEditFiles(files, messageContainer, source = 'file') {
-        const imageFiles = files.filter(file => file.type.startsWith('image/'));
-        const documentFiles = files.filter(file => !file.type.startsWith('image/'));
-        
+    handleEditFiles(files, messageContainer, source = "file") {
+        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+        const documentFiles = files.filter((file) => !file.type.startsWith("image/"));
+
         // Process images (existing logic)
         if (imageFiles.length > 0) {
             this.handleEditImageFiles(imageFiles, messageContainer, source);
         }
-        
+
         // Process documents (new logic)
         if (documentFiles.length > 0) {
             this.handleEditDocumentFiles(documentFiles, messageContainer, source);
         }
     }
-    
+
     // Handle document files in edit modal
-    async handleEditDocumentFiles(files, messageContainer, source = 'file') {
+    async handleEditDocumentFiles(files, messageContainer, source = "file") {
         if (files.length === 0) {
-            console.warn('[EDIT-DOCUMENTS] No document files selected');
+            console.warn("[EDIT-DOCUMENTS] No document files selected");
             return;
         }
-        
-        const textarea = messageContainer.querySelector('.message-content-textarea');
+
+        const textarea = messageContainer.querySelector(".message-content-textarea");
         if (!textarea) {
-            console.error('[EDIT-DOCUMENTS] No textarea found in message container');
+            console.error("[EDIT-DOCUMENTS] No textarea found in message container");
             return;
         }
-        
+
         // Show processing feedback
         const originalPlaceholder = textarea.placeholder;
-        textarea.placeholder = `Processing ${files.length} document${files.length > 1 ? 's' : ''}...`;
-        
+        textarea.placeholder = `Processing ${files.length} document${files.length > 1 ? "s" : ""}...`;
+
         try {
             // Upload documents to server for processing
             const result = await processDocumentFiles(files);
-            
+
             // Initialize documents array if it doesn't exist
             if (!messageContainer._editDocuments) {
                 messageContainer._editDocuments = [];
             }
-            
+
             // Add processed documents to the container's document list (like main chat)
             for (const docData of result.results) {
                 messageContainer._editDocuments.push(docData);
-                console.log(`[EDIT-DOCUMENTS] Added document: ${docData.fileName} (${(docData.size / 1024).toFixed(1)}KB)`);
+                console.log(
+                    `[EDIT-DOCUMENTS] Added document: ${docData.fileName} (${(docData.size / 1024).toFixed(1)}KB)`
+                );
             }
-            
+
             // Handle errors
             for (const error of result.errors || []) {
                 console.error(`[EDIT-DOCUMENTS] Error processing: ${error.fileName} - ${error.error}`);
             }
-            
+
             // Update the documents display (like images)
             this.updateEditDocumentsDisplay(messageContainer);
-            
+
             // Show completion feedback
             if (result.failed > 0) {
                 textarea.placeholder = `✓ Processed ${result.processed}/${files.length} documents (${result.failed} failed)`;
             } else {
-                textarea.placeholder = `✓ Processed ${result.processed} document${result.processed > 1 ? 's' : ''}`;
+                textarea.placeholder = `✓ Processed ${result.processed} document${result.processed > 1 ? "s" : ""}`;
             }
-            
         } catch (error) {
-            console.error('[EDIT-DOCUMENTS] Error uploading documents:', error);
+            console.error("[EDIT-DOCUMENTS] Error uploading documents:", error);
             textarea.placeholder = `Error: ${error.message}`;
         }
-        
+
         // Reset placeholder after delay
         setTimeout(() => {
             textarea.placeholder = originalPlaceholder;
         }, 3000);
     }
-    
+
     // Update the documents display in edit modal
     updateEditDocumentsDisplay(messageContainer) {
-        let documentsContainer = messageContainer.querySelector('.edit-documents-container');
-        
+        let documentsContainer = messageContainer.querySelector(".edit-documents-container");
+
         const documents = messageContainer._editDocuments || [];
-        
+
         if (documents.length === 0) {
             // Remove container if no documents
             if (documentsContainer) {
@@ -1309,71 +1305,71 @@ class ChatRenderer {
             }
             return;
         }
-        
+
         // Create container if it doesn't exist
         if (!documentsContainer) {
             documentsContainer = document.createElement("div");
             documentsContainer.className = "edit-documents-container";
-            
+
             const documentsHeader = document.createElement("div");
             documentsHeader.className = "edit-documents-header";
             documentsHeader.textContent = "Documents:";
-            
+
             const documentsGrid = document.createElement("div");
             documentsGrid.className = "edit-documents-grid";
-            
+
             documentsContainer.appendChild(documentsHeader);
             documentsContainer.appendChild(documentsGrid);
-            
+
             // Insert before textarea
-            const textarea = messageContainer.querySelector('.message-content-textarea');
+            const textarea = messageContainer.querySelector(".message-content-textarea");
             messageContainer.insertBefore(documentsContainer, textarea);
         }
-        
+
         // Update documents grid
-        const documentsGrid = documentsContainer.querySelector('.edit-documents-grid');
-        documentsGrid.innerHTML = '';
-        
+        const documentsGrid = documentsContainer.querySelector(".edit-documents-grid");
+        documentsGrid.innerHTML = "";
+
         documents.forEach((docData, index) => {
             const docPreview = document.createElement("div");
             docPreview.className = "edit-document-preview";
-            
+
             const icon = document.createElement("span");
             icon.className = "doc-icon";
             icon.textContent = getFileIcon(docData.fileName);
-            
+
             const info = document.createElement("div");
             info.className = "doc-info";
-            
+
             const name = document.createElement("div");
             name.className = "doc-name";
             name.textContent = docData.fileName;
             name.title = docData.fileName;
-            
+
             const size = document.createElement("div");
             size.className = "doc-size";
             size.textContent = `${(docData.size / 1024).toFixed(1)}KB`;
-            
+
             info.appendChild(name);
             info.appendChild(size);
-            
+
             const removeBtn = document.createElement("button");
             removeBtn.className = "remove-btn";
-            removeBtn.innerHTML = '×';
-            removeBtn.title = 'Remove document';
+            removeBtn.innerHTML = "×";
+            removeBtn.title = "Remove document";
             removeBtn.onclick = () => this.removeEditDocument(messageContainer, index);
-            
+
             docPreview.appendChild(icon);
             docPreview.appendChild(info);
             docPreview.appendChild(removeBtn);
             documentsGrid.appendChild(docPreview);
         });
     }
-    
+
     // Remove a document from edit modal
     removeEditDocument(messageContainer, index) {
         if (!messageContainer._editDocuments) return;
-        
+
         messageContainer._editDocuments.splice(index, 1);
         this.updateEditDocumentsDisplay(messageContainer);
         console.log(`[EDIT-DOCUMENTS] Removed document at index ${index}`);
@@ -1381,12 +1377,14 @@ class ChatRenderer {
 
     // Update the images display in edit modal
     updateImagesDisplay(messageContainer) {
-        let imagesContainer = messageContainer.querySelector('.edit-images-container');
-        
+        let imagesContainer = messageContainer.querySelector(".edit-images-container");
+
         // Defensive check for _originalContent
-        const remainingImages = (messageContainer._originalContent && Array.isArray(messageContainer._originalContent)) ? 
-            messageContainer._originalContent.filter(part => part.type === 'image') : [];
-            
+        const remainingImages =
+            messageContainer._originalContent && Array.isArray(messageContainer._originalContent)
+                ? messageContainer._originalContent.filter((part) => part.type === "image")
+                : [];
+
         if (remainingImages.length === 0) {
             // No images left - remove the entire images container if it exists
             if (imagesContainer) {
@@ -1394,22 +1392,22 @@ class ChatRenderer {
             }
             return;
         }
-        
+
         // Create images container if it doesn't exist
         if (!imagesContainer) {
             imagesContainer = document.createElement("div");
             imagesContainer.className = "edit-images-container";
-            
+
             const imagesHeader = document.createElement("div");
             imagesHeader.className = "edit-images-header";
             imagesContainer.appendChild(imagesHeader);
-            
+
             const imagesGrid = document.createElement("div");
             imagesGrid.className = "edit-images-grid";
             imagesContainer.appendChild(imagesGrid);
-            
+
             // Insert before the textarea (images show above text)
-            const textarea = messageContainer.querySelector('.message-content-textarea');
+            const textarea = messageContainer.querySelector(".message-content-textarea");
             if (textarea) {
                 messageContainer.insertBefore(imagesContainer, textarea);
             } else {
@@ -1417,30 +1415,30 @@ class ChatRenderer {
                 messageContainer.insertBefore(imagesContainer, messageContainer.firstChild);
             }
         }
-        
+
         // Update the header and regenerate the grid
-        const header = imagesContainer.querySelector('.edit-images-header');
+        const header = imagesContainer.querySelector(".edit-images-header");
         if (header) {
             header.innerHTML = `<strong>Images (${remainingImages.length}):</strong>`;
         }
-        
-        const grid = imagesContainer.querySelector('.edit-images-grid');
+
+        const grid = imagesContainer.querySelector(".edit-images-grid");
         if (grid) {
-            grid.innerHTML = ''; // Clear existing previews
-            
+            grid.innerHTML = ""; // Clear existing previews
+
             // Regenerate image previews with new indices
             remainingImages.forEach((imageData, idx) => {
                 const imagePreview = document.createElement("div");
                 imagePreview.className = "edit-image-preview";
                 imagePreview.dataset.imageIndex = idx;
-                
+
                 const img = document.createElement("img");
                 img.src = `data:${imageData.mimeType};base64,${imageData.imageData}`;
                 img.style.maxWidth = "150px";
                 img.style.maxHeight = "150px";
                 img.style.border = "1px solid #666";
                 img.style.borderRadius = "4px";
-                
+
                 // Add remove button
                 const removeBtn = document.createElement("button");
                 removeBtn.className = "edit-image-remove";
@@ -1451,60 +1449,60 @@ class ChatRenderer {
                     e.stopPropagation();
                     this.removeImageFromEdit(messageContainer, idx);
                 });
-                
+
                 imagePreview.appendChild(img);
                 imagePreview.appendChild(removeBtn);
                 grid.appendChild(imagePreview);
             });
         }
     }
-    
+
     enterMessageEditMode(turnDiv, messages, turnNumber) {
         turnDiv.classList.add("editing");
-        
+
         // Store original child elements
         const originalElements = Array.from(turnDiv.children);
         turnDiv._originalElements = originalElements;
-        
+
         // Create edit container
         const editContainer = document.createElement("div");
         editContainer.className = "message-edit-container";
-        
+
         // Add header
         const header = document.createElement("div");
         header.className = "edit-header";
         header.innerHTML = `<h3>Edit Turn ${turnNumber} Messages</h3>`;
         editContainer.appendChild(header);
-        
+
         // Create edit form for each message
         const editForm = document.createElement("div");
         editForm.className = "edit-form";
-        
+
         messages.forEach((message, index) => {
             const messageContainer = document.createElement("div");
             messageContainer.className = "editable-message";
             messageContainer.dataset.messageId = message.id;
-            
+
             // Message header
             const messageHeader = document.createElement("div");
             messageHeader.className = "message-header";
             messageHeader.innerHTML = `<strong>${message.role}</strong> (ID: ${message.id})`;
             messageContainer.appendChild(messageHeader);
-            
+
             // Handle multimodal content properly - parse JSON strings if needed
             let textContent = "";
             let images = [];
             let files = []; // Extract files from separated structure
             let parsedContent = message.content;
-            
+
             // Check if we have original_content with separated files
             if (message.original_content) {
                 parsedContent = message.original_content;
                 console.log(`[EDIT] Using original_content for message ${message.id}:`, parsedContent);
             }
-            
+
             // Parse JSON string if content is a string that looks like JSON
-            if (typeof message.content === 'string' && message.content.startsWith('[')) {
+            if (typeof message.content === "string" && message.content.startsWith("[")) {
                 try {
                     parsedContent = JSON.parse(message.content);
                 } catch (e) {
@@ -1512,15 +1510,15 @@ class ChatRenderer {
                     parsedContent = message.content;
                 }
             }
-            
+
             if (Array.isArray(parsedContent)) {
                 // Multimodal content - extract text, images, and files
-                const textPart = parsedContent.find(part => part.type === 'text');
+                const textPart = parsedContent.find((part) => part.type === "text");
                 textContent = textPart ? textPart.text : "";
-                images = parsedContent.filter(part => part.type === 'image');
-                
+                images = parsedContent.filter((part) => part.type === "image");
+
                 // Extract files from separated structure
-                const filesPart = parsedContent.find(part => part.type === 'files');
+                const filesPart = parsedContent.find((part) => part.type === "files");
                 if (filesPart && filesPart.files && Array.isArray(filesPart.files)) {
                     files = filesPart.files;
                     console.log(`[EDIT] Extracted ${files.length} file(s) from message ${message.id}`);
@@ -1529,9 +1527,9 @@ class ChatRenderer {
                 // Regular text content
                 textContent = parsedContent || "";
             }
-            
+
             // Images will be shown via updateImagesDisplay after drag/drop setup
-            
+
             // Textarea for text content
             const textarea = document.createElement("textarea");
             textarea.className = "message-content-textarea";
@@ -1541,16 +1539,17 @@ class ChatRenderer {
             const attachmentInfo = [];
             if (images.length > 0) attachmentInfo.push(`${images.length} image(s)`);
             if (files.length > 0) attachmentInfo.push(`${files.length} file(s)`);
-            
-            textarea.placeholder = attachmentInfo.length > 0 
-                ? `Edit text content (${attachmentInfo.join(' and ')} shown above)` 
-                : "Enter message content";
+
+            textarea.placeholder =
+                attachmentInfo.length > 0
+                    ? `Edit text content (${attachmentInfo.join(" and ")} shown above)`
+                    : "Enter message content";
             messageContainer.appendChild(textarea);
-            
+
             // Add image controls (file input + paperclip button + drag/drop area) at the bottom
             const imageControlsContainer = document.createElement("div");
             imageControlsContainer.className = "edit-image-controls";
-            
+
             // Hidden file input
             const fileInput = document.createElement("input");
             fileInput.type = "file";
@@ -1560,97 +1559,99 @@ class ChatRenderer {
             fileInput.addEventListener("change", (e) => {
                 this.handleEditFileSelect(e, messageContainer);
             });
-            
+
             // Paperclip button
             const addImageBtn = document.createElement("button");
             addImageBtn.type = "button";
             addImageBtn.className = "btn edit-add-image-btn";
-            addImageBtn.innerHTML = 'Add Files';
+            addImageBtn.innerHTML = "Add Files";
             addImageBtn.title = "Add files & images";
             addImageBtn.addEventListener("click", () => {
                 fileInput.click();
             });
-            
+
             imageControlsContainer.appendChild(fileInput);
             imageControlsContainer.appendChild(addImageBtn);
             messageContainer.appendChild(imageControlsContainer);
-            
+
             // Store original content structure for reconstruction
             // Ensure _originalContent is always an array for consistent handling
             if (Array.isArray(parsedContent)) {
                 messageContainer._originalContent = parsedContent;
             } else {
                 // Convert string content to array format
-                messageContainer._originalContent = [{ type: 'text', text: parsedContent || '' }];
+                messageContainer._originalContent = [{ type: "text", text: parsedContent || "" }];
             }
             messageContainer._hasImages = images.length > 0;
             messageContainer._hasFiles = files.length > 0;
-            
+
             // Initialize files for edit modal
             if (!messageContainer._editDocuments) {
                 messageContainer._editDocuments = [];
             }
             // Add extracted files to edit documents
             messageContainer._editDocuments.push(...files);
-            
+
             console.log(`[EDIT-INIT] Initialized ${message.role} message:`, {
                 originalFormat: typeof message.content,
                 parsedFormat: typeof parsedContent,
-                finalFormat: Array.isArray(messageContainer._originalContent) ? 'array' : typeof messageContainer._originalContent,
+                finalFormat: Array.isArray(messageContainer._originalContent)
+                    ? "array"
+                    : typeof messageContainer._originalContent,
                 hasImages: messageContainer._hasImages,
                 hasFiles: messageContainer._hasFiles,
                 imageCount: images.length,
                 fileCount: files.length
             });
-            
+
             // Add drag & drop support to this message container
             this.setupEditDragAndDrop(messageContainer);
-            
+
             // Display any existing images and files
             this.updateImagesDisplay(messageContainer);
             this.updateEditDocumentsDisplay(messageContainer); // Display extracted files
-            
+
             editForm.appendChild(messageContainer);
         });
-        
+
         editContainer.appendChild(editForm);
-        
+
         // Add buttons
         const buttonContainer = document.createElement("div");
         buttonContainer.className = "edit-buttons";
-        
+
         const saveBtn = document.createElement("button");
         saveBtn.className = "btn btn-success edit-btn-save";
         saveBtn.textContent = "Save All Messages";
         saveBtn.addEventListener("click", () => {
             this.saveAllMessages(turnDiv, editContainer, turnNumber);
         });
-        
+
         const cancelBtn = document.createElement("button");
         cancelBtn.className = "btn btn-danger edit-btn-cancel";
         cancelBtn.textContent = "Cancel";
         cancelBtn.addEventListener("click", () => {
             this.cancelMessageEdit(turnDiv);
         });
-        
+
         buttonContainer.appendChild(saveBtn);
         buttonContainer.appendChild(cancelBtn);
         editContainer.appendChild(buttonContainer);
-        
+
         // Clear and add edit interface
         turnDiv.innerHTML = "";
         turnDiv.appendChild(editContainer);
     }
-    
+
     // Save all edited messages
     async saveAllMessages(turnDiv, editContainer, turnNumber) {
         const messageContainers = editContainer.querySelectorAll(".editable-message");
         const saveBtn = editContainer.querySelector(".edit-btn-save");
-        
+
         try {
             saveBtn.textContent = "Saving...";
             saveBtn.disabled = true;
-            
+
             // Check if this is an "Edit & Retry" - if so, skip saving edits to preserve original turn
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
 
@@ -1671,24 +1672,25 @@ class ChatRenderer {
 
                             // Add text part
                             if (newTextContent) {
-                                reconstructedArray.push({ type: 'text', text: newTextContent });
+                                reconstructedArray.push({ type: "text", text: newTextContent });
                             }
 
                             // Add existing images (unchanged)
-                            const images = container._originalContent.filter(part => part.type === 'image');
+                            const images = container._originalContent.filter((part) => part.type === "image");
                             reconstructedArray.push(...images);
 
                             // Add files from edit documents
                             if (container._editDocuments && container._editDocuments.length > 0) {
                                 reconstructedArray.push({
-                                    type: 'files',
+                                    type: "files",
                                     files: container._editDocuments
                                 });
                             }
 
                             // Determine if we need multimodal format
-                            const hasMultipleTypes = reconstructedArray.length > 1 ||
-                                                      reconstructedArray.some(part => part.type !== 'text');
+                            const hasMultipleTypes =
+                                reconstructedArray.length > 1 ||
+                                reconstructedArray.some((part) => part.type !== "text");
 
                             if (hasMultipleTypes) {
                                 finalContent = reconstructedArray;
@@ -1704,7 +1706,7 @@ class ChatRenderer {
                             textContent: newTextContent,
                             hasFiles: container._editDocuments?.length > 0,
                             fileCount: container._editDocuments?.length || 0,
-                            finalContent: typeof finalContent === 'string' ? 'string' : 'multimodal'
+                            finalContent: typeof finalContent === "string" ? "string" : "multimodal"
                         });
 
                         return editMessage(messageId, finalContent);
@@ -1713,13 +1715,8 @@ class ChatRenderer {
 
                 await Promise.all(savePromises.filter(Boolean));
             } else {
-                // Phase 8 Task 21 (L18): even in edit-retry, bump the
-                // original turn's edit_count so it shows "edited Nx" and
-                // has a recorded edit history. The original turn's content
-                // is preserved by passing _originalContent (so the user-
-                // visible cat bubble doesn't change). The new edited
-                // content lives in the new sibling (the dog) which
-                // saveUserMessage in exitMessageEditMode creates below.
+                // Bump the original turn's edit_count so it shows "edited Nx"
+                // even in edit-retry.
                 const editRetryPromises = Array.from(messageContainers).map(async (container) => {
                     const messageId = container.dataset.messageId;
                     if (messageId) {
@@ -1731,26 +1728,26 @@ class ChatRenderer {
                     }
                 });
                 const editResults = await Promise.all(editRetryPromises.filter(Boolean));
-                // Find the highest new edit_count to display on the cat.
+                // Find the highest new edit_count to display.
                 const maxEditCount = editResults
-                    .filter(r => r && typeof r.edit_count === 'number')
+                    .filter((r) => r && typeof r.edit_count === "number")
                     .reduce((max, r) => Math.max(max, r.edit_count), 0);
                 if (maxEditCount > 0) {
                     this.addEditIndicator(turnDiv, maxEditCount);
                 }
             }
-            
+
             // Exit edit mode and reload
             await this.exitMessageEditMode(turnDiv, turnNumber);
         } catch (error) {
             console.error("[EDIT] Error saving messages:", error);
             showError(`Error saving messages: ${error.message}`);
-            
+
             saveBtn.textContent = "Save All Messages";
             saveBtn.disabled = false;
         }
     }
-    
+
     // Cancel message editing
     cancelMessageEdit(turnDiv) {
         // Restore original elements
@@ -1763,7 +1760,7 @@ class ChatRenderer {
         }
         turnDiv.classList.remove("editing");
     }
-    
+
     // Exit edit mode and reload the turn with updated content
     async exitMessageEditMode(turnDiv, turnNumber) {
         try {
@@ -1773,55 +1770,49 @@ class ChatRenderer {
             const retryTurnId = turnDiv.dataset.editRetryTurnId || null;
 
             turnDiv.classList.remove("editing");
-            
+
             if (shouldRetry && retryTurnNumber) {
                 // Clear the retry flags
                 delete turnDiv.dataset.shouldRetryAfterEdit;
                 delete turnDiv.dataset.editRetryTurnNumber;
                 delete turnDiv.dataset.editRetryTurnId;
 
-                // Get the edited content from UI (since we skipped saving to preserve original turn).
-                // The edit save in saveAllMessages is `await`-ed before
-                // exitMessageEditMode runs, so by the time we get here the
-                // DB write is done. No wait is needed between the
-                // flag-clearing above and the textarea read below — the
-                // DOM is fully settled, and any prior version of this code
-                // that used `setTimeout(_, 100)` here was a superstition,
-                // not a real race fix.
+              // Get the edited content from UI.
                 const messageContainers = turnDiv.querySelectorAll("[data-message-id]");
                 let editedContent = null;
-                
+
                 // Find the user message textarea with edited content and reconstruct properly
                 for (const container of messageContainers) {
                     const textarea = container.querySelector(".message-content-textarea");
                     if (textarea) {
                         const newTextContent = textarea.value;
-                        
+
                         // Reconstruct content with separated structure (like main chat)
                         if (Array.isArray(container._originalContent)) {
                             const reconstructedArray = [];
-                            
+
                             // Add text part
                             if (newTextContent) {
-                                reconstructedArray.push({ type: 'text', text: newTextContent });
+                                reconstructedArray.push({ type: "text", text: newTextContent });
                             }
-                            
+
                             // Add existing images (unchanged)
-                            const images = container._originalContent.filter(part => part.type === 'image');
+                            const images = container._originalContent.filter((part) => part.type === "image");
                             reconstructedArray.push(...images);
-                            
+
                             // Add files from edit documents (separated structure)
                             if (container._editDocuments && container._editDocuments.length > 0) {
                                 reconstructedArray.push({
-                                    type: 'files',
+                                    type: "files",
                                     files: container._editDocuments
                                 });
                             }
-                            
+
                             // Determine if we need multimodal format
-                            const hasMultipleTypes = reconstructedArray.length > 1 || 
-                                                      reconstructedArray.some(part => part.type !== 'text');
-                            
+                            const hasMultipleTypes =
+                                reconstructedArray.length > 1 ||
+                                reconstructedArray.some((part) => part.type !== "text");
+
                             if (hasMultipleTypes) {
                                 editedContent = reconstructedArray;
                             } else {
@@ -1834,15 +1825,17 @@ class ChatRenderer {
                         break;
                     }
                 }
-                
+
                 if (!editedContent) {
                     console.error("[EDIT-RETRY] Could not find edited content in UI");
                     return;
                 }
-                
+
                 // Get the user's parent_turn_id from history for the new user bubble
                 const history = await getCompleteChatHistory(currentChatId);
-                const userMsg = (history.messages || []).find(m => m.role === 'user' && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId);
+                const userMsg = (history.messages || []).find(
+                    (m) => m.role === "user" && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId
+                );
                 const originalUserParentTurnId = userMsg?.parent_turn_id || null;
 
                 // Retract at this user turn (truncates history, new response becomes sibling)
@@ -1852,25 +1845,25 @@ class ChatRenderer {
                     parentTurnId: originalUserParentTurnId,
                     truncateFromTurnNumber: retryTurnNumber,
                     truncateContainer: this.container,
-                    inputMethod: 'edit_retry',
+                    inputMethod: "edit_retry",
 
                     saveUserMessage: async () => {
                         // Save the edited user message so it persists on reload
                         // The original turn keeps the original message unchanged
-                        const contentForSave = Array.isArray(editedContent) ? JSON.stringify(editedContent) : editedContent;
+                        const contentForSave = Array.isArray(editedContent)
+                            ? JSON.stringify(editedContent)
+                            : editedContent;
                         const saveResult = await saveCompleteMessage(
                             currentChatId,
-                            { role: 'user', content: contentForSave },
+                            { role: "user", content: contentForSave },
                             retryTurnNumber,
                             { parent_turn_id: originalUserParentTurnId }
                         );
-                        // Phase 6 Task 17 (M4): throw on failure rather than
-                        // returning null. Returning null lets the chat request
-                        // go out with no lineage anchor (H8 fallthrough) and
-                        // the user never sees an error. Throwing aborts the
-                        // flow and surfaces the failure in the outer catch.
+                        // Throw on failure — a hard error that aborts the flow.
                         if (!saveResult || !saveResult.turn_id) {
-                            throw new Error('saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor');
+                            throw new Error(
+                                "saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor"
+                            );
                         }
                         return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
                     },
@@ -1881,14 +1874,16 @@ class ChatRenderer {
                         const userDebugData = {
                             sequence: [
                                 {
-                                    type: 'user_input',
+                                    type: "user_input",
                                     step: 1,
                                     data: {
                                         userQuery: {
                                             message: editedContent,
                                             chat_id: currentChatId,
                                             timestamp: new Date().toISOString(),
-                                            message_length: Array.isArray(editedContent) ? JSON.stringify(editedContent).length : editedContent.length,
+                                            message_length: Array.isArray(editedContent)
+                                                ? JSON.stringify(editedContent).length
+                                                : editedContent.length,
                                             turn_number: retryTurnNumber,
                                             is_multimodal: Array.isArray(editedContent)
                                         },
@@ -1897,7 +1892,7 @@ class ChatRenderer {
                                             flags: enabledToolsFlags
                                         },
                                         context: {
-                                            input_method: 'edit_retry',
+                                            input_method: "edit_retry",
                                             current_chat: currentChatId
                                         }
                                     },
@@ -1905,7 +1900,7 @@ class ChatRenderer {
                                 }
                             ],
                             metadata: {
-                                endpoint: 'user_input_retry',
+                                endpoint: "user_input_retry",
                                 timestamp: new Date().toISOString(),
                                 tools: Object.keys(enabledToolsFlags).length
                             },
@@ -1913,12 +1908,12 @@ class ChatRenderer {
                         };
 
                         userDebugData.sequence.push({
-                            type: 'ai_http_request',
+                            type: "ai_http_request",
                             step: userDebugData.sequence.length + 1,
                             timestamp: new Date().toISOString(),
                             data: {
                                 requestId: requestId,
-                                endpoint: 'chat',
+                                endpoint: "chat",
                                 message: editedContent,
                                 tools_enabled: Object.keys(enabledToolsFlags).length,
                                 turn_number: retryTurnNumber
@@ -1926,7 +1921,7 @@ class ChatRenderer {
                         });
                         userDebugData.apiRequest = {
                             url: `${window.location.origin}/api/chat`,
-                            method: 'POST',
+                            method: "POST",
                             requestId: requestId,
                             timestamp: new Date().toISOString()
                         };
@@ -1935,78 +1930,41 @@ class ChatRenderer {
                             await saveTurnData(currentChatId, userTurnInfo.turn_id, userDebugData);
                             logger.info(`[EDIT-RETRY] Saved new user debug data for turn_id=${userTurnInfo.turn_id}`);
                         } catch (error) {
-                            logger.warn('[EDIT-RETRY] Failed to save new user turn debug data:', error);
+                            logger.warn("[EDIT-RETRY] Failed to save new user turn debug data:", error);
                         }
 
-                        // Phase 9 follow-up: the new dog turn is the
-                        // user's active path now — set the in-memory
-                        // selectedSiblings entry so the next walk picks
-                        // the dog (not the cat, which was the previously-
-                        // active sibling at root). Without this, the
-                        // renderer's walkActiveBranch would default to
-                        // whichever sibling the previous render selected,
-                        // and a manual render would risk showing both
-                        // cat and dog at root.
-                        selectedSiblings[`${currentChatId}::root`] = userTurnInfo.turn_id;
+                        // Set the in-memory selection so the next walk picks
+                        // the new turn.
 
-                        // Phase 9 follow-up: reload the renderer from DB
-                        // BEFORE the LLM call (streamAndRenderAssistant)
-                        // runs. sendAndStream's manual truncation +
-                        // renderUserBubble has a known issue with the
-                        // edit-and-retry case where the original cat and
-                        // the new dog share the same turn_number and the
-                        // renderer can briefly show both. Calling
-                        // loadChatHistory here wipes the DOM and rebuilds
-                        // it from the DB using the same walk that
-                        // loadChatHistory uses for chat switches — the
-                        // path that's been verified to render correctly.
-                        // The user sees the new dog turn rendered from
-                        // DB; then the assistant streams in normally.
+                        // Reload from DB before the LLM call to avoid
+                        // showing both old and new turns.
                         await loadChatHistory(currentChatId);
 
-                        // Phase 8 Task 21 (L17): the new dog bubble is the
-                        // result of an edit, so it gets an "(edited 1x)"
-                        // indicator. The original cat bubble's edit_count
-                        // is bumped in saveAllMessages (L18, above), but
-                        // the new turn's DB edit_count stays 0 since it
-                        // was never edited itself — "1x" here means "this
-                        // turn was produced by 1 edit of an earlier turn".
-                        const newTurnDiv = document.querySelector(
-                            `.turn[data-turn-id="${userTurnInfo.turn_id}"]`
-                        );
+                        // The new turn gets an "(edited 1x)" indicator since it was
+                        // produced from an edit.
+                        const newTurnDiv = document.querySelector(`.turn[data-turn-id="${userTurnInfo.turn_id}"]`);
                         if (newTurnDiv) {
                             this.addEditIndicator(newTurnDiv, 1);
                         }
-                    },
+                    }
                 });
             } else {
-                // Regular edit (no retry) - reload chat. The non-retry
-                // path only edits the content of the existing turn; it
-                // does NOT create new turns or siblings, so other turns'
-                // branch-nav is unaffected. loadChatHistory re-renders
-                // every turn and renderTurn updates branch-nav per-turn
-                // (line 661), so a post-hoc refreshBranchNavigation
-                // sweep is redundant. Earlier versions of this code did
-                // a `setTimeout(refreshBranchNavigation, 100)` here as a
-                // superstition; the await on loadChatHistory already
-                // guarantees the DOM is settled, and there is no real
-                // race to paper over.
+                // Regular edit — reload chat. No post-hoc branch-nav
+                // sweep needed; loadChatHistory re-renders all turns.
                 await loadChatHistory(currentChatId);
             }
         } catch (error) {
             console.error("[EDIT] Error in exitMessageEditMode:", error);
-            // Phase 6 Task 17 (M4): make user-save failures visible. The
-            // throw from saveUserMessage (Task 17 fix) reaches this catch
-            // — surface it to the user instead of just logging.
+            // Surface save failures to the user.
             showError(`Edit & retry failed: ${error.message}`);
         }
     }
-    
+
     // Handle message metadata (preview, title generation)
     handleTurnMeta(role, content) {
         if (role === "user" || role === "assistant") {
             updateChatPreview(currentChatId, content);
-            
+
             // Auto-generate chat title from first user message
             if (role === "user") {
                 const chatItem = document.querySelector(`[data-chat-id="${currentChatId}"]`);
@@ -2021,7 +1979,7 @@ class ChatRenderer {
             }
         }
     }
-    
+
     // Extract plain text from blocks for preview/title generation
     extractTextFromBlocks(blocks) {
         if (!blocks) return "";
@@ -2030,7 +1988,7 @@ class ChatRenderer {
             .map((block) => block.content)
             .join(" ");
     }
-    
+
     // ===== BRANCH NAVIGATION SYSTEM =====
     // Update branch navigation
     async updateBranchNavigation(branchNavElement, turnNumber, turnData = null) {
@@ -2055,42 +2013,31 @@ class ChatRenderer {
                 return false;
             }
 
-            // Find all turns that share this turn's parent_turn_id. Siblings
-            // are defined purely by lineage (Phase 9 follow-up to M11):
-            //   - Two user messages in a row share a parent and are siblings.
-            //   - Multiple assistant responses to the same user message are
-            //     siblings of each other.
-            //   - Mixed-role siblings are valid (the data model has no
-            //     user/assistant alternation constraint — turns are just
-            //     turns with a role attribute).
-            // System messages are filtered out: they are saved at root
-            // (parent_turn_id=null) for meta/debug and are never rendered,
-            // so they would otherwise inflate the sibling count on root
-            // user turns (e.g. "1/3" for a 2-branch chat).
+            // Find all turns sharing this turn's parent_turn_id. System
+            // messages are filtered out.
             const siblingTurns = new Map();
             for (const msg of history.messages) {
-                if (msg.role === 'system') continue;
+                if (msg.role === "system") continue;
                 if (msg.parent_turn_id === parentTurnId) {
-                    const key = `${msg.turn_number || 0}::${msg.turn_id || 'unknown'}`;
+                    const key = `${msg.turn_number || 0}::${msg.turn_id || "unknown"}`;
                     if (!siblingTurns.has(key)) {
                         siblingTurns.set(key, []);
                     }
                     siblingTurns.get(key).push(msg);
                 }
             }
-            
-            const sortedSiblings = Array.from(siblingTurns.entries())
-                .sort(([a], [b]) => {
-                    const [aTurn] = a.split('::');
-                    const [bTurn] = b.split('::');
-                    return parseInt(aTurn) - parseInt(bTurn);
-                });
-            
+
+            const sortedSiblings = Array.from(siblingTurns.entries()).sort(([a], [b]) => {
+                const [aTurn] = a.split("::");
+                const [bTurn] = b.split("::");
+                return parseInt(aTurn) - parseInt(bTurn);
+            });
+
             if (sortedSiblings.length <= 1) {
                 branchNavElement.style.display = "none";
                 return false;
             }
-            
+
             // Find current sibling index
             const currentTurnId = turnData?.turnId;
             let currentIndex = -1;
@@ -2101,31 +2048,31 @@ class ChatRenderer {
                     break;
                 }
             }
-            
+
             if (currentIndex === -1) {
                 currentIndex = 0;
             }
-            
+
             // Update navigation elements
             const prevBtn = branchNavElement.querySelector(".branch-prev");
             const nextBtn = branchNavElement.querySelector(".branch-next");
             const indicator = branchNavElement.querySelector(".branch-indicator");
-            
+
             prevBtn.disabled = currentIndex <= 0;
             nextBtn.disabled = currentIndex >= sortedSiblings.length - 1;
             indicator.textContent = `${currentIndex + 1}/${sortedSiblings.length}`;
-            
+
             // Store sibling data for navigation
             branchNavElement._siblings = sortedSiblings;
             branchNavElement._currentIndex = currentIndex;
             branchNavElement._turnNumber = turnNumber;
-            
+
             // Show navigation
             branchNavElement.style.display = "flex";
             branchNavElement.style.alignItems = "center";
             branchNavElement.style.gap = "6px";
             branchNavElement.style.marginLeft = "10px";
-            
+
             return true;
         } catch (error) {
             console.error(`[BRANCH-NAV] Error updating navigation:`, error);
@@ -2137,7 +2084,7 @@ class ChatRenderer {
     // Navigate to previous/next sibling turn
     async navigateBranch(direction, branchNavElement = null) {
         let targetBranchNav = branchNavElement;
-        
+
         // Fallback to finding any branch nav element if none provided
         if (!targetBranchNav) {
             const branchNavElements = document.querySelectorAll(".branch-nav");
@@ -2148,15 +2095,15 @@ class ChatRenderer {
                 }
             }
         }
-        
+
         if (!targetBranchNav || !targetBranchNav._siblings) {
             console.error("[BRANCH-NAV] No sibling data found for navigation");
             return;
         }
-        
+
         const siblings = targetBranchNav._siblings;
         const currentIndex = targetBranchNav._currentIndex;
-        
+
         let newIndex;
         if (direction === "prev") {
             newIndex = Math.max(0, currentIndex - 1);
@@ -2165,16 +2112,16 @@ class ChatRenderer {
         } else {
             return;
         }
-        
+
         if (newIndex === currentIndex) {
             return;
         }
-        
+
         const targetSibling = siblings[newIndex];
         const targetTurnId = targetSibling[1][0]?.turn_id;
-        
+
         // Get the parent_turn_id from the turn element
-        const turnElement = targetBranchNav.closest('.turn');
+        const turnElement = targetBranchNav.closest(".turn");
         const parentTurnId = turnElement?.dataset?.parentTurnId;
 
         // Update the nav element state
@@ -2184,34 +2131,22 @@ class ChatRenderer {
         targetBranchNav.querySelector(".branch-prev").disabled = newIndex <= 0;
         targetBranchNav.querySelector(".branch-next").disabled = newIndex >= siblings.length - 1;
 
-        // Update selectedSiblings state in chatManager. Scoped per-chat
-        // (M2) so the key is `${currentChatId}::${parentTurnId||'root'}`,
-        // matching buildRenderedTurns' scoped reads.
-        const parentKey = parentTurnId || 'root';
+        // Update per-chat sibling selection. Key matches the scoped read format.
+        const parentKey = parentTurnId || "root";
         selectedSiblings[`${currentChatId}::${parentKey}`] = targetTurnId;
 
-        // Persist the user's explicit pick to the DB so it survives
-        // reloads. We send the full per-chat map (filtered from the
-        // in-memory cache); the server replaces the entire set for this
-        // chat. Errors throw — the in-memory state is correct for this
-        // session but the next reload would lose the pick; the loud throw
-        // makes the failure visible in the dev console.
+        // Persist the selection to the DB so it survives reloads.
+        // Errors throw.
         const scopedMap = Object.fromEntries(
-            Object.entries(selectedSiblings).filter(([k]) =>
-                k.startsWith(`${currentChatId}::`))
+            Object.entries(selectedSiblings).filter(([k]) => k.startsWith(`${currentChatId}::`))
         );
         await saveBranchSelections(currentChatId, scopedMap);
 
         // Re-render the chat history with the new sibling selected
         await loadChatHistory(currentChatId);
 
-        // Scroll to the selected turn. loadChatHistory is `await`-ed, so
-        // the new turn is in the DOM by the time we get here — no wait
-        // is needed. The smooth scroll behavior itself animates the
-        // scroll, which is what the prior `setTimeout(_, 100)` was
-        // trying to simulate by deferring the scroll past the
-        // perceived render "flash". Direct call is both correct and
-        // faster.
+        // Scroll to the selected turn. The await on loadChatHistory
+        // guarantees the DOM is ready.
         const targetTurn = document.querySelector(`[data-turn-id="${targetTurnId}"]`);
         if (targetTurn) {
             targetTurn.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -2228,16 +2163,14 @@ class ChatRenderer {
                 const turnNumber = parseInt(turn.dataset.turnNumber);
 
                 if (branchNav && turnNumber) {
-                    // Reconstruct turn data from the DOM. Task 5 ensures
-                    // data-parent-turn-id is always present (empty string for
-                    // root); `|| null` converts the sentinel back to null.
+                    // Reconstruct turn data from the DOM.
                     const turnId = turn.dataset.turnId || null;
                     const parentTurnId = turn.dataset.parentTurnId || null;
                     const role = turn.classList.contains("user-turn")
                         ? "user"
                         : turn.classList.contains("assistant-turn")
-                        ? "assistant"
-                        : null;
+                          ? "assistant"
+                          : null;
                     await this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role });
                 }
             }
@@ -2274,28 +2207,23 @@ function createDebugPanel(turnDiv, messageId, debugData, turnNumber = null) {
     debugPanel.style.display = "none"; // Initially hidden
     debugPanel.style.width = "100%";
     debugPanel.style.boxSizing = "border-box";
-    
+
     // Inject correct turn number and turn ID from frontend
     if (turnNumber !== null && debugData) {
         debugData.currentTurnNumber = turnNumber;
     }
-    
+
     // Add turn ID and message ID to debug data
     if (!debugData) {
         debugData = {};
     }
     debugData.turnId = turnDiv.closest(".turn")?.dataset.turnId || "unknown";
     debugData.messageId = messageId || "unknown";
-    
+
     // Use the new sequential debug panel
     debugPanel.innerHTML = createDebugPanelContent(debugData);
 
-    // Force width on all debug dropdowns. Applied synchronously
-    // immediately after `innerHTML` is set; the children are in the
-    // DOM and queryable on the same line as the assignment. The
-    // prior `setTimeout(_, 0)` here was a superstition — these styles
-    // are `width: 100%` / `boxSizing: border-box`, which are box-level
-    // and don't require a paint cycle or layout pass to apply.
+    // Force width on all debug dropdowns synchronously.
     const dropdowns = debugPanel.querySelectorAll(".debug-dropdown");
     dropdowns.forEach((dropdown) => {
         dropdown.style.width = "100%";
@@ -2313,6 +2241,6 @@ function createDebugPanel(turnDiv, messageId, debugData, turnNumber = null) {
             }
         }
     });
-    
+
     return debugPanel;
 }

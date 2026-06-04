@@ -143,23 +143,15 @@ async function handleSimpleChatAbort({ userTurnNumber, message, processor }) {
     chatRenderer.renderTurn(partialTurn.renderable(), true);
 
     try {
-        // Phase 8 Task 22 (L19): don't bump the in-memory turn counter here.
-        // The DB increments via the backend's connection-error handler when
-        // it saves the partial assistant row. Bumping the in-memory counter
-        // twice (once for the user at handleSimpleChat:start, once here) put
-        // it 1 ahead of the DB until the next chat load. Compute the
-        // assistant's number directly from the user's number.
+        // Don't bump the in-memory turn counter here; compute the
+        // assistant's number from the user's number.
         const assistantTurnNumber = userTurnNumber + 1;
         stoppedDebugData.currentTurnNumber = assistantTurnNumber;
 
         const partialContent = processor.getRawContent() || '';
         logger.info(`[FRONTEND] Stopped message rendered, backend handles saving`);
 
-        // Aborted streams reach this point before the backend has assigned
-        // a turn_id to the assistant message, so there is no turn_id to
-        // key debug storage on. The backend's connection-error handler
-        // creates the assistant row from whatever it has on hand; the
-        // frontend's partial debug data is best-effort and is dropped here.
+        // Aborted streams have no turn_id yet; debug data is best-effort and dropped.
         stoppedDebugData.turn_id = null;
         stoppedDebugData.parent_turn_id = null;
 
@@ -216,23 +208,13 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                         };
                     }
                 }
-                // Phase 9 M11 fix: pass the active terminal as the new
-                // user turn's parent_turn_id. Without this, saveCompleteMessage
-                // would call the backend's getTurnInfo with both args
-                // undefined and the new turn would be created at root — a
-                // sibling of the chat's other user messages, breaking the
-                // "fresh send continues the active branch" contract. With
-                // this, parentTurnId === null only for an empty chat (first
-                // message in a new chat), which is the correct root case.
+                // Pass the active terminal as parent_turn_id so the new turn
+                // continues the current branch (null only for a fresh chat).
                 const saveResult = await saveCompleteMessage(
                     currentChatId, messageForSaving, userTurnNumber,
                     parentTurnId ? { parent_turn_id: parentTurnId } : null
                 );
-                // Phase 6 Task 17 (M4): a failed save is a hard error. Don't
-                // return null — that lets the chat request go out with no
-                // lineage anchor (H8 fallthrough). Throw so sendAndStream
-                // aborts before the request, and the top-level handler in
-                // main.js shows the error to the user.
+                // A failed save is a hard error — throw to abort before the request.
                 if (!saveResult || !saveResult.turn_id) {
                     throw new Error('saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor');
                 }
@@ -242,11 +224,7 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
             renderUserBubble: async (userTurnInfo, requestId) => {
                 if (!userTurnInfo) return;
 
-                // Phase 8 Task 28 (L20): pass turn_id and parent_turn_id
-                // to the Message constructor rather than constructing first
-                // and mutating in place. The Message constructor already
-                // accepts these fields (message.js:10-11), so no class
-                // changes needed — just pass them up front.
+                // Pass turn_id and parent_turn_id to the Message constructor up front.
                 const userMessage = new Message({
                     id: null,
                     role: 'user',
