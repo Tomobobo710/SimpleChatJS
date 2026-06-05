@@ -93,7 +93,6 @@ function initiateMessageRequest(
 
 // Tool state management
 let cachedEnabledTools = null;
-let pendingSave = null; // Track pending save data
 
 function loadEnabledTools() {
     // Return cached tools or default empty object
@@ -117,51 +116,22 @@ async function loadEnabledToolsFromBackend() {
     }
 }
 
-async function saveEnabledTools(enabledTools) {
-    cachedEnabledTools = enabledTools;
+async function saveEnabledToolsToBackend(enabledTools) {
+    try {
+        const response = await fetch(`${window.location.origin}/api/enabled-tools`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(enabledTools)
+        });
 
-    if (pendingSave) {
-        clearTimeout(pendingSave.timeout);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        logger.info("Saved enabled tools to file storage");
+    } catch (error) {
+        logger.warn("Failed to save enabled tools to backend:", error);
     }
-
-    let resolveSave, rejectSave;
-    const promise = new Promise((res, rej) => {
-        resolveSave = res;
-        rejectSave = rej;
-    });
-
-    const currentSave = {
-        enabledTools: enabledTools,
-        resolve: resolveSave,
-        reject: rejectSave,
-        timeout: setTimeout(async () => {
-            try {
-                const response = await fetch(`${window.location.origin}/api/enabled-tools`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(enabledTools)
-                });
-
-                if (response.ok) {
-                    logger.info("Saved enabled tools to file storage");
-                    currentSave.resolve();
-                } else {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-            } catch (error) {
-                logger.warn("Failed to save enabled tools to backend:", error);
-                currentSave.reject(error);
-            } finally {
-                if (pendingSave === currentSave) {
-                    pendingSave = null;
-                }
-            }
-        }, 50)
-    };
-
-    pendingSave = currentSave;
-
-    return promise;
 }
 
 function isToolEnabled(serverName, toolName) {
@@ -182,7 +152,7 @@ function setToolEnabled(serverName, toolName, enabled) {
         delete enabledTools[toolKey]; // Remove from storage (default is disabled)
     }
 
-    saveEnabledTools(enabledTools);
+    cachedEnabledTools = enabledTools;
 }
 
 function getEnabledToolsForServer(serverName, allTools) {
