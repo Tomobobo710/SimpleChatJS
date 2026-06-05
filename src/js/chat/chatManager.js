@@ -451,6 +451,52 @@ function walkActiveBranch(allTurns, chatId) {
     return rendered;
 }
 
+// Build a Map<turnId, {siblings, currentIndex, hasPrev, hasNext, total}>
+// for every turn in `allTurns` that has more than one sibling under the
+// same parent. Honors `selectedSiblings` and writes default selections
+// for unkeyed parents, mirroring walkActiveBranch. DOM-independent.
+function buildBranchMap(allTurns, chatId) {
+    const scopeKey = (parentKey) => `${chatId}::${parentKey}`;
+
+    const childrenByParent = new Map();
+    for (const turn of allTurns) {
+        const parentKey = turn.parentTurnId || "root";
+        if (!childrenByParent.has(parentKey)) {
+            childrenByParent.set(parentKey, []);
+        }
+        childrenByParent.get(parentKey).push(turn);
+    }
+    for (const children of childrenByParent.values()) {
+        children.sort((a, b) => a.turnNumber - b.turnNumber);
+    }
+
+    for (const [parentKey, children] of childrenByParent) {
+        const selectedTurnId = selectedSiblings[scopeKey(parentKey)] ?? null;
+        const matched = selectedTurnId
+            ? children.find((c) => c.turnId === selectedTurnId)
+            : null;
+        const chosen = matched ?? children[children.length - 1];
+        selectedSiblings[scopeKey(parentKey)] = chosen.turnId;
+    }
+
+    const map = new Map();
+    for (const children of childrenByParent.values()) {
+        if (children.length <= 1) continue;
+        const siblingIds = children.map((c) => c.turnId);
+        children.forEach((turn, index) => {
+            if (!turn.turnId) return;
+            map.set(turn.turnId, {
+                siblings: siblingIds,
+                currentIndex: index,
+                hasPrev: index > 0,
+                hasNext: index < children.length - 1,
+                total: children.length
+            });
+        });
+    }
+    return map;
+}
+
 // Resolve the deepest leaf turn_id on the selected branch. Used as
 // parent_turn_id for new messages. Returns null for empty chats.
 // DOM-independent.
@@ -539,10 +585,11 @@ async function loadChatHistory(chatId) {
 
         const allTurns = groupMessagesByTurn(history.messages);
         const renderedTurns = buildRenderedTurns(allTurns, chatId);
+        const branchMap = buildBranchMap(allTurns, chatId);
 
         renderedTurns.forEach((turn) => {
             const rto = turn.renderable();
-            chatRenderer.renderTurn(rto, false);
+            chatRenderer.renderTurn(rto, false, branchMap);
         });
 
         scrollToBottom(scrollContainer);

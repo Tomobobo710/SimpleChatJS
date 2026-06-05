@@ -6,7 +6,7 @@ class ChatRenderer {
     }
 
     // Main render method - handles only blocks - no more content parsing
-    renderTurn(turnData, shouldScroll = true) {
+    renderTurn(turnData, shouldScroll = true, branchMap = null) {
         try {
             const {
                 id,
@@ -117,7 +117,7 @@ class ChatRenderer {
             turnDiv.appendChild(contentDiv);
 
             // Add message actions bar (passing turn_id and parent_turn_id from RTO)
-            this.addMessageActions(turnDiv, role, turnNumber, id, turnId, parentTurnId);
+            this.addMessageActions(turnDiv, role, turnNumber, id, turnId, parentTurnId, branchMap);
 
             // Add debug toggle and panel if debug data provided
             if (debugData) {
@@ -579,7 +579,7 @@ class ChatRenderer {
     }
 
     // Add message actions bar to turn
-    addMessageActions(turnDiv, role, turnNumber = null, messageId = null, turnId = null, parentTurnId = null) {
+    addMessageActions(turnDiv, role, turnNumber = null, messageId = null, turnId = null, parentTurnId = null, branchMap = null) {
         const actionsContainer = document.createElement("div");
         actionsContainer.className = "message-actions";
         if (messageId) {
@@ -658,7 +658,7 @@ class ChatRenderer {
             branchNav.appendChild(nextBtn);
 
             // Check if this turn should show branch navigation
-            this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role }).catch((error) => {
+            this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role }, branchMap).catch((error) => {
                 console.error("[BRANCH-NAV] Error loading branch info:", error);
                 // Hide navigation on error
                 branchNav.style.display = "none";
@@ -1991,7 +1991,7 @@ class ChatRenderer {
 
     // ===== BRANCH NAVIGATION SYSTEM =====
     // Update branch navigation
-    async updateBranchNavigation(branchNavElement, turnNumber, turnData = null) {
+    async updateBranchNavigation(branchNavElement, turnNumber, turnData = null, branchMap = null) {
         if (!currentChatId || !turnNumber) {
             branchNavElement.style.display = "none";
             return;
@@ -2000,38 +2000,48 @@ class ChatRenderer {
         try {
             const parentTurnId = turnData?.parentTurnId;
             const role = turnData?.role;
+            const currentTurnId = turnData?.turnId;
 
             if (parentTurnId === undefined || !role) {
                 branchNavElement.style.display = "none";
                 return false;
             }
 
-            // Get all messages to find siblings
-            const history = await getCompleteChatHistory(currentChatId);
-            if (!history?.messages) {
-                branchNavElement.style.display = "none";
-                return false;
-            }
+            let sortedSiblings;
 
-            // Find all turns sharing this turn's parent_turn_id. System
-            // messages are filtered out.
-            const siblingTurns = new Map();
-            for (const msg of history.messages) {
-                if (msg.role === "system") continue;
-                if (msg.parent_turn_id === parentTurnId) {
-                    const key = `${msg.turn_number || 0}::${msg.turn_id || "unknown"}`;
-                    if (!siblingTurns.has(key)) {
-                        siblingTurns.set(key, []);
-                    }
-                    siblingTurns.get(key).push(msg);
+            if (branchMap && currentTurnId) {
+                if (branchMap.has(currentTurnId)) {
+                    const info = branchMap.get(currentTurnId);
+                    sortedSiblings = info.siblings.map((id) => [id, [{ turn_id: id }]]);
+                } else {
+                    branchNavElement.style.display = "none";
+                    return false;
                 }
-            }
+            } else {
+                const history = await getCompleteChatHistory(currentChatId);
+                if (!history?.messages) {
+                    branchNavElement.style.display = "none";
+                    return false;
+                }
 
-            const sortedSiblings = Array.from(siblingTurns.entries()).sort(([a], [b]) => {
-                const [aTurn] = a.split("::");
-                const [bTurn] = b.split("::");
-                return parseInt(aTurn) - parseInt(bTurn);
-            });
+                const siblingTurns = new Map();
+                for (const msg of history.messages) {
+                    if (msg.role === "system") continue;
+                    if (msg.parent_turn_id === parentTurnId) {
+                        const key = `${msg.turn_number || 0}::${msg.turn_id || "unknown"}`;
+                        if (!siblingTurns.has(key)) {
+                            siblingTurns.set(key, []);
+                        }
+                        siblingTurns.get(key).push(msg);
+                    }
+                }
+
+                sortedSiblings = Array.from(siblingTurns.entries()).sort(([a], [b]) => {
+                    const [aTurn] = a.split("::");
+                    const [bTurn] = b.split("::");
+                    return parseInt(aTurn) - parseInt(bTurn);
+                });
+            }
 
             if (sortedSiblings.length <= 1) {
                 branchNavElement.style.display = "none";
@@ -2039,7 +2049,6 @@ class ChatRenderer {
             }
 
             // Find current sibling index
-            const currentTurnId = turnData?.turnId;
             let currentIndex = -1;
             for (let i = 0; i < sortedSiblings.length; i++) {
                 const [, msgs] = sortedSiblings[i];
@@ -2150,32 +2159,6 @@ class ChatRenderer {
         const targetTurn = document.querySelector(`[data-turn-id="${targetTurnId}"]`);
         if (targetTurn) {
             targetTurn.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-    }
-
-    // Refresh branch navigation for all turns
-    async refreshBranchNavigation() {
-        try {
-            const allTurns = document.querySelectorAll(".user-turn, .assistant-turn");
-
-            for (const turn of allTurns) {
-                const branchNav = turn.querySelector(".branch-nav");
-                const turnNumber = parseInt(turn.dataset.turnNumber);
-
-                if (branchNav && turnNumber) {
-                    // Reconstruct turn data from the DOM.
-                    const turnId = turn.dataset.turnId || null;
-                    const parentTurnId = turn.dataset.parentTurnId || null;
-                    const role = turn.classList.contains("user-turn")
-                        ? "user"
-                        : turn.classList.contains("assistant-turn")
-                          ? "assistant"
-                          : null;
-                    await this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role });
-                }
-            }
-        } catch (error) {
-            console.error("[BRANCH-NAV] Error refreshing branch navigation:", error);
         }
     }
 }
