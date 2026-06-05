@@ -181,7 +181,7 @@ router.get("/chat/:id/history-complete", (req, res) => {
 
         // Get ALL messages for the chat including errored ones
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
             WHERE chat_id = ?
             ORDER BY timestamp ASC
@@ -192,7 +192,7 @@ router.get("/chat/:id/history-complete", (req, res) => {
 
         const messages = chatMessages.map((row) =>
             parseDbRowToMessage(row, {
-                includeDebugData: true,
+                includeDebugData: false,
                 includeFileFields: true,
                 includeErrorState: true,
             })
@@ -319,8 +319,22 @@ router.post("/message", async (req, res) => {
         if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
 
         // Use the unified save function
-        const { saveCompleteMessageToDatabase, incrementTurnNumber, getTurnInfo } = require("../services/chatService");
+        const { saveCompleteMessageToDatabase, incrementTurnNumber, getTurnInfo, buildSystemMessageIfEnabled } = require("../services/chatService");
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
+
+        if (role === "user") {
+            const existingSystemCount = db.prepare(
+                "SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND role = 'system' AND error_state IS NULL"
+            ).get(chat_id).count;
+
+            if (existingSystemCount === 0) {
+                const systemMessage = buildSystemMessageIfEnabled();
+                if (systemMessage) {
+                    await saveCompleteMessageToDatabase(chat_id, systemMessage, 1, null, turnInfo);
+                }
+            }
+        }
+
         // Use turn number provided by frontend
         await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number, null, turnInfo);
 
