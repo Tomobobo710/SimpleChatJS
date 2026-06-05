@@ -116,20 +116,22 @@ async function loadEnabledToolsFromBackend() {
     }
 }
 
-function saveEnabledTools(enabledTools) {
-    cachedEnabledTools = enabledTools;
-    // Save to backend file storage
-    fetch(`${window.location.origin}/api/enabled-tools`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(enabledTools)
-    })
-        .then(() => {
-            logger.info("Saved enabled tools to file storage");
-        })
-        .catch((error) => {
-            logger.warn("Failed to save enabled tools to backend:", error);
+async function saveEnabledToolsToBackend(enabledTools) {
+    try {
+        const response = await fetch(`${window.location.origin}/api/enabled-tools`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(enabledTools)
         });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        logger.info("Saved enabled tools to file storage");
+    } catch (error) {
+        logger.warn("Failed to save enabled tools to backend:", error);
+    }
 }
 
 function isToolEnabled(serverName, toolName) {
@@ -150,7 +152,7 @@ function setToolEnabled(serverName, toolName, enabled) {
         delete enabledTools[toolKey]; // Remove from storage (default is disabled)
     }
 
-    saveEnabledTools(enabledTools);
+    cachedEnabledTools = enabledTools;
 }
 
 function getEnabledToolsForServer(serverName, allTools) {

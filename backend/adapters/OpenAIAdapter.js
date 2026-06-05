@@ -96,12 +96,13 @@ class OpenAIAdapter extends BaseResponseAdapter {
                                         type: 'function',
                                         function: {
                                             name: toolCall.function?.name || '',
-                                            arguments: toolCall.function?.arguments || ''
+                                            arguments: normalizeArgsDelta(toolCall.function?.arguments)
                                         }
                                     };
                                     response.addToolCall(newToolCall);
                                     context.currentToolCall = newToolCall;
-                                    
+                                    context.currentToolCallArgsComplete = isCompleteJson(newToolCall.function.arguments);
+
                                     // Emit tool call detected event
                                     events.push({
                                         type: 'tool_call_detected',
@@ -111,13 +112,19 @@ class OpenAIAdapter extends BaseResponseAdapter {
                                         }
                                     });
                                 } else if (context.currentToolCall && toolCall.function?.arguments) {
+                                    if (context.currentToolCallArgsComplete) {
+                                        continue;
+                                    }
                                     // Continue building arguments
-                                    context.currentToolCall.function.arguments += toolCall.function.arguments;
-                                    
+                                    context.currentToolCall.function.arguments += normalizeArgsDelta(toolCall.function.arguments);
+
                                     // Update the tool call in response
                                     const latestToolCall = response.getLatestToolCall();
                                     if (latestToolCall) {
                                         latestToolCall.function.arguments = context.currentToolCall.function.arguments;
+                                    }
+                                    if (isCompleteJson(latestToolCall?.function.arguments)) {
+                                        context.currentToolCallArgsComplete = true;
                                     }
                                 }
                             }
@@ -206,6 +213,23 @@ class OpenAIAdapter extends BaseResponseAdapter {
         return true;
     }
 
+}
+
+function normalizeArgsDelta(delta) {
+    if (delta == null) return '';
+    if (typeof delta === 'string') return delta;
+    if (typeof delta === 'object') return JSON.stringify(delta);
+    return String(delta);
+}
+
+function isCompleteJson(str) {
+    if (typeof str !== 'string' || !str) return false;
+    try {
+        JSON.parse(str);
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
 module.exports = OpenAIAdapter;

@@ -145,23 +145,36 @@ async function handleSaveSettings() {
         return;
     }
     
+    // Collect enabled tools from checkboxes
+    const enabledTools = {};
+    document.querySelectorAll('.mcp-tool-toggle').forEach(checkbox => {
+        if (checkbox.checked) {
+            enabledTools[`${checkbox.dataset.server}.${checkbox.dataset.tool}`] = true;
+        }
+    });
+
     try {
-        // Save to file storage
-        const response = await fetch(`${window.location.origin}/api/settings`, {
+        // Save settings to file storage
+        const settingsResponse = await fetch(`${window.location.origin}/api/settings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settings)
         });
-        
-        if (!response.ok) throw new Error('Failed to save');
-        
+
+        if (!settingsResponse.ok) throw new Error('Failed to save settings');
+
+        // Save enabled tools to file storage
+        if (Object.keys(enabledTools).length > 0) {
+            await saveEnabledToolsToBackend(enabledTools);
+        }
+
         // Update cached settings immediately
         const currentSettings = window.cachedSettings();
         window.setCachedSettings({ ...currentSettings, ...settings });
-        
+
         showSuccess('Settings saved successfully');
         settingsModal.classList.add('hidden');
-        
+
     } catch (error) {
         showError(`Failed to save settings: ${error.message}`);
     }

@@ -375,6 +375,10 @@ class StreamingMessageProcessor {
             b.type === 'tool' && b.metadata?.id === data.id
         );
         if (!alreadyExists) {
+            if (this.state === 'normal' && this.buffer) {
+                this.createChatBlock(this.buffer);
+                this.buffer = '';
+            }
             this.blocks.push(new Block({
                 type: 'tool',
                 content: `[${data.name}]:\nArguments: Loading...\nResult: Executing...`,

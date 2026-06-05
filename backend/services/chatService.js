@@ -565,6 +565,21 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
     }
 }
 
+function buildSystemMessageIfEnabled() {
+    const currentSettings = getCurrentSettings();
+    if (
+        currentSettings.enableSystemPrompt &&
+        currentSettings.systemPrompt &&
+        currentSettings.systemPrompt.trim()
+    ) {
+        return {
+            role: "system",
+            content: currentSettings.systemPrompt.trim()
+        };
+    }
+    return null;
+}
+
 // Import adapter system
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
@@ -605,11 +620,11 @@ async function handleChatWithTools(
     // userTurnId = the turn_id of the message that triggered this (user's turn_id for first call, assistant's for tool call chain)
     // parentTurnId = the parent_turn_id to use (from frontend for first call, from previous turn for recursive calls)
     let turnInfo;
-    if (userTurnId) {
-        // Reuse the parent_turn_id from the previous turn, generate new turn_id
+    if (responseCounter > 1 && userTurnId) {
+        turnInfo = getTurnInfo(parentTurnId, userTurnId);
+    } else if (userTurnId) {
         turnInfo = getTurnInfo(userTurnId);
     } else {
-        // First call - generate both turn_id and parent_turn_id
         turnInfo = getTurnInfo(null);
     }
 
@@ -628,11 +643,6 @@ async function handleChatWithTools(
 
         if (requestId) {
             headers["X-Request-Id"] = requestId;
-        }
-
-        // Include the actual AI request in response headers for frontend debug panel
-        if (requestData) {
-            headers["X-Actual-Request"] = encodeURIComponent(JSON.stringify(requestData));
         }
 
         // Assistant turn identifiers in response headers, set up-front so
@@ -1277,43 +1287,6 @@ async function processChatRequest(req, res) {
         // Log what's in history
         log(`[CHAT-DEBUG] Current history count: ${messages.length}`);
 
-        // Inject system prompt if this is the first message in the conversation/branch
-        if (messages.length === 1) {
-            const currentSettings = getCurrentSettings();
-            if (
-                currentSettings.enableSystemPrompt &&
-                currentSettings.systemPrompt &&
-                currentSettings.systemPrompt.trim()
-            ) {
-                const systemMessage = {
-                    role: "system",
-                    content: currentSettings.systemPrompt.trim()
-                };
-
-                // Prepend system prompt to messages array
-                messages.unshift(systemMessage);
-                log(`[SYSTEM-PROMPT] Added system prompt to first message in conversation`);
-
-                // Save system prompt to database (it becomes part of chat history)
-                if (chat_id) {
-                    try {
-                        // The system prompt is a Message in Turn 1, sharing the
-                        // first user message's turn_id. This makes it editable
-                        // like any other turn message (so plain "edit" can
-                        // change the next AI request) and prevents it from
-                        // being re-prepended on retries — once it's in the DB,
-                        // getChatHistoryForAPI includes it in the filtered
-                        // lineage and messages.length is no longer 1.
-                        const systemPromptTurnInfo = getTurnInfo(parent_turn_id, turn_id);
-                        await saveCompleteMessageToDatabase(chat_id, systemMessage, 1, null, systemPromptTurnInfo);
-                        log(`[SYSTEM-PROMPT] Saved system prompt to chat history as a message in turn_id=${turn_id}`);
-                    } catch (error) {
-                        log(`[SYSTEM-PROMPT] Error saving system prompt to history: ${error.message}`);
-                    }
-                }
-            }
-        }
-
         // Check if we have any messages at all
         if (messages.length === 0) {
             // No chat history — the chat was never seeded with a user message.
@@ -1456,6 +1429,7 @@ module.exports = {
     processChatRequest,
     saveCompleteMessageToDatabase,
     getChatHistoryForAPI,
+    buildSystemMessageIfEnabled,
     getCurrentTurnNumber,
     getTurnInfo,
     incrementTurnNumber,
