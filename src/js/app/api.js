@@ -394,6 +394,8 @@ async function saveCompleteMessage(chatId, messageData, turnNumber = null, turnI
         // Add new file handling fields if present
         if (messageData.original_content !== undefined) requestData.original_content = messageData.original_content;
         if (messageData.file_metadata !== undefined) requestData.file_metadata = messageData.file_metadata;
+        if (messageData.error_state) requestData.error_state = messageData.error_state;
+        if (messageData.debug_data) requestData.debug_data = messageData.debug_data;
         if (turnInfo?.turn_id) requestData.turn_id = turnInfo.turn_id;
         if (turnInfo?.parent_turn_id !== undefined) requestData.parent_turn_id = turnInfo.parent_turn_id;
 

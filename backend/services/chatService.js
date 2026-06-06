@@ -599,7 +599,6 @@ async function handleChatWithTools(
 ) {
     const currentSettings = getCurrentSettings();
 
-    // Ensure we have a model name
     if (!currentSettings.modelName) {
         res.status(400).json({ error: "No model specified. Please configure a model in settings." });
         return;
@@ -617,8 +616,6 @@ async function handleChatWithTools(
     });
 
     // Generate turn info for this conversation turn
-    // userTurnId = the turn_id of the message that triggered this (user's turn_id for first call, assistant's for tool call chain)
-    // parentTurnId = the parent_turn_id to use (from frontend for first call, from previous turn for recursive calls)
     let turnInfo;
     if (responseCounter > 1 && userTurnId) {
         turnInfo = getTurnInfo(parentTurnId, userTurnId);
@@ -634,28 +631,27 @@ async function handleChatWithTools(
     // Convert to provider-specific format
     const requestData = adapter.convertRequest(unifiedRequest);
 
-    // Set up streaming response FIRST
+    // Set up streaming response headers FIRST. We use setHeader (not
+    // writeHead) so the error paths can add `X-Stream-Error` later if
+    // the API errors out — writeHead flushes headers immediately and
+    // setHeader calls after it are silently dropped.
     if (!res.headersSent) {
-        const headers = {
-            "Content-Type": "text/plain",
-            "Transfer-Encoding": "chunked"
-        };
+        res.setHeader("Content-Type", "text/plain");
+        res.setHeader("Transfer-Encoding", "chunked");
 
         if (requestId) {
-            headers["X-Request-Id"] = requestId;
+            res.setHeader("X-Request-Id", requestId);
         }
 
         // Assistant turn identifiers in response headers, set up-front so
         // the frontend can stamp the rendered bubble. Stable for the
         // entire tool-call chain.
         if (turnInfo?.turn_id) {
-            headers["X-Assistant-Turn-Id"] = turnInfo.turn_id;
+            res.setHeader("X-Assistant-Turn-Id", turnInfo.turn_id);
         }
         if (turnInfo?.parent_turn_id) {
-            headers["X-Assistant-Parent-Turn-Id"] = turnInfo.parent_turn_id;
+            res.setHeader("X-Assistant-Parent-Turn-Id", turnInfo.parent_turn_id);
         }
-
-        res.writeHead(200, headers);
     }
 
     // Initialize debug data and turn number
@@ -806,12 +802,24 @@ async function handleChatWithTools(
                     }
                 }
 
-                // Save error message and burn the turn
+                // Save error message and burn the turn. Status check
+                // happens before any data is streamed, so content is
+                // always empty here. The specific API error text is
+                // kept in debug_data for the dropdown to show.
                 if (chatId && currentTurn) {
                     const errorMessage = {
                         role: "assistant",
-                        content: userErrorMessage,
-                        debug_data: collectedDebugData
+                        content: "",
+                        debug_data: {
+                            ...(collectedDebugData || {}),
+                            error: {
+                                type: "api_error",
+                                status_code: apiRes.statusCode,
+                                status_message: apiRes.statusMessage,
+                                user_message: userErrorMessage,
+                                raw_response: errorData
+                            }
+                        }
                     };
                     saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, "api_error", turnInfo)
                         .then(() => {
@@ -823,6 +831,12 @@ async function handleChatWithTools(
                         });
                 }
 
+                // Signal the error type via header so the frontend can
+                // render the unified error block instead of the raw
+                // text we wrote below.
+                if (!res.headersSent) {
+                    res.setHeader("X-Stream-Error", "api_error");
+                }
                 res.write(userErrorMessage);
                 res.end();
             });
@@ -1026,12 +1040,18 @@ async function handleChatWithTools(
             collectedDebugData.rawData.errors.push({ type: "request_error", message: error.message });
         }
 
-        // Save connection error and burn the turn
+        // Save connection error and burn the turn. Preserve whatever was
+        // streamed before the connection dropped so the user can read
+        // the partial response alongside the error indicator.
         if (chatId && currentTurn) {
+            const streamedSoFar = (collectedDebugData && collectedDebugData.streamedContent) || "";
             const errorMessage = {
                 role: "assistant",
-                content: `Connection error: ${error.message}`,
-                debug_data: collectedDebugData
+                content: streamedSoFar,
+                debug_data: {
+                    ...(collectedDebugData || {}),
+                    error: { type: "connection_error", message: error.message }
+                }
             };
             saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
                 .then(() => {
@@ -1043,6 +1063,11 @@ async function handleChatWithTools(
                 });
         }
 
+        // Signal the error type via header (best effort: may already
+        // be sent if we got far enough to start streaming).
+        if (!res.headersSent) {
+            res.setHeader("X-Stream-Error", "connection_error");
+        }
         res.write(`Connection error: ${error.message}`);
         res.end();
     });
@@ -1333,15 +1358,25 @@ async function processChatRequest(req, res) {
     } catch (error) {
         log("[CHAT] Error:", error);
 
-        // Save processing error and burn the turn
+        // Save processing error and burn the turn. This is a
+        // synchronous early-failure catch — no streamed content
+        // exists. Specific error info goes in debug_data for the
+        // dropdown.
+        const turnInfo = getTurnInfo(parent_turn_id, turn_id);
         if (chat_id) {
             const currentTurn = getCurrentTurnNumber(chat_id) + 1;
             const errorMessage = {
                 role: "assistant",
-                content: `Processing error: ${error.message}`,
-                debug_data: { error: error.message, stack: error.stack }
+                content: "",
+                debug_data: {
+                    error: {
+                        type: "processing_error",
+                        message: error.message,
+                        stack: error.stack
+                    }
+                }
             };
-            saveCompleteMessageToDatabase(chat_id, errorMessage, currentTurn, "processing_error")
+            saveCompleteMessageToDatabase(chat_id, errorMessage, currentTurn, "processing_error", turnInfo)
                 .then(() => {
                     incrementTurnNumber(chat_id); // Burn the turn
                     log(`[ERROR-HANDLING] Saved processing error and burned turn ${currentTurn}`);
@@ -1353,6 +1388,11 @@ async function processChatRequest(req, res) {
 
         // Only send error response if headers haven't been sent yet
         if (!res.headersSent) {
+            // Signal error + emit turn-id headers so the frontend can
+            // route to the unified error renderer.
+            res.setHeader("X-Stream-Error", "processing_error");
+            if (turnInfo?.turn_id) res.setHeader("X-Assistant-Turn-Id", turnInfo.turn_id);
+            if (turnInfo?.parent_turn_id) res.setHeader("X-Assistant-Parent-Turn-Id", turnInfo.parent_turn_id);
             res.status(500).json({ error: error.message });
         } else {
             // If streaming has started, we can't send JSON, so just end the stream

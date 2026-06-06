@@ -2,6 +2,24 @@
 // Turns are never persisted — they are computed from Message source data.
 // Turns with the same parent_turn_id but different turn_id are siblings.
 
+function defaultErrorBlockContent(errorState) {
+    switch (errorState) {
+        case 'user_stopped': return 'Generation stopped by user.';
+        case 'api_error': return 'The API returned an error.';
+        case 'connection_error': return 'Connection error while receiving response.';
+        case 'processing_error': return 'Error while processing the response stream.';
+        default: return 'An error occurred during generation.';
+    }
+}
+
+function resolveErrorBlockContent(errorMsg) {
+    const fromDebug = errorMsg?.debugData?.error?.message;
+    if (fromDebug && typeof fromDebug === "string" && fromDebug.trim()) {
+        return fromDebug;
+    }
+    return defaultErrorBlockContent(errorMsg?.errorState);
+}
+
 class Turn {
     constructor(turnNumber, messages = [], turnId = null, parentTurnId = null) {
         this.turnNumber = turnNumber;
@@ -34,21 +52,69 @@ class Turn {
         return this.assistantMessages.length > 0;
     }
 
+    // True if any assistant message carries non-empty content (i.e.
+    // there is real streamed text to render). Used to gate the
+    // "content + error" render branch so error-only messages don't
+    // accidentally fall through and render an empty chat block.
+    hasRenderableAssistantContent() {
+        return this.assistantMessages.some(
+            (m) => m.content && (typeof m.content === 'string' ? m.content !== '' : true)
+        );
+    }
+
     // Produce a RenderableTurnObject for this turn.
-    // Rendering priority: error messages override, user messages render directly,
-    // assistant messages are processed through StreamingMessageProcessor.
+    // Rendering priority: error-only turns show just the error block;
+    // user messages render directly; assistant messages are processed
+    // through StreamingMessageProcessor; if a turn has both assistant
+    // content and an error, the content is rendered with the error
+    // block appended at the end.
     renderable(liveProcessor = null) {
-        // Error messages override normal rendering
+        // Errors alongside real streamed content: render the content +
+        // an error block at the end (so user-stopped, connection drops,
+        // etc. show what was streamed and what interrupted it).
+        if (
+            this.hasErrors() &&
+            this.hasAssistantMessages() &&
+            this.hasRenderableAssistantContent()
+        ) {
+            const assistantRto = this._renderableAssistant(liveProcessor);
+            const errorMsg = this.errorMessages[0];
+            const errorBlock = new Block({
+                type: 'error',
+                content: resolveErrorBlockContent(errorMsg),
+                metadata: {
+                    error_type: errorMsg.errorState,
+                    debug_data: errorMsg.debugData
+                }
+            });
+            return new RenderableTurnObject({
+                role: assistantRto.role,
+                content: assistantRto.content,
+                blocks: [...(assistantRto.blocks || []), errorBlock],
+                turnNumber: assistantRto.turnNumber,
+                turnId: assistantRto.turnId,
+                parentTurnId: assistantRto.parentTurnId,
+                debugData: assistantRto.debugData,
+                editCount: assistantRto.editCount,
+                dropdownStates: assistantRto.dropdownStates,
+            });
+        }
+
+        // Error-only turn (no streamed content to show). Rendered as
+        // an assistant bubble with just the error block inside, so the
+        // background bubble + action bar are consistent with the
+        // "content + error" branch.
         if (this.hasErrors()) {
             const errorMsg = this.errorMessages[0];
             return new RenderableTurnObject({
-                role: 'error',
-                content: errorMsg.content,
+                role: 'assistant',
+                content: '',
                 blocks: [new Block({
                     type: 'error',
-                    content: errorMsg.content,
+                    content: resolveErrorBlockContent(errorMsg),
                     metadata: {
-                        error_type: errorMsg.errorState
+                        error_type: errorMsg.errorState,
+                        debug_data: errorMsg.debugData
                     }
                 })],
                 turnNumber: errorMsg.turnNumber,
@@ -64,112 +130,9 @@ class Turn {
             return RenderableTurnObject.fromUserMessage(this.userMessages[0]);
         }
 
-        // Process assistant messages through StreamingMessageProcessor
+        // Assistant messages: pure content path (no error attached).
         if (this.hasAssistantMessages()) {
-            const assistantMessages = this.assistantMessages;
-            let primaryMessage = assistantMessages.find(m => !m.content.is && m.content !== '') || assistantMessages[0];
-            let turnDebugData = null;
-
-            if (liveProcessor && primaryMessage) {
-                // For live rendering, use the existing processor directly
-                return new RenderableTurnObject({
-                    role: 'assistant',
-                    content: liveProcessor.getRawContent() || '',
-                    blocks: liveProcessor.getBlocks(),
-                    turnNumber: primaryMessage.turnNumber,
-                    turnId: this.turnId,
-                    parentTurnId: this.parentTurnId,
-                    debugData: primaryMessage.debugData,
-                    editCount: primaryMessage.editCount,
-                });
-            }
-
-            // Reload path: create a new processor and rebuild blocks from content
-            let processor = new StreamingMessageProcessor();
-
-            for (const msg of assistantMessages) {
-                // Skip empty messages unless they have tool calls
-                if (!msg.content && !msg.toolCalls) {
-                    continue;
-                }
-
-                if (!primaryMessage) {
-                    primaryMessage = msg;
-                    turnDebugData = msg.debugData;
-                }
-
-                // Feed content into processor
-                const content = msg.content || '';
-                if (typeof content === 'string') {
-                    processor.addChunk(content);
-                } else if (Array.isArray(content)) {
-                    // Multimodal content - process text parts
-                    const textParts = content.filter(part => part.type === 'text');
-                    textParts.forEach(part => {
-                        if (part.text) {
-                            processor.addChunk(part.text);
-                        }
-                    });
-                }
-
-                // Simulate tool events if the message has tool calls
-                if (msg.toolCalls && Array.isArray(msg.toolCalls)) {
-                    for (const toolCall of msg.toolCalls) {
-                        const toolName = toolCall.function?.name || 'unknown_tool';
-                        const toolId = toolCall.id;
-                        let args = {};
-                        try {
-                            args = JSON.parse(toolCall.function?.arguments || '{}');
-                        } catch (e) {
-                            args = { raw: toolCall.function?.arguments || '{}' };
-                        }
-
-                        // Reconstruct tool result from tool messages in this turn
-                        const toolMessage = this.messages.find(m =>
-                            m.role === 'tool' && m.toolCallId === toolId
-                        );
-                        let resultContent = { content: 'No result available' };
-                        if (toolMessage) {
-                            try {
-                                resultContent = JSON.parse(toolMessage.content);
-                            } catch (e) {
-                                resultContent = { content: toolMessage.content };
-                            }
-                        }
-
-                        // Simulate the same tool event sequence as live rendering
-                        processor.handleToolEvent({
-                            type: 'tool_call_detected',
-                            data: { id: toolId, name: toolName }
-                        });
-
-                        processor.handleToolEvent({
-                            type: 'tool_execution_start',
-                            data: { id: toolId, name: toolName, arguments: args }
-                        });
-
-                        processor.handleToolEvent({
-                            type: 'tool_execution_complete',
-                            data: { id: toolId, name: toolName, status: 'success', result: resultContent, execution_time_ms: 0 }
-                        });
-                    }
-                }
-            }
-
-            processor.finalize();
-            const blocks = processor.getBlocks();
-            const primary = primaryMessage || this.assistantMessages[0];
-
-            return new RenderableTurnObject({
-                role: 'assistant',
-                content: processor.getRawContent() || '',
-                blocks: blocks,
-                turnNumber: primary.turnNumber,
-                turnId: this.turnId,
-                parentTurnId: this.parentTurnId,
-                debugData: turnDebugData,
-                editCount: primary.editCount,
-            });
+            return this._renderableAssistant(liveProcessor);
         }
 
         // Fallback: empty turn
@@ -182,6 +145,109 @@ class Turn {
             parentTurnId: this.parentTurnId,
             debugData: null,
             editCount: 0,
+        });
+    }
+
+    // Build an assistant RTO from this turn's messages, using the
+    // liveProcessor if provided (live render) or rebuilding blocks
+    // from content (reload path). Shared by the pure-assistant and
+    // "content + error" branches in renderable().
+    _renderableAssistant(liveProcessor) {
+        const assistantMessages = this.assistantMessages;
+        let primaryMessage = assistantMessages.find(m => !m.content.is && m.content !== '') || assistantMessages[0];
+        let turnDebugData = null;
+
+        if (liveProcessor && primaryMessage) {
+            return new RenderableTurnObject({
+                role: 'assistant',
+                content: liveProcessor.getRawContent() || '',
+                blocks: liveProcessor.getBlocks(),
+                turnNumber: primaryMessage.turnNumber,
+                turnId: this.turnId,
+                parentTurnId: this.parentTurnId,
+                debugData: primaryMessage.debugData,
+                editCount: primaryMessage.editCount,
+            });
+        }
+
+        const processor = new StreamingMessageProcessor();
+
+        for (const msg of assistantMessages) {
+            if (!msg.content && !msg.toolCalls) {
+                continue;
+            }
+
+            if (!primaryMessage) {
+                primaryMessage = msg;
+                turnDebugData = msg.debugData;
+            }
+
+            const content = msg.content || '';
+            if (typeof content === 'string') {
+                processor.addChunk(content);
+            } else if (Array.isArray(content)) {
+                const textParts = content.filter(part => part.type === 'text');
+                textParts.forEach(part => {
+                    if (part.text) {
+                        processor.addChunk(part.text);
+                    }
+                });
+            }
+
+            if (msg.toolCalls && Array.isArray(msg.toolCalls)) {
+                for (const toolCall of msg.toolCalls) {
+                    const toolName = toolCall.function?.name || 'unknown_tool';
+                    const toolId = toolCall.id;
+                    let args = {};
+                    try {
+                        args = JSON.parse(toolCall.function?.arguments || '{}');
+                    } catch (e) {
+                        args = { raw: toolCall.function?.arguments || '{}' };
+                    }
+
+                    const toolMessage = this.messages.find(m =>
+                        m.role === 'tool' && m.toolCallId === toolId
+                    );
+                    let resultContent = { content: 'No result available' };
+                    if (toolMessage) {
+                        try {
+                            resultContent = JSON.parse(toolMessage.content);
+                        } catch (e) {
+                            resultContent = { content: toolMessage.content };
+                        }
+                    }
+
+                    processor.handleToolEvent({
+                        type: 'tool_call_detected',
+                        data: { id: toolId, name: toolName }
+                    });
+
+                    processor.handleToolEvent({
+                        type: 'tool_execution_start',
+                        data: { id: toolId, name: toolName, arguments: args }
+                    });
+
+                    processor.handleToolEvent({
+                        type: 'tool_execution_complete',
+                        data: { id: toolId, name: toolName, status: 'success', result: resultContent, execution_time_ms: 0 }
+                    });
+                }
+            }
+        }
+
+        processor.finalize();
+        const blocks = processor.getBlocks();
+        const primary = primaryMessage || this.assistantMessages[0];
+
+        return new RenderableTurnObject({
+            role: 'assistant',
+            content: processor.getRawContent() || '',
+            blocks: blocks,
+            turnNumber: primary.turnNumber,
+            turnId: this.turnId,
+            parentTurnId: this.parentTurnId,
+            debugData: turnDebugData,
+            editCount: primary.editCount,
         });
     }
 }
