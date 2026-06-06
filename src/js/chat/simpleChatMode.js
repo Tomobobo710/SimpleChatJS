@@ -191,9 +191,37 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
         debug_data: debugData,
         edit_count: 0,
     });
+
+    const turnMessages = [errorMessage];
+    if (partialContent.trim() !== "") {
+        const systemContent = defaultErrorBlockContent(errorType);
+        const systemMessage = new Message({
+            id: null,
+            role: "system",
+            content: systemContent,
+            turn_number: assistantTurnNumber,
+            turn_id: finalTurnInfo.turn_id,
+            parent_turn_id: finalTurnInfo.parent_turn_id,
+            error_state: null,
+            debug_data: null,
+            edit_count: 0,
+        });
+        try {
+            await saveCompleteMessage(
+                currentChatId,
+                { role: "system", content: systemContent },
+                assistantTurnNumber,
+                finalTurnInfo
+            );
+        } catch (saveError) {
+            logger.warn(`Failed to save system error message:`, saveError);
+        }
+        turnMessages.push(systemMessage);
+    }
+
     const errorTurn = new Turn(
         assistantTurnNumber,
-        [errorMessage],
+        turnMessages,
         finalTurnInfo.turn_id,
         finalTurnInfo.parent_turn_id
     );

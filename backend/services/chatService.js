@@ -430,7 +430,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             messagesStmt = db.prepare(`
                 SELECT role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
                 FROM messages
-                WHERE chat_id = ? AND error_state IS NULL AND turn_id IN (${turnIdPlaceholders})
+                WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != '')) AND turn_id IN (${turnIdPlaceholders})
                 ORDER BY timestamp ASC
             `);
             chatMessages = messagesStmt.all(chat_id, ...ancestorIds);
@@ -438,7 +438,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             messagesStmt = db.prepare(`
                 SELECT role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
                 FROM messages
-                WHERE chat_id = ? AND error_state IS NULL
+                WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != ''))
                 ORDER BY timestamp ASC
             `);
             chatMessages = messagesStmt.all(chat_id);
