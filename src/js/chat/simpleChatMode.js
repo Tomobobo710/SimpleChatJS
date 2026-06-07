@@ -109,9 +109,12 @@ function updateChatTitleFromMessage(message) {
     }
 }
 
-// Unified error handler for the simple-chat flow. All error sources
-// (user-stop, api_error, connection_error, processing_error) funnel
-// through here. The data shape and the render path are the same.
+// Render-only error handler for the simple-chat flow. The backend owns
+// the save for all error types (assistant row + optional system message),
+// so this function just renders the in-memory state (partial streamed
+// content + an error block + a system message when partial content
+// exists) so the user sees something while the request wraps up. The
+// saved rows on the backend are the source of truth on reload.
 //
 //   errorType          - "user_stopped" | "api_error" | "connection_error" | "processing_error"
 //   processor          - the streaming processor (may be null/undefined for
@@ -119,22 +122,18 @@ function updateChatTitleFromMessage(message) {
 //                        for the user-stop and mid-stream connection_error
 //                        cases.
 //   userTurnInfo       - the user's saved turn info (used as parent for
-//                        the assistant turn when we have to save here).
+//                        the assistant turn).
 //   savedAssistantTurn - {turn_id, parent_turn_id} from the response
-//                        headers. For backend errors this is the turn the
-//                        backend already saved under. For user-stop this is
-//                        the turn the backend WOULD have used, but didn't
-//                        actually save (because we aborted before it could).
-//   shouldSave         - true if the frontend must save the error message
-//                        (user-stop). false if the backend already saved
-//                        (api/connection/processing errors).
+//                        headers, when available. For api/connection/
+//                        processing errors this is what the backend saved
+//                        under. For user_stopped this is null (headers
+//                        weren't read).
 //   userTurnNumber     - turn number of the user turn.
 //   message            - the original user message (for chat preview/title
 //                        updates).
-//   errorText          - the actual error text (from response body, abort
-//                        reason, JS error message, etc.). Stored in
-//                        debug_data and shown in the dropdown.
-async function handleSimpleChatError({ errorType, processor, userTurnInfo, savedAssistantTurn, shouldSave = false, userTurnNumber, message, errorText = "" }) {
+//   errorText          - the actual error text. Stored in debug_data and
+//                        shown in the dropdown.
+async function handleSimpleChatError({ errorType, processor, userTurnInfo, savedAssistantTurn, userTurnNumber, message, errorText = "" }) {
     const resolvedErrorText = errorText
         || (errorType === "user_stopped" ? "Generation stopped by user." : "")
         || `Error: ${errorType}`;
@@ -152,41 +151,13 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
 
     const debugData = { error: { type: errorType, message: resolvedErrorText } };
 
-    const willSave = shouldSave || !savedAssistantTurn;
-    let finalTurnInfo = savedAssistantTurn;
-    if (willSave) {
-        if (!shouldSave) {
-            logger.warn(`No savedAssistantTurn for ${errorType}; falling back to local save`);
-        }
-        const newTurnId = (typeof crypto !== "undefined" && crypto.randomUUID)
-            ? crypto.randomUUID()
-            : `turn_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        finalTurnInfo = {
-            turn_id: newTurnId,
-            parent_turn_id: userTurnInfo?.turn_id || null
-        };
-        try {
-            const saved = await saveCompleteMessage(
-                currentChatId,
-                { role: "assistant", content: partialContent, error_state: errorType, debug_data: debugData },
-                assistantTurnNumber,
-                finalTurnInfo
-            );
-            if (saved) {
-                finalTurnInfo = { turn_id: saved.turn_id, parent_turn_id: saved.parent_turn_id };
-            }
-        } catch (saveError) {
-            logger.warn(`Failed to save ${errorType} message:`, saveError);
-        }
-    }
-
     const errorMessage = new Message({
         id: null,
         role: "assistant",
         content: partialContent,
         turn_number: assistantTurnNumber,
-        turn_id: finalTurnInfo.turn_id,
-        parent_turn_id: finalTurnInfo.parent_turn_id,
+        turn_id: savedAssistantTurn?.turn_id || null,
+        parent_turn_id: savedAssistantTurn?.parent_turn_id || null,
         error_state: errorType,
         debug_data: debugData,
         edit_count: 0,
@@ -194,36 +165,25 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
 
     const turnMessages = [errorMessage];
     if (partialContent.trim() !== "") {
-        const systemContent = defaultErrorBlockContent(errorType);
         const systemMessage = new Message({
             id: null,
             role: "system",
-            content: systemContent,
+            content: defaultErrorBlockContent(errorType),
             turn_number: assistantTurnNumber,
-            turn_id: finalTurnInfo.turn_id,
-            parent_turn_id: finalTurnInfo.parent_turn_id,
+            turn_id: savedAssistantTurn?.turn_id || null,
+            parent_turn_id: savedAssistantTurn?.parent_turn_id || null,
             error_state: null,
             debug_data: null,
             edit_count: 0,
         });
-        try {
-            await saveCompleteMessage(
-                currentChatId,
-                { role: "system", content: systemContent },
-                assistantTurnNumber,
-                finalTurnInfo
-            );
-        } catch (saveError) {
-            logger.warn(`Failed to save system error message:`, saveError);
-        }
         turnMessages.push(systemMessage);
     }
 
     const errorTurn = new Turn(
         assistantTurnNumber,
         turnMessages,
-        finalTurnInfo.turn_id,
-        finalTurnInfo.parent_turn_id
+        savedAssistantTurn?.turn_id || null,
+        savedAssistantTurn?.parent_turn_id || null
     );
     chatRenderer.renderTurn(errorTurn.renderable(), true);
 
@@ -331,7 +291,6 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                     processor,
                     userTurnInfo,
                     savedAssistantTurn,
-                    shouldSave: errorType === 'user_stopped',
                     userTurnNumber,
                     message,
                     errorText

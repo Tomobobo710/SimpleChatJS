@@ -52,6 +52,7 @@ function initiateMessageRequest(
         // Create abort controller for this request
         const abortController = new AbortController();
         currentAbortController = abortController;
+        currentRequestId = generatedRequestId;
 
         // Log request size for debugging
         const requestBodyString = JSON.stringify(requestBody);
@@ -183,6 +184,9 @@ async function* streamResponse(response) {
         // Clean up abort controller when streaming is done
         if (currentAbortController) {
             currentAbortController = null;
+        }
+        if (currentRequestId) {
+            currentRequestId = null;
         }
     }
 }

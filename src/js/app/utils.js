@@ -115,6 +115,23 @@ function scrollToBottom(element) {
 
 // Global abort controller for stopping generation
 let currentAbortController = null;
+let currentRequestId = null;
+
+// Tell the backend to stop the in-flight chat request for this requestId.
+// The backend marks it user_stopped, destroys the upstream AI provider
+// request, and persists the partial content. We await this before
+// aborting the fetch so the cancel flag is set before the close handler
+// fires on the backend.
+async function cancelRequest(requestId) {
+    if (!requestId) return;
+    try {
+        await fetch(`${window.location.origin}/api/chat/cancel/${encodeURIComponent(requestId)}`, {
+            method: "POST"
+        });
+    } catch (error) {
+        logger.warn("Failed to cancel request:", error);
+    }
+}
 
 // Show/hide loading state
 function setLoading(isLoading) {
@@ -142,10 +159,12 @@ function stopStream() {
 }
 
 // Stop + cleanup + debug panels (full stop)
-function stopGeneration() {
+async function stopGeneration() {
     if (currentAbortController) {
+        await cancelRequest(currentRequestId);
         currentAbortController.abort();
         currentAbortController = null;
+        currentRequestId = null;
         setLoading(false);
         logger.info('Generation stopped by user');
         showNotification('Generation stopped', 'info');

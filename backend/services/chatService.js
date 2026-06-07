@@ -428,7 +428,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             const turnIdPlaceholders = ancestorIds.map(() => "?").join(",");
 
             messagesStmt = db.prepare(`
-                SELECT role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
+                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
                 FROM messages
                 WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != '')) AND turn_id IN (${turnIdPlaceholders})
                 ORDER BY timestamp ASC
@@ -436,7 +436,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             chatMessages = messagesStmt.all(chat_id, ...ancestorIds);
         } else {
             messagesStmt = db.prepare(`
-                SELECT role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
+                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
                 FROM messages
                 WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != ''))
                 ORDER BY timestamp ASC
@@ -478,7 +478,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
                 includeDebugData: false,
                 includeFileFields: false,
                 includeErrorState: false,
-                includeIdFallback: false,
+                includeIdFallback: true,
             });
 
             // Override content with AI-processed content
@@ -584,8 +584,63 @@ function buildSystemMessageIfEnabled() {
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
 
+// In-flight chat requests, keyed by requestId. Populated when the upstream
+// AI provider request starts, removed when it ends (success or error). Used
+// by the cancel endpoint to find and abort the right upstream `apiReq`,
+// and to coordinate the user_stopped save vs. the connection_error save.
+const inFlightRequests = new Map();
+
+// Cancel an in-flight chat request by requestId. Sets the user_stopped
+// flag, destroys the upstream request, and persists the partial content
+// as an assistant message with error_state "user_stopped". Returns
+// { found, reason }.
+function cancelInFlightRequest(requestId) {
+    const state = inFlightRequests.get(requestId);
+    if (!state) {
+        return { found: false, reason: "not_in_flight" };
+    }
+    if (state.saved) {
+        return { found: true, reason: "already_handled" };
+    }
+    state.cancelledByUser = true;
+    state.saved = true;
+    inFlightRequests.delete(requestId);
+
+    const streamedSoFar = (state.collectedDebugData && state.collectedDebugData.streamedContent) || "";
+    const errorMessage = {
+        role: "assistant",
+        content: streamedSoFar,
+        debug_data: {
+            error: { type: "user_stopped", message: "Generation stopped by user." }
+        }
+    };
+    saveCompleteMessageToDatabase(state.chatId, errorMessage, state.currentTurn, "user_stopped", state.turnInfo)
+        .then(async () => {
+            if (streamedSoFar && streamedSoFar.trim() !== "") {
+                await saveCompleteMessageToDatabase(state.chatId, { role: "system", content: "Generation stopped by user." }, state.currentTurn, null, state.turnInfo);
+            }
+            incrementTurnNumber(state.chatId);
+            log(`[CANCEL] Saved user_stopped and burned turn ${state.currentTurn} for requestId=${requestId}`);
+        })
+        .catch((saveError) => {
+            log(`[CANCEL] Failed to save user_stopped for requestId=${requestId}: ${saveError.message}`);
+        });
+
+    // Tear down the upstream. If the upstream isn't created yet, mark
+    // it for destruction when the apiRes callback fires. The
+    // apiReq.on("error") handler will see state.saved and skip its
+    // connection_error save.
+    if (state.apiReq) {
+        try { state.apiReq.destroy(); } catch (_) {}
+    } else {
+        state.destroyWhenCreated = true;
+    }
+    return { found: true, reason: "cancelled" };
+}
+
 // Handle chat with potential tool calls
 async function handleChatWithTools(
+    req,
     res,
     messages,
     tools,
@@ -760,7 +815,60 @@ async function handleChatWithTools(
 
     // Make HTTP request
     const httpModule = url.protocol === "https:" ? https : http;
+
+    // Register the in-flight state and set up the close handler BEFORE
+    // the upstream request is created, so a cancel that arrives before
+    // the upstream connects can still find this state and the close
+    // handler runs even if the upstream never connects.
+    const inFlightState = {
+        apiReq: null,
+        chatId,
+        currentTurn,
+        turnInfo,
+        collectedDebugData,
+        cancelledByUser: false,
+        saved: false,
+        destroyWhenCreated: false
+    };
+    if (requestId) {
+        inFlightRequests.set(requestId, inFlightState);
+    }
+
+    res.on("close", () => {
+        if (res.writableEnded) return;
+        if (inFlightState.saved) return;
+        inFlightState.saved = true;
+        if (requestId) inFlightRequests.delete(requestId);
+        if (inFlightState.apiReq) {
+            try { inFlightState.apiReq.destroy(); } catch (_) {}
+        }
+        const streamedSoFar = (collectedDebugData && collectedDebugData.streamedContent) || "";
+        const errorMessage = {
+            role: "assistant",
+            content: streamedSoFar,
+            debug_data: {
+                ...(collectedDebugData || {}),
+                error: { type: "connection_error", message: "Client disconnected" }
+            }
+        };
+        saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
+            .then(async () => {
+                if (streamedSoFar && streamedSoFar.trim() !== "") {
+                    await saveCompleteMessageToDatabase(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
+                }
+                incrementTurnNumber(chatId);
+                log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
+            })
+            .catch((saveError) => {
+                log(`[ERROR-HANDLING] Failed to save connection error: ${saveError.message}`);
+            });
+    });
+
     const apiReq = httpModule.request(options, (apiRes) => {
+        inFlightState.apiReq = apiReq;
+        if (inFlightState.destroyWhenCreated) {
+            apiReq.destroy();
+        }
         // Capture debug data
         if (collectedDebugData && collectedDebugData.rawData) {
             collectedDebugData.rawData.httpResponse = {
@@ -905,6 +1013,15 @@ async function handleChatWithTools(
         apiRes.on("end", async () => {
             log(`[${adapter.providerName.toUpperCase()}-ADAPTER] Stream ended`);
 
+            // If cancel or the error handler already saved an error row,
+            // don't run the normal success save/increment.
+            if (inFlightState.saved) {
+                if (requestId) inFlightRequests.delete(requestId);
+                return;
+            }
+            inFlightState.saved = true;
+            if (requestId) inFlightRequests.delete(requestId);
+
             // Add response step to debug sequence
             if (collectedDebugData && collectedDebugData.sequence) {
                 const responseStep = {
@@ -964,6 +1081,7 @@ async function handleChatWithTools(
 
                 // Execute tools and continue conversation
                 await executeToolCallsAndContinue(
+                    req,
                     res,
                     unifiedResponse.toolCalls,
                     messages,
@@ -1040,6 +1158,14 @@ async function handleChatWithTools(
             collectedDebugData.rawData.errors.push({ type: "request_error", message: error.message });
         }
 
+        // If the cancel handler already saved user_stopped, the destroy()
+        // it called will surface here. Skip the connection_error save.
+        if (inFlightState.saved) {
+            return;
+        }
+        inFlightState.saved = true;
+        if (requestId) inFlightRequests.delete(requestId);
+
         // Save connection error and burn the turn. Preserve whatever was
         // streamed before the connection dropped so the user can read
         // the partial response alongside the error indicator.
@@ -1054,7 +1180,10 @@ async function handleChatWithTools(
                 }
             };
             saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
-                .then(() => {
+                .then(async () => {
+                    if (streamedSoFar && streamedSoFar.trim() !== "") {
+                        await saveCompleteMessageToDatabase(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
+                    }
                     incrementTurnNumber(chatId); // Burn the turn
                     log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
                 })
@@ -1104,6 +1233,7 @@ async function handleChatWithTools(
 
 // Execute tool calls and continue conversation
 async function executeToolCallsAndContinue(
+    req,
     res,
     toolCalls,
     messages,
@@ -1249,6 +1379,7 @@ async function executeToolCallsAndContinue(
 
     // Continue conversation with tool results
     await handleChatWithTools(
+        req,
         res,
         messages,
         tools,
@@ -1343,6 +1474,7 @@ async function processChatRequest(req, res) {
         initializeToolEvents(requestId);
 
         await handleChatWithTools(
+            req,
             res,
             messages,
             tools,
@@ -1467,6 +1599,7 @@ function createMessageWithSeparatedFiles(userText, files = [], images = []) {
 module.exports = {
     handleChatWithTools,
     processChatRequest,
+    cancelInFlightRequest,
     saveCompleteMessageToDatabase,
     getChatHistoryForAPI,
     buildSystemMessageIfEnabled,
