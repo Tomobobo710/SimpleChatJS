@@ -109,74 +109,86 @@ function updateChatTitleFromMessage(message) {
     }
 }
 
-async function handleSimpleChatAbort({ userTurnNumber, message, processor }) {
-    logger.info('Simple chat stopped by user');
+// Render-only error handler for the simple-chat flow. The backend owns
+// the save for all error types (assistant row + optional system message),
+// so this function just renders the in-memory state (partial streamed
+// content + an error block + a system message when partial content
+// exists) so the user sees something while the request wraps up. The
+// saved rows on the backend are the source of truth on reload.
+//
+//   errorType          - "user_stopped" | "api_error" | "connection_error" | "processing_error"
+//   processor          - the streaming processor (may be null/undefined for
+//                        non-stream errors). Provides the partial content
+//                        for the user-stop and mid-stream connection_error
+//                        cases.
+//   userTurnInfo       - the user's saved turn info (used as parent for
+//                        the assistant turn).
+//   savedAssistantTurn - {turn_id, parent_turn_id} from the response
+//                        headers, when available. For api/connection/
+//                        processing errors this is what the backend saved
+//                        under. For user_stopped this is null (headers
+//                        weren't read).
+//   userTurnNumber     - turn number of the user turn.
+//   message            - the original user message (for chat preview/title
+//                        updates).
+//   errorText          - the actual error text. Stored in debug_data and
+//                        shown in the dropdown.
+async function handleSimpleChatError({ errorType, processor, userTurnInfo, savedAssistantTurn, userTurnNumber, message, errorText = "" }) {
+    const resolvedErrorText = errorText
+        || (errorType === "user_stopped" ? "Generation stopped by user." : "")
+        || `Error: ${errorType}`;
 
-    const stoppedDebugData = {
-        sequence: [{
-            type: 'user_stopped',
-            step: 1,
-            timestamp: new Date().toISOString(),
-            data: {
-                message: 'Generation stopped by user',
-                partial_content: processor.getDisplayContent() || '',
-            },
-        }],
-        metadata: {
-            endpoint: 'stopped_generation',
-            timestamp: new Date().toISOString(),
-            partial: true,
-        },
-    };
+    logger.error(`Simple chat failed (${errorType}): ${resolvedErrorText}`);
 
-    processor.finalize();
+    const partialContent = (processor && typeof processor.getRawContent === "function")
+        ? (processor.getRawContent() || "")
+        : "";
+    const assistantTurnNumber = userTurnNumber + 1;
 
-    const partialAssistantMessage = new Message({
-        id: null,
-        role: 'assistant',
-        content: processor.getRawContent() || '',
-        turn_number: 0,
-        debug_data: stoppedDebugData,
-        edit_count: 0,
-    });
-    const partialTurn = new Turn(0, [partialAssistantMessage]);
-    chatRenderer.renderTurn(partialTurn.renderable(), true);
-
-    try {
-        // Don't bump the in-memory turn counter here; compute the
-        // assistant's number from the user's number.
-        const assistantTurnNumber = userTurnNumber + 1;
-        stoppedDebugData.currentTurnNumber = assistantTurnNumber;
-
-        const partialContent = processor.getRawContent() || '';
-        logger.info(`[FRONTEND] Stopped message rendered, backend handles saving`);
-
-        // Aborted streams have no turn_id yet; debug data is best-effort and dropped.
-        stoppedDebugData.turn_id = null;
-        stoppedDebugData.parent_turn_id = null;
-
-        updateChatPreview(currentChatId, partialContent);
-        updateChatTitleFromMessage(message);
-    } catch (saveError) {
-        logger.warn('Failed to save stopped message:', saveError);
+    if (processor && typeof processor.finalize === "function") {
+        processor.finalize();
     }
-}
 
-async function handleSimpleChatError({ error, message }) {
-    logger.error('Simple chat failed:', error, true);
+    const debugData = { error: { type: errorType, message: resolvedErrorText } };
 
     const errorMessage = new Message({
         id: null,
-        role: 'assistant',
-        content: `[ERROR] ${error.message}`,
-        turn_number: 0,
-        debug_data: null,
+        role: "assistant",
+        content: partialContent,
+        turn_number: assistantTurnNumber,
+        turn_id: savedAssistantTurn?.turn_id || null,
+        parent_turn_id: savedAssistantTurn?.parent_turn_id || null,
+        error_state: errorType,
+        debug_data: debugData,
         edit_count: 0,
-        error_state: error.message,
     });
-    const errorTurn = new Turn(0, [errorMessage]);
-    const errorRto = errorTurn.renderable();
-    chatRenderer.renderTurn(errorRto, true);
+
+    const turnMessages = [errorMessage];
+    if (partialContent.trim() !== "") {
+        const systemMessage = new Message({
+            id: null,
+            role: "system",
+            content: defaultErrorBlockContent(errorType),
+            turn_number: assistantTurnNumber,
+            turn_id: savedAssistantTurn?.turn_id || null,
+            parent_turn_id: savedAssistantTurn?.parent_turn_id || null,
+            error_state: null,
+            debug_data: null,
+            edit_count: 0,
+        });
+        turnMessages.push(systemMessage);
+    }
+
+    const errorTurn = new Turn(
+        assistantTurnNumber,
+        turnMessages,
+        savedAssistantTurn?.turn_id || null,
+        savedAssistantTurn?.parent_turn_id || null
+    );
+    chatRenderer.renderTurn(errorTurn.renderable(), true);
+
+    updateChatPreview(currentChatId, partialContent);
+    updateChatTitleFromMessage(message);
 }
 
 async function handleSimpleChat(message, conversationHistory, parentTurnId = null) {
@@ -266,12 +278,23 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                 updateChatTitleFromMessage(message);
             },
 
-            onError: (error, processor) => {
-                if (error.name === 'AbortError') {
-                    handleSimpleChatAbort({ userTurnNumber, message, processor });
-                } else {
-                    handleSimpleChatError({ error, message });
-                }
+            onError: (error, processor, userTurnInfo, savedAssistantTurn) => {
+                const errorType = error.name === 'AbortError'
+                    ? 'user_stopped'
+                    : (error.streamErrorType || 'api_error');
+                const errorText = error.errorText
+                    || (error.name === 'AbortError' ? 'Generation stopped by user.' : '')
+                    || error.message
+                    || '';
+                handleSimpleChatError({
+                    errorType,
+                    processor,
+                    userTurnInfo,
+                    savedAssistantTurn,
+                    userTurnNumber,
+                    message,
+                    errorText
+                });
             },
         });
 

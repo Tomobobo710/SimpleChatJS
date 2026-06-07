@@ -428,17 +428,17 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             const turnIdPlaceholders = ancestorIds.map(() => "?").join(",");
 
             messagesStmt = db.prepare(`
-                SELECT role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
+                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
                 FROM messages
-                WHERE chat_id = ? AND error_state IS NULL AND turn_id IN (${turnIdPlaceholders})
+                WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != '')) AND turn_id IN (${turnIdPlaceholders})
                 ORDER BY timestamp ASC
             `);
             chatMessages = messagesStmt.all(chat_id, ...ancestorIds);
         } else {
             messagesStmt = db.prepare(`
-                SELECT role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
+                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
                 FROM messages
-                WHERE chat_id = ? AND error_state IS NULL
+                WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != ''))
                 ORDER BY timestamp ASC
             `);
             chatMessages = messagesStmt.all(chat_id);
@@ -478,7 +478,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
                 includeDebugData: false,
                 includeFileFields: false,
                 includeErrorState: false,
-                includeIdFallback: false,
+                includeIdFallback: true,
             });
 
             // Override content with AI-processed content
@@ -584,8 +584,63 @@ function buildSystemMessageIfEnabled() {
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
 
+// In-flight chat requests, keyed by requestId. Populated when the upstream
+// AI provider request starts, removed when it ends (success or error). Used
+// by the cancel endpoint to find and abort the right upstream `apiReq`,
+// and to coordinate the user_stopped save vs. the connection_error save.
+const inFlightRequests = new Map();
+
+// Cancel an in-flight chat request by requestId. Sets the user_stopped
+// flag, destroys the upstream request, and persists the partial content
+// as an assistant message with error_state "user_stopped". Returns
+// { found, reason }.
+function cancelInFlightRequest(requestId) {
+    const state = inFlightRequests.get(requestId);
+    if (!state) {
+        return { found: false, reason: "not_in_flight" };
+    }
+    if (state.saved) {
+        return { found: true, reason: "already_handled" };
+    }
+    state.cancelledByUser = true;
+    state.saved = true;
+    inFlightRequests.delete(requestId);
+
+    const streamedSoFar = (state.collectedDebugData && state.collectedDebugData.streamedContent) || "";
+    const errorMessage = {
+        role: "assistant",
+        content: streamedSoFar,
+        debug_data: {
+            error: { type: "user_stopped", message: "Generation stopped by user." }
+        }
+    };
+    saveCompleteMessageToDatabase(state.chatId, errorMessage, state.currentTurn, "user_stopped", state.turnInfo)
+        .then(async () => {
+            if (streamedSoFar && streamedSoFar.trim() !== "") {
+                await saveCompleteMessageToDatabase(state.chatId, { role: "system", content: "Generation stopped by user." }, state.currentTurn, null, state.turnInfo);
+            }
+            incrementTurnNumber(state.chatId);
+            log(`[CANCEL] Saved user_stopped and burned turn ${state.currentTurn} for requestId=${requestId}`);
+        })
+        .catch((saveError) => {
+            log(`[CANCEL] Failed to save user_stopped for requestId=${requestId}: ${saveError.message}`);
+        });
+
+    // Tear down the upstream. If the upstream isn't created yet, mark
+    // it for destruction when the apiRes callback fires. The
+    // apiReq.on("error") handler will see state.saved and skip its
+    // connection_error save.
+    if (state.apiReq) {
+        try { state.apiReq.destroy(); } catch (_) {}
+    } else {
+        state.destroyWhenCreated = true;
+    }
+    return { found: true, reason: "cancelled" };
+}
+
 // Handle chat with potential tool calls
 async function handleChatWithTools(
+    req,
     res,
     messages,
     tools,
@@ -599,7 +654,6 @@ async function handleChatWithTools(
 ) {
     const currentSettings = getCurrentSettings();
 
-    // Ensure we have a model name
     if (!currentSettings.modelName) {
         res.status(400).json({ error: "No model specified. Please configure a model in settings." });
         return;
@@ -617,8 +671,6 @@ async function handleChatWithTools(
     });
 
     // Generate turn info for this conversation turn
-    // userTurnId = the turn_id of the message that triggered this (user's turn_id for first call, assistant's for tool call chain)
-    // parentTurnId = the parent_turn_id to use (from frontend for first call, from previous turn for recursive calls)
     let turnInfo;
     if (responseCounter > 1 && userTurnId) {
         turnInfo = getTurnInfo(parentTurnId, userTurnId);
@@ -634,28 +686,27 @@ async function handleChatWithTools(
     // Convert to provider-specific format
     const requestData = adapter.convertRequest(unifiedRequest);
 
-    // Set up streaming response FIRST
+    // Set up streaming response headers FIRST. We use setHeader (not
+    // writeHead) so the error paths can add `X-Stream-Error` later if
+    // the API errors out — writeHead flushes headers immediately and
+    // setHeader calls after it are silently dropped.
     if (!res.headersSent) {
-        const headers = {
-            "Content-Type": "text/plain",
-            "Transfer-Encoding": "chunked"
-        };
+        res.setHeader("Content-Type", "text/plain");
+        res.setHeader("Transfer-Encoding", "chunked");
 
         if (requestId) {
-            headers["X-Request-Id"] = requestId;
+            res.setHeader("X-Request-Id", requestId);
         }
 
         // Assistant turn identifiers in response headers, set up-front so
         // the frontend can stamp the rendered bubble. Stable for the
         // entire tool-call chain.
         if (turnInfo?.turn_id) {
-            headers["X-Assistant-Turn-Id"] = turnInfo.turn_id;
+            res.setHeader("X-Assistant-Turn-Id", turnInfo.turn_id);
         }
         if (turnInfo?.parent_turn_id) {
-            headers["X-Assistant-Parent-Turn-Id"] = turnInfo.parent_turn_id;
+            res.setHeader("X-Assistant-Parent-Turn-Id", turnInfo.parent_turn_id);
         }
-
-        res.writeHead(200, headers);
     }
 
     // Initialize debug data and turn number
@@ -764,7 +815,60 @@ async function handleChatWithTools(
 
     // Make HTTP request
     const httpModule = url.protocol === "https:" ? https : http;
+
+    // Register the in-flight state and set up the close handler BEFORE
+    // the upstream request is created, so a cancel that arrives before
+    // the upstream connects can still find this state and the close
+    // handler runs even if the upstream never connects.
+    const inFlightState = {
+        apiReq: null,
+        chatId,
+        currentTurn,
+        turnInfo,
+        collectedDebugData,
+        cancelledByUser: false,
+        saved: false,
+        destroyWhenCreated: false
+    };
+    if (requestId) {
+        inFlightRequests.set(requestId, inFlightState);
+    }
+
+    res.on("close", () => {
+        if (res.writableEnded) return;
+        if (inFlightState.saved) return;
+        inFlightState.saved = true;
+        if (requestId) inFlightRequests.delete(requestId);
+        if (inFlightState.apiReq) {
+            try { inFlightState.apiReq.destroy(); } catch (_) {}
+        }
+        const streamedSoFar = (collectedDebugData && collectedDebugData.streamedContent) || "";
+        const errorMessage = {
+            role: "assistant",
+            content: streamedSoFar,
+            debug_data: {
+                ...(collectedDebugData || {}),
+                error: { type: "connection_error", message: "Client disconnected" }
+            }
+        };
+        saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
+            .then(async () => {
+                if (streamedSoFar && streamedSoFar.trim() !== "") {
+                    await saveCompleteMessageToDatabase(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
+                }
+                incrementTurnNumber(chatId);
+                log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
+            })
+            .catch((saveError) => {
+                log(`[ERROR-HANDLING] Failed to save connection error: ${saveError.message}`);
+            });
+    });
+
     const apiReq = httpModule.request(options, (apiRes) => {
+        inFlightState.apiReq = apiReq;
+        if (inFlightState.destroyWhenCreated) {
+            apiReq.destroy();
+        }
         // Capture debug data
         if (collectedDebugData && collectedDebugData.rawData) {
             collectedDebugData.rawData.httpResponse = {
@@ -806,12 +910,24 @@ async function handleChatWithTools(
                     }
                 }
 
-                // Save error message and burn the turn
+                // Save error message and burn the turn. Status check
+                // happens before any data is streamed, so content is
+                // always empty here. The specific API error text is
+                // kept in debug_data for the dropdown to show.
                 if (chatId && currentTurn) {
                     const errorMessage = {
                         role: "assistant",
-                        content: userErrorMessage,
-                        debug_data: collectedDebugData
+                        content: "",
+                        debug_data: {
+                            ...(collectedDebugData || {}),
+                            error: {
+                                type: "api_error",
+                                status_code: apiRes.statusCode,
+                                status_message: apiRes.statusMessage,
+                                user_message: userErrorMessage,
+                                raw_response: errorData
+                            }
+                        }
                     };
                     saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, "api_error", turnInfo)
                         .then(() => {
@@ -823,6 +939,12 @@ async function handleChatWithTools(
                         });
                 }
 
+                // Signal the error type via header so the frontend can
+                // render the unified error block instead of the raw
+                // text we wrote below.
+                if (!res.headersSent) {
+                    res.setHeader("X-Stream-Error", "api_error");
+                }
                 res.write(userErrorMessage);
                 res.end();
             });
@@ -891,6 +1013,15 @@ async function handleChatWithTools(
         apiRes.on("end", async () => {
             log(`[${adapter.providerName.toUpperCase()}-ADAPTER] Stream ended`);
 
+            // If cancel or the error handler already saved an error row,
+            // don't run the normal success save/increment.
+            if (inFlightState.saved) {
+                if (requestId) inFlightRequests.delete(requestId);
+                return;
+            }
+            inFlightState.saved = true;
+            if (requestId) inFlightRequests.delete(requestId);
+
             // Add response step to debug sequence
             if (collectedDebugData && collectedDebugData.sequence) {
                 const responseStep = {
@@ -950,6 +1081,7 @@ async function handleChatWithTools(
 
                 // Execute tools and continue conversation
                 await executeToolCallsAndContinue(
+                    req,
                     res,
                     unifiedResponse.toolCalls,
                     messages,
@@ -1026,15 +1158,32 @@ async function handleChatWithTools(
             collectedDebugData.rawData.errors.push({ type: "request_error", message: error.message });
         }
 
-        // Save connection error and burn the turn
+        // If the cancel handler already saved user_stopped, the destroy()
+        // it called will surface here. Skip the connection_error save.
+        if (inFlightState.saved) {
+            return;
+        }
+        inFlightState.saved = true;
+        if (requestId) inFlightRequests.delete(requestId);
+
+        // Save connection error and burn the turn. Preserve whatever was
+        // streamed before the connection dropped so the user can read
+        // the partial response alongside the error indicator.
         if (chatId && currentTurn) {
+            const streamedSoFar = (collectedDebugData && collectedDebugData.streamedContent) || "";
             const errorMessage = {
                 role: "assistant",
-                content: `Connection error: ${error.message}`,
-                debug_data: collectedDebugData
+                content: streamedSoFar,
+                debug_data: {
+                    ...(collectedDebugData || {}),
+                    error: { type: "connection_error", message: error.message }
+                }
             };
             saveCompleteMessageToDatabase(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
-                .then(() => {
+                .then(async () => {
+                    if (streamedSoFar && streamedSoFar.trim() !== "") {
+                        await saveCompleteMessageToDatabase(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
+                    }
                     incrementTurnNumber(chatId); // Burn the turn
                     log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
                 })
@@ -1043,6 +1192,11 @@ async function handleChatWithTools(
                 });
         }
 
+        // Signal the error type via header (best effort: may already
+        // be sent if we got far enough to start streaming).
+        if (!res.headersSent) {
+            res.setHeader("X-Stream-Error", "connection_error");
+        }
         res.write(`Connection error: ${error.message}`);
         res.end();
     });
@@ -1079,6 +1233,7 @@ async function handleChatWithTools(
 
 // Execute tool calls and continue conversation
 async function executeToolCallsAndContinue(
+    req,
     res,
     toolCalls,
     messages,
@@ -1224,6 +1379,7 @@ async function executeToolCallsAndContinue(
 
     // Continue conversation with tool results
     await handleChatWithTools(
+        req,
         res,
         messages,
         tools,
@@ -1318,6 +1474,7 @@ async function processChatRequest(req, res) {
         initializeToolEvents(requestId);
 
         await handleChatWithTools(
+            req,
             res,
             messages,
             tools,
@@ -1333,15 +1490,25 @@ async function processChatRequest(req, res) {
     } catch (error) {
         log("[CHAT] Error:", error);
 
-        // Save processing error and burn the turn
+        // Save processing error and burn the turn. This is a
+        // synchronous early-failure catch — no streamed content
+        // exists. Specific error info goes in debug_data for the
+        // dropdown.
+        const turnInfo = getTurnInfo(parent_turn_id, turn_id);
         if (chat_id) {
             const currentTurn = getCurrentTurnNumber(chat_id) + 1;
             const errorMessage = {
                 role: "assistant",
-                content: `Processing error: ${error.message}`,
-                debug_data: { error: error.message, stack: error.stack }
+                content: "",
+                debug_data: {
+                    error: {
+                        type: "processing_error",
+                        message: error.message,
+                        stack: error.stack
+                    }
+                }
             };
-            saveCompleteMessageToDatabase(chat_id, errorMessage, currentTurn, "processing_error")
+            saveCompleteMessageToDatabase(chat_id, errorMessage, currentTurn, "processing_error", turnInfo)
                 .then(() => {
                     incrementTurnNumber(chat_id); // Burn the turn
                     log(`[ERROR-HANDLING] Saved processing error and burned turn ${currentTurn}`);
@@ -1353,6 +1520,11 @@ async function processChatRequest(req, res) {
 
         // Only send error response if headers haven't been sent yet
         if (!res.headersSent) {
+            // Signal error + emit turn-id headers so the frontend can
+            // route to the unified error renderer.
+            res.setHeader("X-Stream-Error", "processing_error");
+            if (turnInfo?.turn_id) res.setHeader("X-Assistant-Turn-Id", turnInfo.turn_id);
+            if (turnInfo?.parent_turn_id) res.setHeader("X-Assistant-Parent-Turn-Id", turnInfo.parent_turn_id);
             res.status(500).json({ error: error.message });
         } else {
             // If streaming has started, we can't send JSON, so just end the stream
@@ -1427,6 +1599,7 @@ function createMessageWithSeparatedFiles(userText, files = [], images = []) {
 module.exports = {
     handleChatWithTools,
     processChatRequest,
+    cancelInFlightRequest,
     saveCompleteMessageToDatabase,
     getChatHistoryForAPI,
     buildSystemMessageIfEnabled,

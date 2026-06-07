@@ -22,7 +22,10 @@ function truncateTurnsInContainer(container, fromTurnNumber) {
 
 // Stream the assistant response, render the bubble with the right turn
 // info, and save debug data. Returns the saved assistant's turn info.
-// On error, calls onError(error, processor) before re-throwing.
+// On error, calls onError(error, processor, userTurnInfo, savedAssistantTurn)
+// before re-throwing. savedAssistantTurn is passed for backend errors
+// (so the handler knows the backend already saved the error message and
+// doesn't need to re-save).
 async function streamAndRenderAssistant({
     fetchPromise,
     requestId,
@@ -63,23 +66,76 @@ async function streamAndRenderAssistant({
         logger.warn("Failed to connect to tool events:", error);
     }
 
+    let savedAssistantTurn = null;
+    let errorAlreadyHandled = false;
+
+    async function drainBodyForError(response) {
+        let text = "";
+        try {
+            text = await response.text();
+        } catch (_) {}
+        if (!text) return "";
+        try {
+            const json = JSON.parse(text);
+            return json.error || json.message || text;
+        } catch (_) {
+            return text;
+        }
+    }
+
+    function fireError(err) {
+        errorAlreadyHandled = true;
+        if (toolEventSource) {
+            toolEventSource.close();
+        }
+        tempContainer.remove();
+        assistantTurnDiv.remove();
+        if (onError) {
+            try {
+                onError(err, processor, userTurnInfo, savedAssistantTurn);
+            } catch (handlerError) {
+                logger.error("onError handler threw:", handlerError);
+            }
+        }
+    }
+
     try {
         const response = await fetchPromise;
 
-        // Read assistant turn identifiers from response headers. Both
-        // headers are required; missing headers throw.
+        if (!response.ok) {
+            const errorText = await drainBodyForError(response);
+            const err = new Error(errorText || `HTTP ${response.status}`);
+            err.streamErrorType = "api_error";
+            err.errorText = errorText || `HTTP ${response.status}`;
+            err.httpStatus = response.status;
+            fireError(err);
+            throw err;
+        }
+
         const assistantTurnId = response.headers.get("X-Assistant-Turn-Id");
         const assistantParentTurnId = response.headers.get("X-Assistant-Parent-Turn-Id");
         if (!assistantTurnId || !assistantParentTurnId) {
-            throw new Error(
-                `Backend did not emit required assistant-turn headers ` +
-                    `(X-Assistant-Turn-Id=${assistantTurnId}, X-Assistant-Parent-Turn-Id=${assistantParentTurnId})`
-            );
+            const errorText = await drainBodyForError(response);
+            const err = new Error(errorText || "Backend did not emit required assistant-turn headers");
+            err.streamErrorType = "api_error";
+            err.errorText = errorText || "Backend did not emit required assistant-turn headers";
+            fireError(err);
+            throw err;
         }
-        const savedAssistantTurn = {
+        savedAssistantTurn = {
             turn_id: assistantTurnId,
             parent_turn_id: assistantParentTurnId
         };
+
+        const streamErrorType = response.headers.get("X-Stream-Error");
+        if (streamErrorType) {
+            const errorText = await drainBodyForError(response);
+            const streamError = new Error(errorText || `Backend stream error: ${streamErrorType}`);
+            streamError.streamErrorType = streamErrorType;
+            streamError.errorText = errorText;
+            fireError(streamError);
+            throw streamError;
+        }
 
         for await (const chunk of streamResponse(response)) {
             processor.addChunk(chunk);
@@ -163,16 +219,18 @@ async function streamAndRenderAssistant({
 
         return { savedAssistantTurn, debugData, processor };
     } catch (error) {
-        if (toolEventSource) {
-            toolEventSource.close();
-        }
-        tempContainer.remove();
-        assistantTurnDiv.remove();
-        if (onError) {
-            try {
-                onError(error, processor);
-            } catch (_) {
-                /* swallow */
+        if (!errorAlreadyHandled) {
+            if (toolEventSource) {
+                toolEventSource.close();
+            }
+            tempContainer.remove();
+            assistantTurnDiv.remove();
+            if (onError) {
+                try {
+                    onError(error, processor, userTurnInfo, savedAssistantTurn);
+                } catch (handlerError) {
+                    logger.error("onError handler threw:", handlerError);
+                }
             }
         }
         throw error;
@@ -201,8 +259,8 @@ async function sendAndStream({
     onAssistantRendered = null,
 
     // Optional: hook called when the stream errors out (after cleanup). Receives
-    // the error and the streaming processor (so callers can render a partial
-    // message on AbortError).
+    // the error, the streaming processor (so callers can render a partial
+    // message on AbortError), and the userTurnInfo if the user message was saved.
     onError = null,
 
     inputMethod = "manual"

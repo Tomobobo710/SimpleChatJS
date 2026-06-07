@@ -86,7 +86,8 @@ function serializeMessageForDb(messageData) {
         : messageData.content || "";
 
     const toolCalls = messageData.tool_calls ? JSON.stringify(messageData.tool_calls) : null;
-    const debugData = messageData.debug_data ? JSON.stringify(messageData.debug_data) : null;
+    const debugDataVal = messageData.debugData ?? messageData.debug_data;
+    const debugData = debugDataVal ? JSON.stringify(debugDataVal) : null;
 
     // Handle original content — may come as originalContent (camelCase) or original_content
     const originalContentVal = messageData.originalContent ?? messageData.original_content;

@@ -16,7 +16,13 @@ class Message {
         this.toolResults = data.tool_results ?? null;
         this.thinking = data.thinking ?? null;
         this.errorState = data.error_state ?? null;
-        this.debugData = data.debug_data ?? null;
+        const rawDebug = data.debug_data ?? null;
+        if (rawDebug && typeof rawDebug === 'string') {
+            try { this.debugData = JSON.parse(rawDebug); }
+            catch (_) { this.debugData = rawDebug; }
+        } else {
+            this.debugData = rawDebug;
+        }
         this.editCount = data.edit_count ?? 0;
         this.editedAt = data.edited_at ?? null;
     }

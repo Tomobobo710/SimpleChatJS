@@ -1,7 +1,7 @@
 // Chat routes - Handle chat operations and messaging
 const express = require("express");
 const { db } = require("../config/database");
-const { processChatRequest, saveTurnDebugData, getTurnDebugData } = require("../services/chatService");
+const { processChatRequest, cancelInFlightRequest, saveTurnDebugData, getTurnDebugData } = require("../services/chatService");
 const { log } = require("../utils/logger");
 
 const router = express.Router();
@@ -181,7 +181,7 @@ router.get("/chat/:id/history-complete", (req, res) => {
 
         // Get ALL messages for the chat including errored ones
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
             WHERE chat_id = ?
             ORDER BY timestamp ASC
@@ -192,7 +192,7 @@ router.get("/chat/:id/history-complete", (req, res) => {
 
         const messages = chatMessages.map((row) =>
             parseDbRowToMessage(row, {
-                includeDebugData: false,
+                includeDebugData: true,
                 includeFileFields: true,
                 includeErrorState: true,
             })
@@ -285,19 +285,21 @@ router.delete("/chat/:id", (req, res) => {
 // Save message using unified approach
 router.post("/message", async (req, res) => {
     try {
-        const {
-            chat_id,
-            role,
-            content,
-            turn_number,
-            tool_calls,
-            tool_call_id,
-            tool_name,
-            original_content,
-            file_metadata,
-            turn_id,
-            parent_turn_id
-        } = req.body;
+    const {
+        chat_id,
+        role,
+        content,
+        turn_number,
+        tool_calls,
+        tool_call_id,
+        tool_name,
+        original_content,
+        file_metadata,
+        turn_id,
+        parent_turn_id,
+        error_state,
+        debug_data
+    } = req.body;
 
         if (!chat_id || !role || content === null || content === undefined) {
             return res.status(400).json({ error: "chat_id, role, and content are required" });
@@ -317,6 +319,7 @@ router.post("/message", async (req, res) => {
         // Add new file handling fields if present
         if (original_content !== undefined) completeMessage.originalContent = original_content;
         if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
+        if (debug_data !== undefined) completeMessage.debugData = debug_data;
 
         // Use the unified save function
         const { saveCompleteMessageToDatabase, incrementTurnNumber, getTurnInfo, buildSystemMessageIfEnabled } = require("../services/chatService");
@@ -336,7 +339,7 @@ router.post("/message", async (req, res) => {
         }
 
         // Use turn number provided by frontend
-        await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number, null, turnInfo);
+        await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number, error_state || null, turnInfo);
 
         // Increment turn number when user sends a message (starts new conversation turn)
         if (role === "user") {
@@ -529,6 +532,20 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
 
 // Main chat endpoint that frontend expects
 router.post("/chat", processChatRequest);
+
+// Cancel an in-flight chat request. Marks it user_stopped, destroys the
+// upstream AI provider request, and persists the partial content as an
+// assistant message with error_state "user_stopped".
+router.post("/chat/cancel/:requestId", (req, res) => {
+    const { requestId } = req.params;
+    try {
+        const result = cancelInFlightRequest(requestId);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        log(`[CANCEL] Error cancelling requestId=${requestId}: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Edit message content
 router.patch("/message/:id", async (req, res) => {
