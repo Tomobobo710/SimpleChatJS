@@ -124,6 +124,15 @@ class ChatRenderer {
                 this.addDebugPanel(turnDiv, domId, debugData, turnNumber);
             }
 
+            // Edit badge: edit_count is incremented only by in-place edits
+            // (the PATCH path), never by edit-retry carry-forward. The
+            // badge therefore reflects "this row was directly edited N
+            // times" and persists across reloads/branch switches because
+            // it's read from the DB on every render.
+            if (editCount > 0) {
+                this.addEditIndicator(turnDiv, editCount);
+            }
+
             this.container.appendChild(turnDiv);
 
             // Handle scrolling
@@ -1652,93 +1661,77 @@ class ChatRenderer {
             saveBtn.textContent = "Saving...";
             saveBtn.disabled = true;
 
-            // Check if this is an "Edit & Retry" - if so, skip saving edits to preserve original turn
+            // Check if this is an "Edit & Retry" - if so, do not PATCH the
+            // originals; the carry-forward in exitMessageEditMode is the edit.
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
 
             if (!isEditRetry) {
-                // Save each message (normal edit without retry)
-                const savePromises = Array.from(messageContainers).map(async (container) => {
-                    const messageId = container.dataset.messageId;
-                    const textarea = container.querySelector(".message-content-textarea");
-                    const newTextContent = textarea.value;
+                // Save each message (normal in-place edit, no retry)
+                await Promise.all(
+                    Array.from(messageContainers).map(async (container) => {
+                        const messageId = container.dataset.messageId;
+                        const textarea = container.querySelector(".message-content-textarea");
+                        const newTextContent = textarea.value;
 
-                    if (messageId && newTextContent !== undefined) {
-                        // Reconstruct content properly - _originalContent is always an array now
-                        let finalContent;
+                        if (messageId && newTextContent !== undefined) {
+                            // Reconstruct content properly - _originalContent is always an array now
+                            let finalContent;
 
-                        if (Array.isArray(container._originalContent)) {
-                            // Reconstruct content with text, images, AND files
-                            const reconstructedArray = [];
+                            if (Array.isArray(container._originalContent)) {
+                                // Reconstruct content with text, images, AND files
+                                const reconstructedArray = [];
 
-                            // Add text part
-                            if (newTextContent) {
-                                reconstructedArray.push({ type: "text", text: newTextContent });
-                            }
+                                // Add text part
+                                if (newTextContent) {
+                                    reconstructedArray.push({ type: "text", text: newTextContent });
+                                }
 
-                            // Add existing images (unchanged)
-                            const images = container._originalContent.filter((part) => part.type === "image");
-                            reconstructedArray.push(...images);
+                                // Add existing images (unchanged)
+                                const images = container._originalContent.filter((part) => part.type === "image");
+                                reconstructedArray.push(...images);
 
-                            // Add files from edit documents
-                            if (container._editDocuments && container._editDocuments.length > 0) {
-                                reconstructedArray.push({
-                                    type: "files",
-                                    files: container._editDocuments
-                                });
-                            }
+                                // Add files from edit documents
+                                if (container._editDocuments && container._editDocuments.length > 0) {
+                                    reconstructedArray.push({
+                                        type: "files",
+                                        files: container._editDocuments
+                                    });
+                                }
 
-                            // Determine if we need multimodal format
-                            const hasMultipleTypes =
-                                reconstructedArray.length > 1 ||
-                                reconstructedArray.some((part) => part.type !== "text");
+                                // Determine if we need multimodal format
+                                const hasMultipleTypes =
+                                    reconstructedArray.length > 1 ||
+                                    reconstructedArray.some((part) => part.type !== "text");
 
-                            if (hasMultipleTypes) {
-                                finalContent = reconstructedArray;
+                                if (hasMultipleTypes) {
+                                    finalContent = reconstructedArray;
+                                } else {
+                                    finalContent = newTextContent; // Text-only, send as string
+                                }
                             } else {
-                                finalContent = newTextContent; // Text-only, send as string
+                                // Fallback for old format
+                                finalContent = newTextContent;
                             }
-                        } else {
-                            // Fallback for old format
-                            finalContent = newTextContent;
+
+                            console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
+                                textContent: newTextContent,
+                                hasFiles: container._editDocuments?.length > 0,
+                                fileCount: container._editDocuments?.length || 0,
+                                finalContent: typeof finalContent === "string" ? "string" : "multimodal"
+                            });
+
+                            return editMessage(messageId, finalContent);
                         }
-
-                        console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
-                            textContent: newTextContent,
-                            hasFiles: container._editDocuments?.length > 0,
-                            fileCount: container._editDocuments?.length || 0,
-                            finalContent: typeof finalContent === "string" ? "string" : "multimodal"
-                        });
-
-                        return editMessage(messageId, finalContent);
-                    }
-                });
-
-                await Promise.all(savePromises.filter(Boolean));
-            } else {
-                // Bump the original turn's edit_count so it shows "edited Nx"
-                // even in edit-retry.
-                const editRetryPromises = Array.from(messageContainers).map(async (container) => {
-                    const messageId = container.dataset.messageId;
-                    if (messageId) {
-                        // _originalContent is the unmodified content captured
-                        // when the user entered edit mode. Pass that back so
-                        // the DB write is a no-op on content/original_content
-                        // but still increments edit_count and sets edited_at.
-                        return editMessage(messageId, container._originalContent);
-                    }
-                });
-                const editResults = await Promise.all(editRetryPromises.filter(Boolean));
-                // Find the highest new edit_count to display.
-                const maxEditCount = editResults
-                    .filter((r) => r && typeof r.edit_count === "number")
-                    .reduce((max, r) => Math.max(max, r.edit_count), 0);
-                if (maxEditCount > 0) {
-                    this.addEditIndicator(turnDiv, maxEditCount);
-                }
+                        return null;
+                    })
+                );
             }
 
-            // Exit edit mode and reload
-            await this.exitMessageEditMode(turnDiv, turnNumber);
+            // Exit edit mode. For edit-retry this carries the messages forward
+            // into a new turn_id; for plain edit it just closes the editor.
+            // The edit indicator is drawn by renderTurn from the DB's
+            // edit_count, so reload/branch switch persist it.
+            await this.exitMessageEditMode(turnDiv, turnNumber, isEditRetry);
         } catch (error) {
             console.error("[EDIT] Error saving messages:", error);
             showError(`Error saving messages: ${error.message}`);
@@ -1762,12 +1755,12 @@ class ChatRenderer {
     }
 
     // Exit edit mode and reload the turn with updated content
-    async exitMessageEditMode(turnDiv, turnNumber) {
+    async exitMessageEditMode(turnDiv, turnNumber, isEditRetry = false) {
         try {
             // Check if this was an Edit & Retry
-            const shouldRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
-            const retryTurnNumber = parseInt(turnDiv.dataset.editRetryTurnNumber);
-            const retryTurnId = turnDiv.dataset.editRetryTurnId || null;
+            const shouldRetry = isEditRetry === true;
+            const retryTurnNumber = shouldRetry ? parseInt(turnDiv.dataset.editRetryTurnNumber) : null;
+            const retryTurnId = shouldRetry ? (turnDiv.dataset.editRetryTurnId || null) : null;
 
             turnDiv.classList.remove("editing");
 
@@ -1777,68 +1770,59 @@ class ChatRenderer {
                 delete turnDiv.dataset.editRetryTurnNumber;
                 delete turnDiv.dataset.editRetryTurnId;
 
-              // Get the edited content from UI.
-                const messageContainers = turnDiv.querySelectorAll("[data-message-id]");
-                let editedContent = null;
-
-                // Find the user message textarea with edited content and reconstruct properly
+                // The modal is the source of truth. Collect every container's
+                // content + role and carry all of them forward to the new
+                // turn_id as sibling rows. No "first" / no role assumption.
+                const messageContainers = turnDiv.querySelectorAll(".editable-message");
+                const carriedForward = [];
                 for (const container of messageContainers) {
                     const textarea = container.querySelector(".message-content-textarea");
-                    if (textarea) {
-                        const newTextContent = textarea.value;
+                    if (!textarea) continue;
+                    const messageId = container.dataset.messageId
+                        ? parseInt(container.dataset.messageId, 10)
+                        : null;
+                    const role =
+                        container._role ||
+                        container.querySelector(".message-header strong")?.textContent ||
+                        "user";
+                    const newTextContent = textarea.value;
 
-                        // Reconstruct content with separated structure (like main chat)
-                        if (Array.isArray(container._originalContent)) {
-                            const reconstructedArray = [];
-
-                            // Add text part
-                            if (newTextContent) {
-                                reconstructedArray.push({ type: "text", text: newTextContent });
-                            }
-
-                            // Add existing images (unchanged)
-                            const images = container._originalContent.filter((part) => part.type === "image");
-                            reconstructedArray.push(...images);
-
-                            // Add files from edit documents (separated structure)
-                            if (container._editDocuments && container._editDocuments.length > 0) {
-                                reconstructedArray.push({
-                                    type: "files",
-                                    files: container._editDocuments
-                                });
-                            }
-
-                            // Determine if we need multimodal format
-                            const hasMultipleTypes =
-                                reconstructedArray.length > 1 ||
-                                reconstructedArray.some((part) => part.type !== "text");
-
-                            if (hasMultipleTypes) {
-                                editedContent = reconstructedArray;
-                            } else {
-                                editedContent = newTextContent; // Text-only, send as string
-                            }
-                        } else {
-                            // Fallback for old format
-                            editedContent = newTextContent;
+                    // Reconstruct content with separated structure (like main chat)
+                    let content;
+                    if (Array.isArray(container._originalContent)) {
+                        const reconstructedArray = [];
+                        if (newTextContent) {
+                            reconstructedArray.push({ type: "text", text: newTextContent });
                         }
-                        break;
+                        const images = container._originalContent.filter((part) => part.type === "image");
+                        reconstructedArray.push(...images);
+                        if (container._editDocuments && container._editDocuments.length > 0) {
+                            reconstructedArray.push({
+                                type: "files",
+                                files: container._editDocuments
+                            });
+                        }
+                        const hasMultipleTypes =
+                            reconstructedArray.length > 1 ||
+                            reconstructedArray.some((part) => part.type !== "text");
+                        content = hasMultipleTypes ? reconstructedArray : newTextContent;
+                    } else {
+                        content = newTextContent;
                     }
+                    carriedForward.push({ messageId, role, content });
                 }
 
-                if (!editedContent) {
-                    console.error("[EDIT-RETRY] Could not find edited content in UI");
+                if (carriedForward.length === 0) {
+                    console.error("[EDIT-RETRY] No message containers found in UI");
                     return;
                 }
 
-                // Get the user's parent_turn_id from history for the new user bubble
+                // Get the user's parent_turn_id from history for the new lineage
                 const history = await getCompleteChatHistory(currentChatId);
                 const userMsg = (history.messages || []).find(
                     (m) => m.role === "user" && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId
                 );
                 const originalUserParentTurnId = userMsg?.parent_turn_id || null;
-
-                // Retract at this user turn (truncates history, new response becomes sibling)
 
                 await sendAndStream({
                     userTurnNumber: retryTurnNumber,
@@ -1848,28 +1832,49 @@ class ChatRenderer {
                     inputMethod: "edit_retry",
 
                     saveUserMessage: async () => {
-                        // Save the edited user message so it persists on reload
-                        // The original turn keeps the original message unchanged
-                        const contentForSave = Array.isArray(editedContent)
-                            ? JSON.stringify(editedContent)
-                            : editedContent;
-                        const saveResult = await saveCompleteMessage(
+                        // Save the first carried-forward message; the response
+                        // gives us the new turn_id and parent_turn_id. Save the
+                        // rest with the same turn_id so the new Turn has one
+                        // row per carried-forward Message (e.g. system + user).
+                        const first = carriedForward[0];
+                        const firstContentForSave = Array.isArray(first.content)
+                            ? JSON.stringify(first.content)
+                            : first.content;
+                        const firstSave = await saveCompleteMessage(
                             currentChatId,
-                            { role: "user", content: contentForSave },
+                            { role: first.role, content: firstContentForSave },
                             retryTurnNumber,
                             { parent_turn_id: originalUserParentTurnId }
                         );
-                        // Throw on failure — a hard error that aborts the flow.
-                        if (!saveResult || !saveResult.turn_id) {
+                        if (!firstSave || !firstSave.turn_id) {
                             throw new Error(
                                 "saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor"
                             );
                         }
-                        return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
+                        for (let i = 1; i < carriedForward.length; i++) {
+                            const entry = carriedForward[i];
+                            const contentForSave = Array.isArray(entry.content)
+                                ? JSON.stringify(entry.content)
+                                : entry.content;
+                            await saveCompleteMessage(
+                                currentChatId,
+                                { role: entry.role, content: contentForSave },
+                                retryTurnNumber,
+                                {
+                                    turn_id: firstSave.turn_id,
+                                    parent_turn_id: firstSave.parent_turn_id,
+                                }
+                            );
+                        }
+                        return {
+                            turn_id: firstSave.turn_id,
+                            parent_turn_id: firstSave.parent_turn_id,
+                        };
                     },
 
                     renderUserBubble: async (userTurnInfo, requestId) => {
                         if (!userTurnInfo) return;
+                        const firstContent = carriedForward[0]?.content;
                         const enabledToolsFlags = loadEnabledTools();
                         const userDebugData = {
                             sequence: [
@@ -1878,14 +1883,14 @@ class ChatRenderer {
                                     step: 1,
                                     data: {
                                         userQuery: {
-                                            message: editedContent,
+                                            message: firstContent,
                                             chat_id: currentChatId,
                                             timestamp: new Date().toISOString(),
-                                            message_length: Array.isArray(editedContent)
-                                                ? JSON.stringify(editedContent).length
-                                                : editedContent.length,
+                                            message_length: Array.isArray(firstContent)
+                                                ? JSON.stringify(firstContent).length
+                                                : firstContent?.length || 0,
                                             turn_number: retryTurnNumber,
-                                            is_multimodal: Array.isArray(editedContent)
+                                            is_multimodal: Array.isArray(firstContent)
                                         },
                                         tools: {
                                             total: Object.keys(enabledToolsFlags).length,
@@ -1914,7 +1919,7 @@ class ChatRenderer {
                             data: {
                                 requestId: requestId,
                                 endpoint: "chat",
-                                message: editedContent,
+                                message: firstContent,
                                 tools_enabled: Object.keys(enabledToolsFlags).length,
                                 turn_number: retryTurnNumber
                             }
@@ -1933,24 +1938,38 @@ class ChatRenderer {
                             logger.warn("[EDIT-RETRY] Failed to save new user turn debug data:", error);
                         }
 
-                        // Set the in-memory selection so the next walk picks
-                        // the new turn.
-
-                        // Reload from DB before the LLM call to avoid
-                        // showing both old and new turns.
-                        await loadChatHistory(currentChatId);
-
-                        // The new turn gets an "(edited 1x)" indicator since it was
-                        // produced from an edit.
-                        const newTurnDiv = document.querySelector(`.turn[data-turn-id="${userTurnInfo.turn_id}"]`);
-                        if (newTurnDiv) {
-                            this.addEditIndicator(newTurnDiv, 1);
+                        // Active-branch fix: write the new turn_id to
+                        // selectedSiblings (in memory) and persist to
+                        // chat_branch_selections so the new branch is the one
+                        // shown at this fork point — in-session and on reload.
+                        // The in-memory write must happen before loadChatHistory
+                        // so the active-branch walk picks the new turn.
+                        const parentKey = originalUserParentTurnId || "root";
+                        const scopeKey = `${currentChatId}::${parentKey}`;
+                        selectedSiblings[scopeKey] = userTurnInfo.turn_id;
+                        const scopedMap = Object.fromEntries(
+                            Object.entries(selectedSiblings).filter(([k]) =>
+                                k.startsWith(`${currentChatId}::`)
+                            )
+                        );
+                        try {
+                            await saveBranchSelections(currentChatId, scopedMap);
+                        } catch (error) {
+                            logger.warn("[EDIT-RETRY] Failed to persist branch selection:", error);
                         }
+
+                        // Reload from DB so the new branch is the one shown.
+                        // loadChatHistory re-reads chat_branch_selections and
+                        // walks the active branch cleanly, rendering all
+                        // carried-forward messages from the DB.
+                        await loadChatHistory(currentChatId);
                     }
                 });
             } else {
-                // Regular edit — reload chat. No post-hoc branch-nav
-                // sweep needed; loadChatHistory re-renders all turns.
+                // Regular edit — reload chat. The render path reads
+                // edit_count from the DB and adds the edit indicator on
+                // the freshly-rendered turn, so no explicit addEditIndicator
+                // call is needed here.
                 await loadChatHistory(currentChatId);
             }
         } catch (error) {
