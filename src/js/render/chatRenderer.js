@@ -800,7 +800,6 @@ class ChatRenderer {
                 userTurnNumber: turnNumber,
                 parentTurnId: parentUserTurnId,
                 turnId: parentUserTurnId,
-                lineageAnchorTurnId: parentUserTurnId,
                 truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
                 inputMethod: "retry"

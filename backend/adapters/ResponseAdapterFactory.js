@@ -1,47 +1,43 @@
 /**
  * Response Adapter Factory
- * 
+ *
  * Factory that creates the appropriate response adapter based on settings.
- * This is the main entry point for the adapter system.
+ * Uses the provider registry for explicit provider selection.
  */
 
 const OpenAIAdapter = require('./OpenAIAdapter');
 const GoogleAdapter = require('./GoogleAdapter');
 const AnthropicAdapter = require('./AnthropicAdapter');
+const { detectProvider } = require('./providerRegistry');
 
 class ResponseAdapterFactory {
     constructor() {
-        // Register available adapters
-        this.adapters = [
-            new AnthropicAdapter(),
-            new GoogleAdapter(),
-            new OpenAIAdapter()  // OpenAI as fallback
-        ];
+        // Map provider ids to adapter instances
+        this.adapterMap = {
+            anthropic: new AnthropicAdapter(),
+            google: new GoogleAdapter(),
+            'openai-compatible': new OpenAIAdapter()
+        };
     }
 
     /**
-     * Get the appropriate adapter for the given settings
-     * @param {Object} settings - Current API settings
-     * @returns {BaseResponseAdapter} The adapter to use
+     * Get the appropriate adapter for the given settings.
+     * Throws if no provider matches (no implicit fallback).
      */
     getAdapter(settings) {
-        // Find the first adapter that can handle these settings
-        for (const adapter of this.adapters) {
-            if (adapter.canHandle(settings)) {
-                return adapter;
-            }
+        const provider = detectProvider(settings);
+        if (!provider) {
+            throw new Error(`No provider matched for URL: ${settings.apiUrl}`);
         }
-        
-        // Fallback to OpenAI adapter
-        return this.adapters[this.adapters.length - 1];
+        const adapter = this.adapterMap[provider.id];
+        if (!adapter) {
+            throw new Error(`No adapter registered for provider: ${provider.id}`);
+        }
+        return adapter;
     }
 
     /**
      * Create a unified request object
-     * @param {Array} messages - Chat messages
-     * @param {Array} tools - Available tools
-     * @param {string} model - Model name
-     * @returns {Object} Unified request format
      */
     createUnifiedRequest(messages, tools, model) {
         return {
@@ -50,22 +46,6 @@ class ResponseAdapterFactory {
             tools: tools || [],
             stream: true
         };
-    }
-
-    /**
-     * Register a new adapter
-     * @param {BaseResponseAdapter} adapter - Adapter to register
-     */
-    registerAdapter(adapter) {
-        this.adapters.unshift(adapter); // Add to beginning for priority
-    }
-
-    /**
-     * Get all registered adapters
-     * @returns {Array} Array of adapters
-     */
-    getAvailableAdapters() {
-        return [...this.adapters];
     }
 }
 

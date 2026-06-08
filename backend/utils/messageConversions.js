@@ -31,24 +31,22 @@ function parseContent(content) {
 //   includeDebugData  — add debug_data (default: false)
 //   includeFileFields — add original_content, file_metadata (default: false)
 //   includeErrorState — add error_state (default: false)
-//   includeIdFallback — use row.id as fallback when original_message_id is null (default: true)
 function parseDbRowToMessage(row, options = {}) {
     const {
         includeDebugData = false,
         includeFileFields = false,
         includeErrorState = false,
-        includeIdFallback = true,
     } = options;
 
     const msg = {
-        id: row.original_message_id || (includeIdFallback ? row.id : null),
+        id: row.original_message_id || row.id,
         role: row.role,
         content: parseContent(row.content),
         timestamp: row.timestamp,
         turn_number: row.turn_number,
         turn_id: row.turn_id,
         parent_turn_id: row.parent_turn_id,
-        edit_count: row.edit_count || 0,
+        edit_count: row.edit_count ?? 0,
         edited_at: row.edited_at,
     };
 
@@ -83,7 +81,7 @@ function parseDbRowToMessage(row, options = {}) {
 function serializeMessageForDb(messageData) {
     const content = Array.isArray(messageData.content)
         ? JSON.stringify(messageData.content)
-        : messageData.content || "";
+        : messageData.content;
 
     const toolCalls = messageData.tool_calls ? JSON.stringify(messageData.tool_calls) : null;
     const debugDataVal = messageData.debugData ?? messageData.debug_data;

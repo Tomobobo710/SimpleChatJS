@@ -243,7 +243,6 @@ async function sendAndStream({
     userTurnNumber,
     parentTurnId = null,
     turnId = null,
-    lineageAnchorTurnId = null,
 
     // Optional: persist the user message. Returns { turn_id, parent_turn_id } | null.
     saveUserMessage = null,
@@ -294,17 +293,20 @@ async function sendAndStream({
 
     // For flows that saved a user message, derive the request's turn
     // identifiers from the saved user turn. Retry flows (no save) pass
-    // parentTurnId/turnId/lineageAnchorTurnId explicitly and userTurnInfo is null.
+    // parentTurnId/turnId explicitly and userTurnInfo is null.
+    // The user's turn_id is used as the history lineage anchor (where the
+    // edited message was saved). The parent_turn_id is used for structural
+    // lineage of the new assistant turn.
     const effectiveParentTurnId = userTurnInfo ? userTurnInfo.parent_turn_id : parentTurnId;
     const effectiveTurnId = userTurnInfo ? userTurnInfo.turn_id : turnId;
-    const effectiveLineageAnchorTurnId = userTurnInfo ? userTurnInfo.turn_id : lineageAnchorTurnId;
+    const effectiveHistoryAnchor = userTurnInfo ? userTurnInfo.turn_id : parentTurnId;
 
     const requestInfo = initiateMessageRequest(
         enabledToolsFlags,
         requestId,
         effectiveParentTurnId,
         effectiveTurnId,
-        effectiveLineageAnchorTurnId
+        effectiveHistoryAnchor
     );
 
     // For pure retry (no user save), userTurnInfo is still needed for the

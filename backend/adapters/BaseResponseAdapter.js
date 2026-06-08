@@ -5,7 +5,7 @@
  * Defines the interface for converting provider responses to unified format.
  */
 
-const UnifiedResponse = require('./UnifiedResponse');
+
 
 class BaseResponseAdapter {
     constructor(providerName) {
@@ -24,11 +24,12 @@ class BaseResponseAdapter {
     }
 
     /**
-     * Convert provider request format to provider-specific format
+     * Convert provider request format to provider-specific format.
      * @param {Object} unifiedRequest - Standard request format
+     * @param {Object} settings - Current profile settings (for thinking, system prompt, etc.)
      * @returns {Object} Provider-specific request
      */
-    convertRequest(unifiedRequest) {
+    convertRequest(unifiedRequest, settings) {
         throw new Error('convertRequest must be implemented by provider adapter');
     }
 
@@ -53,24 +54,18 @@ class BaseResponseAdapter {
     }
 
     /**
-     * Detect if provider is configured
-     * @param {Object} settings - Current settings
-     * @returns {boolean} True if this provider should handle the request
-     */
-    canHandle(settings) {
-        throw new Error('canHandle must be implemented by provider adapter');
-    }
-
-    /**
      * Initialize context for processing
+     * @param {string} modelName - Model name
+     * @param {Object} thinkingConfig - Provider-specific thinking settings
      * @returns {Object} Initial context state
      */
-    createContext(modelName = '') {
+    createContext(modelName = '', thinkingConfig = null) {
         return {
             buffer: '',
             currentToolCall: null,
             processingState: 'content',
-            model: modelName
+            model: modelName,
+            thinkingConfig
         };
     }
 

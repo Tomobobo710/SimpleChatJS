@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
+const { getUserdataPath } = require('../utils/pathUtils');
 
 // Default system prompt constant
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. If the previous query requires you to use tools, do so. Otherwise, just chat with the user in a friendly manner.';
@@ -13,19 +14,9 @@ let currentSettings = {
     modelName: ''
 };
 
-// Get settings path
-function getSettingsPath() {
-    return path.join(__dirname, '..', '..', 'userdata', 'settings.json');
-}
-
 // Get profiles path
 function getProfilesPath() {
-    // For portable mode, use the path set by Electron
-    if (process.env.PORTABLE_USERDATA_PATH) {
-        return path.join(process.env.PORTABLE_USERDATA_PATH, 'profiles.json');
-    } else {
-        return path.join(__dirname, '..', '..', 'userdata', 'profiles.json');
-    }
+    return getUserdataPath('profiles.json');
 }
 
 // Get default profile settings
@@ -79,9 +70,9 @@ function loadProfiles() {
         }
     } catch (error) {
         log('[PROFILES] Load error:', error);
-        const defaultProfiles = getDefaultProfiles();
-        saveProfiles(defaultProfiles);
-        return defaultProfiles;
+        // Do NOT overwrite potentially recoverable config on load error.
+        // Return defaults in memory without destroying the file.
+        return getDefaultProfiles();
     }
 }
 

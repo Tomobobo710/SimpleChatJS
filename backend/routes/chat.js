@@ -99,20 +99,20 @@ router.get("/chats", (req, res) => {
         ) bm ON c.id = bm.chat_id AND bm.rn = 1
     `;
 
-    let whereConditions = [];
     if (project_id) {
-        whereConditions.push(`c.project_id = '${project_id}'`);
+        query += " WHERE c.project_id = ?";
     } else if (freeform === "true") {
-        whereConditions.push("c.project_id IS NULL");
-    }
-
-    if (whereConditions.length > 0) {
-        query += " WHERE " + whereConditions.join(" AND ");
+        query += " WHERE c.project_id IS NULL";
     }
     query += " ORDER BY c.updated_at DESC";
 
     try {
-        const rows = db.prepare(query).all();
+        let rows;
+        if (project_id) {
+            rows = db.prepare(query).all(project_id);
+        } else {
+            rows = db.prepare(query).all();
+        }
         log(`[CHATS] Found ${rows ? rows.length : 0} chats:`, rows);
         // Transform the data to match frontend expectations
         const chats = (rows || []).map((row) => {
@@ -159,11 +159,21 @@ router.post("/chats", async (req, res) => {
     }
 
     try {
-        // Create chat in chats table
-        const stmt = db.prepare(
-            "INSERT OR REPLACE INTO chats (id, title, created_at, updated_at, project_id) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)"
-        );
-        const result = stmt.run(chat_id, title || "New Chat", project_id || null);
+        // Check if chat already exists
+        const existing = db.prepare("SELECT id FROM chats WHERE id = ?").get(chat_id);
+        if (existing) {
+            // Update existing chat
+            const stmt = db.prepare(
+                "UPDATE chats SET title = ?, updated_at = CURRENT_TIMESTAMP, project_id = ? WHERE id = ?"
+            );
+            stmt.run(title || "New Chat", project_id || null, chat_id);
+        } else {
+            // Create new chat
+            const stmt = db.prepare(
+                "INSERT INTO chats (id, title, created_at, updated_at, project_id) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)"
+            );
+            stmt.run(chat_id, title || "New Chat", project_id || null);
+        }
 
         res.json({ success: true, chat_id });
     } catch (err) {
@@ -249,34 +259,18 @@ router.delete("/chat/:id", (req, res) => {
         const chatStmt = db.prepare("SELECT project_id FROM chats WHERE id = ?");
         const chat = chatStmt.get(chatId);
 
-        // Begin transaction
-        db.prepare("BEGIN TRANSACTION").run();
-
-        // Delete all messages for this chat
-        db.prepare("DELETE FROM messages WHERE chat_id = ?").run(chatId);
-
-        // Delete persisted branch navigation selections for this chat
-        // (chat_branch_selections has no ON DELETE CASCADE — matches the
-        // messages table pattern, explicit cleanup in the transaction).
         const { deleteBranchSelections } = require("../services/chatService");
-        deleteBranchSelections(chatId);
 
-        // Delete the chat itself
-        db.prepare("DELETE FROM chats WHERE id = ?").run(chatId);
-
-        // Commit transaction
-        db.prepare("COMMIT").run();
+        const tx = db.transaction(() => {
+            db.prepare("DELETE FROM messages WHERE chat_id = ?").run(chatId);
+            deleteBranchSelections(chatId);
+            db.prepare("DELETE FROM chats WHERE id = ?").run(chatId);
+        });
+        tx();
 
         log(`[CHAT] Deleted chat: ${chatId} (project: ${chat?.project_id || "freeform"})`);
         res.json({ success: true, project_id: chat?.project_id || null });
     } catch (err) {
-        // Rollback on error
-        try {
-            db.prepare("ROLLBACK").run();
-        } catch (rollbackErr) {
-            /* ignore */
-        }
-
         log("[CHAT] Error deleting chat:", err);
         res.status(500).json({ error: err.message });
     }
@@ -468,8 +462,9 @@ router.get("/chat/:id/branch-selections", (req, res) => {
 // chat. Throws on invalid input.
 router.post("/chat/:id/branch-selections", (req, res) => {
     const { id: chatId } = req.params;
-    const { selections } = req.body || {};
     try {
+        const body = req.body || {};
+        const selections = body.selections;
         const { saveBranchSelections } = require("../services/chatService");
         const result = saveBranchSelections(chatId, selections);
         res.json({ success: true, ...result });

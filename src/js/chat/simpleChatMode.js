@@ -203,7 +203,6 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
             userTurnNumber,
             parentTurnId,
             turnId: null,
-            lineageAnchorTurnId: null,
             inputMethod,
 
             saveUserMessage: async () => {

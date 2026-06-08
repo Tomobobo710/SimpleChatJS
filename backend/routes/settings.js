@@ -11,6 +11,10 @@ const {
     deleteProfile 
 } = require('../services/settingsService');
 const { log } = require('../utils/logger');
+const { 
+    buildModelsRequestOptions, 
+    buildTestConnectionRequestOptions 
+} = require('../adapters/providerRegistry');
 
 const router = express.Router();
 
@@ -40,7 +44,6 @@ router.post('/settings', (req, res) => {
 
 // Models endpoint - proxy to avoid CORS
 router.post('/models', async (req, res) => {
-    // Clean logging removed
     try {
         const { apiUrl, apiKey } = req.body;
         
@@ -48,41 +51,11 @@ router.post('/models', async (req, res) => {
             return res.status(400).json({ error: 'API URL is required' });
         }
         
-        // Detect API provider type
-        const isGoogleAPI = apiUrl.toLowerCase().includes('google');
-        const isAnthropicAPI = apiUrl.toLowerCase().includes('anthropic.com');
+        const options = buildModelsRequestOptions({ apiUrl, apiKey });
         
-        let targetUrl;
-        let headers = { 'Content-Type': 'application/json' };
-        
-        if (isGoogleAPI && apiKey) {
-            // For Google APIs, use query parameter authentication
-            targetUrl = `${apiUrl}/models?key=${apiKey}`;
-        } else if (isAnthropicAPI) {
-            // For Anthropic APIs, use x-api-key header and anthropic-version
-            targetUrl = `${apiUrl}/models`;
-            if (apiKey) {
-                headers['x-api-key'] = apiKey;
-                headers['anthropic-version'] = '2023-06-01';
-            }
-        } else {
-            // For other APIs, use standard Bearer token
-            targetUrl = `${apiUrl}/models`;
-            if (apiKey) {
-                headers['Authorization'] = `Bearer ${apiKey}`;
-            }
-        }
-        
-        const url = new URL(targetUrl);
-        const options = {
-            hostname: url.hostname,
-            port: url.port,
-            path: url.pathname + url.search,
-            method: 'GET',
-            headers: headers
-        };
-        
-        const httpModule = url.protocol === 'https:' ? https : http;
+        const httpModule = options.path.startsWith('https:') 
+            ? https 
+            : http;
         const apiReq = httpModule.request(options, (apiRes) => {
             let data = '';
             
@@ -122,7 +95,6 @@ router.post('/models', async (req, res) => {
 
 // Test connection endpoint - proxy to avoid CORS
 router.post('/test-connection', async (req, res) => {
-    // Clean logging removed
     try {
         const { apiUrl, apiKey, modelName } = req.body;
         
@@ -130,78 +102,11 @@ router.post('/test-connection', async (req, res) => {
             return res.status(400).json({ error: 'API URL and model name are required' });
         }
         
-        const testData = {
-            model: modelName,
-            messages: [{ role: 'user', content: 'test' }],
-            max_tokens: 1,
-            stream: false
-        };
+        const options = buildTestConnectionRequestOptions({ apiUrl, apiKey, modelName });
         
-        // Detect API provider type
-        const isGoogleAPI = apiUrl.toLowerCase().includes('google');
-        const isAnthropicAPI = apiUrl.toLowerCase().includes('anthropic.com');
-        
-        let targetUrl;
-        let requestData;
-        let headers = {'Content-Type': 'application/json'};
-        
-        if (isAnthropicAPI && apiKey) {
-            // For Anthropic APIs, use different format
-            targetUrl = `${apiUrl}/messages`;
-            headers['x-api-key'] = apiKey;
-            headers['anthropic-version'] = '2023-06-01';
-            
-            requestData = {
-                model: modelName,
-                max_tokens: 1,
-                messages: [{ role: 'user', content: 'test' }]
-            };
-        } else if (isGoogleAPI && apiKey) {
-            // For Google APIs, use different endpoint and format
-            // Strip 'models/' prefix if it exists
-            const cleanModelName = modelName.startsWith('models/') ? modelName.substring(7) : modelName;
-            
-            // Detect model type and use appropriate endpoint
-            const isEmbeddingModel = cleanModelName.includes('embedding');
-            const endpoint = isEmbeddingModel ? 'embedContent' : 'generateContent';
-            targetUrl = `${apiUrl}/models/${cleanModelName}:${endpoint}?key=${apiKey}`;
-            
-            // Debug logging removed
-            // Use different request format based on model type
-            if (isEmbeddingModel) {
-                requestData = {
-                    content: {
-                        parts: [{ text: 'test' }]
-                    }
-                };
-            } else {
-                requestData = {
-                    contents: [{
-                        parts: [{ text: 'test' }]
-                    }]
-                };
-            }
-        } else {
-            // For other APIs, use standard OpenAI format
-            targetUrl = `${apiUrl}/chat/completions`;
-            requestData = testData;
-            if (apiKey) {
-                headers['Authorization'] = `Bearer ${apiKey}`;
-            }
-        }
-        
-        headers['Content-Length'] = Buffer.byteLength(JSON.stringify(requestData));
-        
-        const url = new URL(targetUrl);
-        const options = {
-            hostname: url.hostname,
-            port: url.port,
-            path: url.pathname + url.search,
-            method: 'POST',
-            headers: headers
-        };
-        
-        const httpModule = url.protocol === 'https:' ? https : http;
+        const httpModule = options.path.startsWith('https:') 
+            ? https 
+            : http;
         const apiReq = httpModule.request(options, (apiRes) => {
             let data = '';
             
@@ -226,7 +131,7 @@ router.post('/test-connection', async (req, res) => {
             res.status(500).json({ error: `Connection error: ${error.message}` });
         });
         
-        apiReq.write(JSON.stringify(requestData));
+        apiReq.write(JSON.stringify(options.body));
         apiReq.end();
         
     } catch (error) {

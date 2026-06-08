@@ -54,20 +54,15 @@ router.delete('/projects/:id', (req, res) => {
     const projectId = req.params.id;
     
     try {
-        db.prepare('BEGIN TRANSACTION').run();
-        
-        // Orphan all chats in this project
-        db.prepare('UPDATE chats SET project_id = NULL WHERE project_id = ?').run(projectId);
-        
-        // Delete the project
-        db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
-        
-        db.prepare('COMMIT').run();
+        const tx = db.transaction(() => {
+            db.prepare('UPDATE chats SET project_id = NULL WHERE project_id = ?').run(projectId);
+            db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+        });
+        tx();
         
         log(`[PROJECT] Deleted project: ${projectId} (chats orphaned)`);
         res.json({ success: true });
     } catch (err) {
-        try { db.prepare('ROLLBACK').run(); } catch (rollbackErr) { /* ignore */ }
         log('[PROJECT] Delete error:', err);
         res.status(500).json({ error: err.message });
     }
