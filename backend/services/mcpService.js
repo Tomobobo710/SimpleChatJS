@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
+const { getUserdataPath } = require('../utils/pathUtils');
 
 // Simple MCP integration (server-side only)
 let mcpClient = null;
@@ -23,22 +24,12 @@ async function initMCP() {
 
 // Get MCP config path
 function getMcpConfigPath() {
-    // For portable mode, use the path set by Electron
-    if (process.env.PORTABLE_USERDATA_PATH) {
-        return path.join(process.env.PORTABLE_USERDATA_PATH, 'mcp_config.json');
-    } else {
-        return path.join(__dirname, '..', '..', 'userdata', 'mcp_config.json');
-    }
+    return getUserdataPath('mcp_config.json');
 }
 
 // Get enabled tools path
 function getEnabledToolsPath() {
-    // For portable mode, use the path set by Electron
-    if (process.env.PORTABLE_USERDATA_PATH) {
-        return path.join(process.env.PORTABLE_USERDATA_PATH, 'enabled_tools.json');
-    } else {
-        return path.join(__dirname, '..', '..', 'userdata', 'enabled_tools.json');
-    }
+    return getUserdataPath('enabled_tools.json');
 }
 
 // Get MCP status
@@ -74,10 +65,11 @@ async function connectMcp() {
             return { success: false, error: 'MCP SDK not available' };
         }
         
-        // Load config - create default if it doesn't exist
+        // Load config - create default if it doesn't exist.
+        // TODO: Move first-run config creation to explicit UI/onboarding action (Phase 5).
         const configPath = getMcpConfigPath();
         if (!fs.existsSync(configPath)) {
-            // Create default config
+            // Create default filesystem MCP config
             const defaultConfig = {
                 "mcpServers": {
                     "filesystem": {
@@ -333,7 +325,7 @@ function getAvailableToolsForChat(enabled_tools) {
                 log(`[CHAT] Tool ${toolKey}: ${isEnabled ? 'ENABLED' : 'DISABLED'}`);
                 return isEnabled;
             }
-            // If no enabled_tools filter provided, disable all tools by default (safer behavior)
+            // Security-positive default: no enabled_tools means all tools disabled
             log(`[CHAT] Tool ${toolKey}: DISABLED (no filter - default disabled for security)`);
             return false;
         });

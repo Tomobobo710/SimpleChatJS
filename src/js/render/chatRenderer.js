@@ -777,30 +777,29 @@ class ChatRenderer {
                 }
             }
 
-            // Anchor this retry to the parent user turn of the assistant being retried.
+            // Anchor this retry to the parent turn of the response being retried.
             const history = await getCompleteChatHistory(currentChatId);
             const allMessages = history.messages || [];
 
-            const retriedAssistant = allMessages.find((msg) => msg.role === "assistant" && msg.turn_id === turnId);
-            if (!retriedAssistant?.parent_turn_id) {
-                console.error("[RETRY] Could not find retried assistant turn", { turnId, retriedAssistant });
+            const retriedResponseTurn = allMessages.find((msg) => msg.role === "assistant" && msg.turn_id === turnId);
+            if (!retriedResponseTurn?.parent_turn_id) {
+                console.error("[RETRY] Could not find retried response turn", { turnId, retriedResponseTurn });
                 return;
             }
 
-            const parentUserTurnId = retriedAssistant.parent_turn_id;
-            const parentUserMessage = allMessages.find(
-                (msg) => msg.role === "user" && msg.turn_id === parentUserTurnId
+            const parentTurnId = retriedResponseTurn.parent_turn_id;
+            const parentMessage = allMessages.find(
+                (msg) => msg.role === "user" && msg.turn_id === parentTurnId
             );
-            if (!parentUserMessage) {
-                console.error("[RETRY] Could not find parent user message for assistant retry", { parentUserTurnId });
+            if (!parentMessage) {
+                console.error("[RETRY] Could not find parent message for response retry", { parentTurnId });
                 return;
             }
 
             await sendAndStream({
-                userTurnNumber: turnNumber,
-                parentTurnId: parentUserTurnId,
-                turnId: parentUserTurnId,
-                lineageAnchorTurnId: parentUserTurnId,
+                requestTurnNumber: turnNumber,
+                parentTurnId: parentTurnId,
+                turnId: parentTurnId,
                 truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
                 inputMethod: "retry"
@@ -1817,21 +1816,21 @@ class ChatRenderer {
                     return;
                 }
 
-                // Get the user's parent_turn_id from history for the new lineage
+                // Get the parent_turn_id from history for the new lineage
                 const history = await getCompleteChatHistory(currentChatId);
-                const userMsg = (history.messages || []).find(
+                const requestMsg = (history.messages || []).find(
                     (m) => m.role === "user" && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId
                 );
-                const originalUserParentTurnId = userMsg?.parent_turn_id || null;
+                const originalParentTurnId = requestMsg?.parent_turn_id || null;
 
                 await sendAndStream({
-                    userTurnNumber: retryTurnNumber,
-                    parentTurnId: originalUserParentTurnId,
+                    requestTurnNumber: retryTurnNumber,
+                    parentTurnId: originalParentTurnId,
                     truncateFromTurnNumber: retryTurnNumber,
                     truncateContainer: this.container,
                     inputMethod: "edit_retry",
 
-                    saveUserMessage: async () => {
+                    saveRequestMessage: async () => {
                         // Save the first carried-forward message; the response
                         // gives us the new turn_id and parent_turn_id. Save the
                         // rest with the same turn_id so the new Turn has one
@@ -1844,7 +1843,7 @@ class ChatRenderer {
                             currentChatId,
                             { role: first.role, content: firstContentForSave },
                             retryTurnNumber,
-                            { parent_turn_id: originalUserParentTurnId }
+                            { parent_turn_id: originalParentTurnId }
                         );
                         if (!firstSave || !firstSave.turn_id) {
                             throw new Error(
@@ -1872,11 +1871,11 @@ class ChatRenderer {
                         };
                     },
 
-                    renderUserBubble: async (userTurnInfo, requestId) => {
-                        if (!userTurnInfo) return;
+                    renderRequestTurn: async (requestTurnInfo, requestId) => {
+                        if (!requestTurnInfo) return;
                         const firstContent = carriedForward[0]?.content;
                         const enabledToolsFlags = loadEnabledTools();
-                        const userDebugData = {
+                        const requestDebugData = {
                             sequence: [
                                 {
                                     type: "user_input",
@@ -1912,9 +1911,9 @@ class ChatRenderer {
                             currentTurnNumber: retryTurnNumber
                         };
 
-                        userDebugData.sequence.push({
+                        requestDebugData.sequence.push({
                             type: "ai_http_request",
-                            step: userDebugData.sequence.length + 1,
+                            step: requestDebugData.sequence.length + 1,
                             timestamp: new Date().toISOString(),
                             data: {
                                 requestId: requestId,
@@ -1924,7 +1923,7 @@ class ChatRenderer {
                                 turn_number: retryTurnNumber
                             }
                         });
-                        userDebugData.apiRequest = {
+                        requestDebugData.apiRequest = {
                             url: `${window.location.origin}/api/chat`,
                             method: "POST",
                             requestId: requestId,
@@ -1932,10 +1931,10 @@ class ChatRenderer {
                         };
 
                         try {
-                            await saveTurnData(currentChatId, userTurnInfo.turn_id, userDebugData);
-                            logger.info(`[EDIT-RETRY] Saved new user debug data for turn_id=${userTurnInfo.turn_id}`);
+                            await saveTurnData(currentChatId, requestTurnInfo.turn_id, requestDebugData);
+                            logger.info(`[EDIT-RETRY] Saved new request debug data for turn_id=${requestTurnInfo.turn_id}`);
                         } catch (error) {
-                            logger.warn("[EDIT-RETRY] Failed to save new user turn debug data:", error);
+                            logger.warn("[EDIT-RETRY] Failed to save new request turn debug data:", error);
                         }
 
                         // Active-branch fix: write the new turn_id to
@@ -1944,9 +1943,9 @@ class ChatRenderer {
                         // shown at this fork point — in-session and on reload.
                         // The in-memory write must happen before loadChatHistory
                         // so the active-branch walk picks the new turn.
-                        const parentKey = originalUserParentTurnId || "root";
+                        const parentKey = originalParentTurnId || "root";
                         const scopeKey = `${currentChatId}::${parentKey}`;
-                        selectedSiblings[scopeKey] = userTurnInfo.turn_id;
+                        selectedSiblings[scopeKey] = requestTurnInfo.turn_id;
                         const scopedMap = Object.fromEntries(
                             Object.entries(selectedSiblings).filter(([k]) =>
                                 k.startsWith(`${currentChatId}::`)

@@ -1,12 +1,10 @@
 // Document processing route
-// Handles file uploads and text extraction using officeparser
+// Handles file uploads and delegates parsing to documentService
 
 const express = require('express');
 const multer = require('multer');
-const officeParser = require('officeparser');
-const pdfParse = require('pdf-parse');
-const path = require('path');
 const { log } = require('../utils/logger');
+const { processDocumentFile } = require('../services/documentService');
 
 const router = express.Router();
 
@@ -22,68 +20,9 @@ const upload = multer({
         if (file.mimetype.startsWith('image/')) {
             return cb(new Error('Images should not be processed as documents'), false);
         }
-        // PDFs are now supported via pdf-parse
         cb(null, true);
     }
 });
-
-// Supported office document formats
-const SUPPORTED_OFFICE_FORMATS = ['.docx', '.pptx', '.xlsx', '.odt', '.odp', '.ods'];
-const SUPPORTED_PDF_FORMATS = ['.pdf'];
-
-
-/**
- * Process a single document file
- * @param {Buffer} buffer - File buffer
- * @param {string} filename - Original filename
- * @param {string} mimetype - File mimetype
- * @returns {Promise<Object>} Processed document data
- */
-async function processDocumentFile(buffer, filename, mimetype) {
-    const ext = path.extname(filename).toLowerCase();
-    let extractedText;
-    let format;
-
-    try {
-        if (SUPPORTED_PDF_FORMATS.includes(ext)) {
-            // Use pdf-parse for PDF files
-            const data = await pdfParse(buffer);
-            extractedText = data.text;
-            format = 'pdf';
-            log(`[DOCUMENT-API] Used pdf-parse for ${ext} file: ${filename}`);
-        } else if (SUPPORTED_OFFICE_FORMATS.includes(ext)) {
-            // Use officeparser for supported formats
-            extractedText = await officeParser.parseOfficeAsync(buffer, {
-                outputErrorToConsole: false,
-                newlineDelimiter: '\n',
-                ignoreNotes: false,
-                putNotesAtLast: false
-            });
-            format = 'office';
-            log(`[DOCUMENT-API] Used officeparser for ${ext} file: ${filename}`);
-        } else {
-            // Read as UTF-8 text for everything else
-            extractedText = buffer.toString('utf8');
-            format = 'text';
-            log(`[DOCUMENT-API] Used text reader for ${ext} file: ${filename}`);
-        }
-
-        // No truncation - keep full file content
-
-        return {
-            fileName: filename,
-            extractedText: extractedText.trim(),
-            format: format,
-            size: buffer.length,
-            type: mimetype || 'application/octet-stream',
-            success: true
-        };
-
-    } catch (error) {
-        log(`[DOCUMENT-API] Error processing ${filename}: ${error.message}`);
-        throw new Error(`Failed to process ${filename}: ${error.message}`);
-    }
-}
 
 /**
  * POST /api/process-documents
@@ -96,7 +35,7 @@ router.post('/process-documents', upload.array('documents', 99), async (req, res
         }
 
         log(`[DOCUMENT-API] Processing ${req.files.length} document(s)`);
-        
+
         const results = [];
         const errors = [];
 
@@ -128,7 +67,7 @@ router.post('/process-documents', upload.array('documents', 99), async (req, res
 
     } catch (error) {
         log(`[DOCUMENT-API] Route error: ${error.message}`);
-        
+
         if (error instanceof multer.MulterError) {
             if (error.code === 'LIMIT_FILE_SIZE') {
                 return res.status(413).json({ error: 'File too large (max 10MB)' });
@@ -137,7 +76,7 @@ router.post('/process-documents', upload.array('documents', 99), async (req, res
                 return res.status(413).json({ error: 'Too many files (max 99)' });
             }
         }
-        
+
         res.status(500).json({ error: 'Document processing failed', details: error.message });
     }
 });

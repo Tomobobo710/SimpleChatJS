@@ -5,16 +5,10 @@
  */
 
 const BaseResponseAdapter = require('./BaseResponseAdapter');
-const UnifiedResponse = require('./UnifiedResponse');
 
 class OpenAIAdapter extends BaseResponseAdapter {
     constructor() {
         super('openai');
-    }
-
-    canHandle(settings) {
-        return !settings.apiUrl.toLowerCase().includes('google') && 
-               !settings.apiUrl.toLowerCase().includes('anthropic.com');
     }
 
     getEndpointUrl(settings) {
@@ -186,34 +180,15 @@ class OpenAIAdapter extends BaseResponseAdapter {
                         };
                     
                     default:
-                        // Fallback for unknown types
-                        console.warn(`[OPENAI-ADAPTER] Unknown content part type: ${part.type}`);
-                        return {
-                            type: 'text',
-                            text: part.text || JSON.stringify(part)
-                        };
+                        throw new Error(`[OPENAI-ADAPTER] Unknown content part type: ${part.type}`);
                 }
             });
         }
         
-        // Fallback for unexpected content format
-        console.warn(`[OPENAI-ADAPTER] Unexpected content format:`, typeof content);
-        return String(content);
+        throw new Error(`[OPENAI-ADAPTER] Unexpected content format: ${typeof content}`);
     }
 
-    /**
-     * Check if a model supports vision/image input
-     * Since OpenAI could be any model/provider, we'll assume vision support
-     * and let the API handle unsupported models
-     */
-    supportsVision(modelName) {
-        // For OpenAI adapter, we can't reliably detect vision support
-        // since it could be any model (local, OpenAI, compatible APIs)
-        // So we return true and let the API handle unsupported models
-        return true;
-    }
-
-}
+  }
 
 function normalizeArgsDelta(delta) {
     if (delta == null) return '';

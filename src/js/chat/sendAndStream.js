@@ -20,18 +20,18 @@ function truncateTurnsInContainer(container, fromTurnNumber) {
     }
 }
 
-// Stream the assistant response, render the bubble with the right turn
-// info, and save debug data. Returns the saved assistant's turn info.
-// On error, calls onError(error, processor, userTurnInfo, savedAssistantTurn)
-// before re-throwing. savedAssistantTurn is passed for backend errors
+// Stream the response turn, render the turn with the right turn
+// info, and save debug data. Returns the saved response turn info.
+// On error, calls onError(error, processor, requestTurnInfo, savedResponseTurn)
+// before re-throwing. savedResponseTurn is passed for backend errors
 // (so the handler knows the backend already saved the error message and
 // doesn't need to re-save).
-async function streamAndRenderAssistant({
+async function streamAndRenderResponse({
     fetchPromise,
     requestId,
-    userTurnInfo,
+    requestTurnInfo,
     container,
-    userTurnNumber,
+    requestTurnNumber,
     inputMethod,
     onError = null
 }) {
@@ -41,11 +41,11 @@ async function streamAndRenderAssistant({
     tempContainer.style.boxSizing = "border-box";
     const liveRenderer = new ChatRenderer(tempContainer);
 
-    const assistantTurnDiv = document.createElement("div");
-    assistantTurnDiv.className = "turn assistant-turn";
-    assistantTurnDiv.innerHTML = "";
-    container.appendChild(assistantTurnDiv);
-    assistantTurnDiv.appendChild(tempContainer);
+    const responseTurnDiv = document.createElement("div");
+    responseTurnDiv.className = "turn assistant-turn";
+    responseTurnDiv.innerHTML = "";
+    container.appendChild(responseTurnDiv);
+    responseTurnDiv.appendChild(tempContainer);
 
     let toolEventSource = null;
     try {
@@ -66,7 +66,7 @@ async function streamAndRenderAssistant({
         logger.warn("Failed to connect to tool events:", error);
     }
 
-    let savedAssistantTurn = null;
+    let savedResponseTurn = null;
     let errorAlreadyHandled = false;
 
     async function drainBodyForError(response) {
@@ -89,10 +89,10 @@ async function streamAndRenderAssistant({
             toolEventSource.close();
         }
         tempContainer.remove();
-        assistantTurnDiv.remove();
+        responseTurnDiv.remove();
         if (onError) {
             try {
-                onError(err, processor, userTurnInfo, savedAssistantTurn);
+                onError(err, processor, requestTurnInfo, savedResponseTurn);
             } catch (handlerError) {
                 logger.error("onError handler threw:", handlerError);
             }
@@ -112,19 +112,19 @@ async function streamAndRenderAssistant({
             throw err;
         }
 
-        const assistantTurnId = response.headers.get("X-Assistant-Turn-Id");
-        const assistantParentTurnId = response.headers.get("X-Assistant-Parent-Turn-Id");
-        if (!assistantTurnId || !assistantParentTurnId) {
+        const responseTurnId = response.headers.get("X-Response-Turn-Id");
+        const responseParentTurnId = response.headers.get("X-Response-Parent-Turn-Id");
+        if (!responseTurnId || !responseParentTurnId) {
             const errorText = await drainBodyForError(response);
-            const err = new Error(errorText || "Backend did not emit required assistant-turn headers");
+            const err = new Error(errorText || "Backend did not emit required response-turn headers");
             err.streamErrorType = "api_error";
-            err.errorText = errorText || "Backend did not emit required assistant-turn headers";
+            err.errorText = errorText || "Backend did not emit required response-turn headers";
             fireError(err);
             throw err;
         }
-        savedAssistantTurn = {
-            turn_id: assistantTurnId,
-            parent_turn_id: assistantParentTurnId
+        savedResponseTurn = {
+            turn_id: responseTurnId,
+            parent_turn_id: responseParentTurnId
         };
 
         const streamErrorType = response.headers.get("X-Stream-Error");
@@ -186,18 +186,18 @@ async function streamAndRenderAssistant({
         });
 
         tempContainer.remove();
-        assistantTurnDiv.remove();
+        responseTurnDiv.remove();
 
-        const assistantTurnNumber = userTurnNumber + 1;
+        const responseTurnNumber = requestTurnNumber + 1;
         if (debugData) {
-            debugData.currentTurnNumber = assistantTurnNumber;
+            debugData.currentTurnNumber = responseTurnNumber;
         }
 
         const rto = RenderableTurnObject.fromStreamingProcessor({
             processor,
-            turnNumber: assistantTurnNumber,
-            turnId: savedAssistantTurn?.turn_id || null,
-            parentTurnId: savedAssistantTurn?.parent_turn_id || null,
+            turnNumber: responseTurnNumber,
+            turnId: savedResponseTurn?.turn_id || null,
+            parentTurnId: savedResponseTurn?.parent_turn_id || null,
             debugData,
             dropdownStates
         });
@@ -206,28 +206,28 @@ async function streamAndRenderAssistant({
 
         if (debugData) {
             try {
-                debugData.turn_id = savedAssistantTurn?.turn_id || null;
-                debugData.parent_turn_id = savedAssistantTurn?.parent_turn_id || null;
-                await saveTurnData(currentChatId, savedAssistantTurn?.turn_id, debugData);
+                debugData.turn_id = savedResponseTurn?.turn_id || null;
+                debugData.parent_turn_id = savedResponseTurn?.parent_turn_id || null;
+                await saveTurnData(currentChatId, savedResponseTurn?.turn_id, debugData);
                 logger.info(
-                    `[${inputMethod.toUpperCase()}] Saved assistant debug data for turn_id=${savedAssistantTurn?.turn_id}`
+                    `[${inputMethod.toUpperCase()}] Saved response debug data for turn_id=${savedResponseTurn?.turn_id}`
                 );
             } catch (error) {
-                logger.warn(`[${inputMethod.toUpperCase()}] Failed to save assistant debug data:`, error);
+                logger.warn(`[${inputMethod.toUpperCase()}] Failed to save response debug data:`, error);
             }
         }
 
-        return { savedAssistantTurn, debugData, processor };
+        return { savedResponseTurn, debugData, processor };
     } catch (error) {
         if (!errorAlreadyHandled) {
             if (toolEventSource) {
                 toolEventSource.close();
             }
             tempContainer.remove();
-            assistantTurnDiv.remove();
+            responseTurnDiv.remove();
             if (onError) {
                 try {
-                    onError(error, processor, userTurnInfo, savedAssistantTurn);
+                    onError(error, processor, requestTurnInfo, savedResponseTurn);
                 } catch (handlerError) {
                     logger.error("onError handler threw:", handlerError);
                 }
@@ -240,110 +240,112 @@ async function streamAndRenderAssistant({
 // Top-level unified helper. All three flows call this with the variations
 // passed in as arguments / callbacks.
 async function sendAndStream({
-    userTurnNumber,
+    requestTurnNumber,
     parentTurnId = null,
     turnId = null,
-    lineageAnchorTurnId = null,
 
-    // Optional: persist the user message. Returns { turn_id, parent_turn_id } | null.
-    saveUserMessage = null,
+    // Optional: persist the request message. Returns { turn_id, parent_turn_id } | null.
+    saveRequestMessage = null,
 
-    // Optional: render the user bubble. Receives the user turn info and the requestId.
-    renderUserBubble = null,
+    // Optional: render the request turn. Receives the request turn info and the requestId.
+    renderRequestTurn = null,
 
     // Optional: remove DOM turns with turnNumber >= this value before initiating.
     truncateFromTurnNumber = null,
     truncateContainer = null,
 
-    // Optional: hook called after the assistant is rendered, with its turn info.
-    onAssistantRendered = null,
+    // Optional: hook called after the response is rendered, with its turn info.
+    onResponseRendered = null,
 
     // Optional: hook called when the stream errors out (after cleanup). Receives
     // the error, the streaming processor (so callers can render a partial
-    // message on AbortError), and the userTurnInfo if the user message was saved.
+    // message on AbortError), and the requestTurnInfo if the request message was saved.
     onError = null,
 
     inputMethod = "manual"
 }) {
-    // Generate requestId early so user-side callbacks can include it in debug data.
+    // Generate requestId early so request-side callbacks can include it in debug data.
     const requestId = generateRequestId();
 
-    let userTurnInfo = null;
+    let requestTurnInfo = null;
 
-    if (saveUserMessage) {
-        // Throw on failed user save — a hard error that aborts the request.
-        userTurnInfo = await saveUserMessage(requestId);
+    if (saveRequestMessage) {
+        // Throw on failed request save — a hard error that aborts the request.
+        requestTurnInfo = await saveRequestMessage(requestId);
     }
 
-    // Truncate BEFORE rendering the new user bubble so the new bubble (which
+    // Truncate BEFORE rendering the new request turn so the new turn (which
     // shares the same turn_number as the truncated turns) is not removed.
     if (truncateFromTurnNumber != null) {
         truncateTurnsInContainer(truncateContainer, truncateFromTurnNumber);
     }
 
-    if (renderUserBubble) {
+    if (renderRequestTurn) {
         try {
-            await renderUserBubble(userTurnInfo, requestId);
+            await renderRequestTurn(requestTurnInfo, requestId);
         } catch (error) {
-            logger.warn(`[${inputMethod.toUpperCase()}] Failed to render user bubble:`, error);
+            logger.warn(`[${inputMethod.toUpperCase()}] Failed to render request turn:`, error);
         }
     }
 
     await loadEnabledToolsFromBackend();
     const enabledToolsFlags = loadEnabledTools();
 
-    // For flows that saved a user message, derive the request's turn
-    // identifiers from the saved user turn. Retry flows (no save) pass
-    // parentTurnId/turnId/lineageAnchorTurnId explicitly and userTurnInfo is null.
-    const effectiveParentTurnId = userTurnInfo ? userTurnInfo.parent_turn_id : parentTurnId;
-    const effectiveTurnId = userTurnInfo ? userTurnInfo.turn_id : turnId;
-    const effectiveLineageAnchorTurnId = userTurnInfo ? userTurnInfo.turn_id : lineageAnchorTurnId;
+    // For flows that saved a request message, derive the request's turn
+    // identifiers from the saved request turn. Retry flows (no save) pass
+    // parentTurnId/turnId explicitly and requestTurnInfo is null.
+    // The request turn's turn_id is used as the history lineage anchor (where the
+    // edited message was saved). The parent_turn_id is used for structural
+    // lineage of the new response turn.
+    const effectiveParentTurnId = requestTurnInfo ? requestTurnInfo.parent_turn_id : parentTurnId;
+    const effectiveTurnId = requestTurnInfo ? requestTurnInfo.turn_id : turnId;
+    const effectiveHistoryAnchor = requestTurnInfo ? requestTurnInfo.turn_id : parentTurnId;
 
     const requestInfo = initiateMessageRequest(
         enabledToolsFlags,
         requestId,
         effectiveParentTurnId,
         effectiveTurnId,
-        effectiveLineageAnchorTurnId
+        effectiveHistoryAnchor
     );
 
-    // For pure retry (no user save), userTurnInfo is still needed for the
-    // assistant lookup; the retry caller passes the parent user turn id via
-    // turnId, so synthesize a userTurnInfo.
-    const effectiveUserTurnInfo =
-        userTurnInfo || (inputMethod === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
+    // For pure retry (no request save), requestTurnInfo is still needed for the
+    // response lookup; the retry caller passes the parent turn id via
+    // turnId, so synthesize a requestTurnInfo.
+    const effectiveRequestTurnInfo =
+        requestTurnInfo || (inputMethod === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
 
     const container = truncateContainer || turnsContainer;
-    const { savedAssistantTurn, debugData, processor } = await streamAndRenderAssistant({
+    const { savedResponseTurn, debugData, processor } = await streamAndRenderResponse({
         fetchPromise: requestInfo.fetchPromise,
         requestId,
-        userTurnInfo: effectiveUserTurnInfo,
+        requestTurnInfo: effectiveRequestTurnInfo,
         container,
-        userTurnNumber,
+        requestTurnNumber,
         inputMethod,
         onError
     });
 
-    const assistantTurnInfo = savedAssistantTurn
-        ? { turn_id: savedAssistantTurn.turn_id, parent_turn_id: savedAssistantTurn.parent_turn_id }
+    const responseTurnInfo = savedResponseTurn
+        ? { turn_id: savedResponseTurn.turn_id, parent_turn_id: savedResponseTurn.parent_turn_id }
         : null;
 
-    if (onAssistantRendered) {
+    if (onResponseRendered) {
         try {
-            await onAssistantRendered({
-                userTurnInfo,
-                assistantTurnInfo,
+            await onResponseRendered({
+                requestTurnInfo,
+                responseTurnInfo,
                 requestId,
                 debugData,
                 processor
             });
         } catch (error) {
-            logger.warn(`[${inputMethod.toUpperCase()}] onAssistantRendered failed:`, error);
+            logger.warn(`[${inputMethod.toUpperCase()}] onResponseRendered failed:`, error);
         }
     }
 
     // No post-render branch-nav sweep needed — renderTurn updates
     // branch-nav per-turn.
 
-    return { userTurnInfo, assistantTurnInfo, requestId };
+    return { requestTurnInfo, responseTurnInfo, requestId };
 }

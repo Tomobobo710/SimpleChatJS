@@ -17,6 +17,7 @@ const debugRoutes = require('./routes/debug');
 const documentRoutes = require('./routes/documents');
 
 const app = express();
+// PORT override: set PORT env var to change. Default 50505 for dev/local Electron.
 const PORT = process.env.PORT || 50505;
 
 // Express middleware - increase payload limit for large requests

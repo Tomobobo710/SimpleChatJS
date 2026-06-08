@@ -5,18 +5,14 @@
  */
 
 const BaseResponseAdapter = require('./BaseResponseAdapter');
-const UnifiedResponse = require('./UnifiedResponse');
+const { log } = require('../utils/logger');
 
 class AnthropicAdapter extends BaseResponseAdapter {
     constructor() {
         super('anthropic');
     }
 
-    canHandle(settings) {
-        return settings.apiUrl.toLowerCase().includes('anthropic.com');
-    }
-
-    getEndpointUrl(settings) {
+   getEndpointUrl(settings) {
         return `${settings.apiUrl}/messages`;
     }
 
@@ -33,7 +29,7 @@ class AnthropicAdapter extends BaseResponseAdapter {
         return headers;
     }
 
-    convertRequest(unifiedRequest) {
+    convertRequest(unifiedRequest, settings) {
         // Convert from OpenAI format to Anthropic format
         const anthropicMessages = [];
         let systemPrompt = null;
@@ -115,8 +111,11 @@ class AnthropicAdapter extends BaseResponseAdapter {
         
         // Add thinking mode for supported models
         const modelSupportsThinking = this.supportsThinking(unifiedRequest.model);
-        const thinkingEnabled = this.isThinkingEnabled();
-        const thinkingBudget = this.getThinkingBudget();
+        const thinkingEnabled = settings.enableThinkingAnthropic === true;
+        const rawBudget = settings.thinkingBudgetAnthropic;
+        const thinkingBudget = rawBudget !== undefined && rawBudget !== null
+            ? Math.max(1024, Math.min(32000, parseInt(rawBudget) || 1024))
+            : 1024;
         
         if (modelSupportsThinking && thinkingEnabled) {
             request.thinking = {
@@ -144,36 +143,6 @@ class AnthropicAdapter extends BaseResponseAdapter {
         return thinkingModels.some(thinkingModel => 
             modelName.toLowerCase().includes(thinkingModel.toLowerCase())
         );
-    }
-
-    /**
-     * Check if thinking mode is enabled in settings
-     */
-    isThinkingEnabled() {
-        try {
-            const { getCurrentSettings } = require('../services/settingsService');
-            const settings = getCurrentSettings();
-            return settings.enableThinkingAnthropic === true;
-        } catch (error) {
-            logger.info('[ANTHROPIC-ADAPTER] Could not get thinking settings, defaulting to disabled:', error.message);
-            return false;
-        }
-    }
-
-    /**
-     * Get thinking budget from settings
-     */
-    getThinkingBudget() {
-        try {
-            const { getCurrentSettings } = require('../services/settingsService');
-            const settings = getCurrentSettings();
-            const budget = parseInt(settings.thinkingBudgetAnthropic) || 1024;
-            // Ensure it's within valid range for Anthropic
-            return Math.max(1024, Math.min(32000, budget));
-        } catch (error) {
-            logger.info('[ANTHROPIC-ADAPTER] Could not get thinking budget, using default');
-            return 1024; // default to minimum
-        }
     }
 
     processChunk(chunk, response, context) {
@@ -306,36 +275,14 @@ class AnthropicAdapter extends BaseResponseAdapter {
                         };
                     
                     default:
-                        // Fallback for unknown types
-                        console.warn(`[ANTHROPIC-ADAPTER] Unknown content part type: ${part.type}`);
-                        return {
-                            type: 'text',
-                            text: part.text || JSON.stringify(part)
-                        };
+                        throw new Error(`[ANTHROPIC-ADAPTER] Unknown content part type: ${part.type}`);
                 }
             });
         }
         
-        // Fallback for unexpected content format
-        console.warn(`[ANTHROPIC-ADAPTER] Unexpected content format:`, typeof content);
-        return String(content);
+        throw new Error(`[ANTHROPIC-ADAPTER] Unexpected content format: ${typeof content}`);
     }
 
-    /**
-     * Check if a model supports vision/image input
-     * Claude 3 and 4 family models support vision
-     */
-    supportsVision(modelName) {
-        // Claude 3 and 4 models support vision
-        const visionModels = [
-            'claude-3',
-            'claude-4'
-        ];
-        
-        return visionModels.some(visionModel => 
-            modelName.toLowerCase().includes(visionModel)
-        );
-    }
-}
+  }
 
 module.exports = AnthropicAdapter;

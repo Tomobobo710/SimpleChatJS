@@ -5,15 +5,10 @@
  */
 
 const BaseResponseAdapter = require('./BaseResponseAdapter');
-const UnifiedResponse = require('./UnifiedResponse');
 
 class GoogleAdapter extends BaseResponseAdapter {
     constructor() {
         super('google');
-    }
-
-    canHandle(settings) {
-        return settings.apiUrl.toLowerCase().includes('google');
     }
 
     getEndpointUrl(settings) {
@@ -24,7 +19,7 @@ class GoogleAdapter extends BaseResponseAdapter {
         return `${settings.apiUrl}/models/${cleanModelName}:streamGenerateContent?key=${settings.apiKey}`;
     }
 
-    convertRequest(unifiedRequest) {
+    convertRequest(unifiedRequest, settings) {
         // Convert OpenAI format to Gemini format
         const contents = [];
         
@@ -55,11 +50,14 @@ class GoogleAdapter extends BaseResponseAdapter {
                     responseContent = { result: msg.content };
                 }
                 
+                if (!msg.tool_name) {
+                    throw new Error('[GOOGLE-ADAPTER] Tool message missing tool_name');
+                }
                 contents.push({
                     role: 'user',
                     parts: [{
                         functionResponse: {
-                            name: msg.tool_name || 'unknown_tool',
+                            name: msg.tool_name,
                             response: responseContent
                         }
                     }]
@@ -83,8 +81,11 @@ class GoogleAdapter extends BaseResponseAdapter {
         
         // Add thinking mode for supported models
         const modelSupportsThinking = this.supportsThinking(unifiedRequest.model);
-        const thinkingEnabled = this.isThinkingEnabled();
-        const thinkingBudget = this.getThinkingBudget();
+        const thinkingEnabled = settings.enableThinkingGoogle !== false;
+        const rawBudget = settings.thinkingBudgetGoogle;
+        const thinkingBudget = rawBudget === -1 || rawBudget === '-1'
+            ? -1
+            : Math.max(0, Math.min(24576, parseInt(rawBudget) || 8192));
         
         const request = {
             contents,
@@ -197,11 +198,10 @@ class GoogleAdapter extends BaseResponseAdapter {
                     
                     // Handle thinking mode for Google models
                     const isThinkingModel = this.supportsThinking(context.model || '');
-                    const isThinkingEnabled = this.isThinkingEnabled();
-                    const thinkingBudget = this.getThinkingBudget();
+                    const tc = context.thinkingConfig || {};
                     const hasThoughts = parts.some(part => part.thought);
                     
-                    if (isThinkingModel && isThinkingEnabled && thinkingBudget !== 0) {
+                    if (isThinkingModel && tc.enabled && tc.budget !== 0) {
                         // Use thinking mode processing if thinking is enabled for this model
                         // This handles both chunks with thoughts AND regular text in thinking conversations
                         // Process each part according to Google's format
@@ -210,27 +210,21 @@ class GoogleAdapter extends BaseResponseAdapter {
                             if (part.text) {
                                 // If this part has thought=true, it's thinking content
                                 if (part.thought) {
-                                    // Parse Gemini thinking content to separate summary from detailed thoughts
-                                    const lines = part.text.split('\n');
-                                    const summaryLine = lines[0] || ''; // "**Summary Title**"
-                                    const summary = summaryLine.replace(/\*\*/g, '').trim(); // Remove markdown bold
-                                    const detailedThoughts = lines.slice(2).join('\n').trim(); // Skip title and empty line
-                                    
-                                    // Use summary as dropdown title, detailed thoughts as content
-                                    if (summary && detailedThoughts) {
-                                        response.addContent(`<thinking title="${summary}">`);
-                                        response.addContent(detailedThoughts);
-                                        response.addContent('</thinking>');
-                                        response.addDebugData('thinkingContent', detailedThoughts);
-                                        response.addDebugData('thinkingSummary', summary);
-                                    } else {
-                                        // Fallback: use original format if parsing fails
-                                        response.addContent('<thinking>');
-                                        response.addContent(part.text);
-                                        response.addContent('</thinking>');
-                                        response.addDebugData('thinkingContent', part.text);
-                                    }
-                                }
+                                     const lines = part.text.split('\n');
+                                     const summaryLine = lines[0] || '';
+                                     const summary = summaryLine.replace(/\*\*/g, '').trim();
+                                     const detailedThoughts = lines.slice(2).join('\n').trim();
+
+                                     if (summary && detailedThoughts) {
+                                         response.addContent(`<thinking title="${summary}">`);
+                                         response.addContent(detailedThoughts);
+                                         response.addContent('</thinking>');
+                                         response.addDebugData('thinkingContent', detailedThoughts);
+                                         response.addDebugData('thinkingSummary', summary);
+                                     } else {
+                                         response.addContent(part.text);
+                                     }
+                                 }
                                 // Otherwise it's the regular response
                                 else {
                                     response.addContent(part.text);
@@ -329,12 +323,13 @@ class GoogleAdapter extends BaseResponseAdapter {
         return { events, context };
     }
 
-    createContext(modelName = '') {
+    createContext(modelName = '', thinkingConfig = null) {
         return {
             buffer: '', // Gemini needs buffering for complete JSON parsing
             currentToolCall: null,
             processingState: 'content',
-            model: modelName // Store model name for thinking detection
+            model: modelName, // Store model name for thinking detection
+            thinkingConfig // Pass thinking settings from convertRequest
         };
     }
 
@@ -366,21 +361,19 @@ class GoogleAdapter extends BaseResponseAdapter {
                         };
                     
                     default:
-                        // Fallback for unknown types
-                        console.warn(`[GOOGLE-ADAPTER] Unknown content part type: ${part.type}`);
-                        return { text: part.text || JSON.stringify(part) };
+                        throw new Error(`[GOOGLE-ADAPTER] Unknown content part type: ${part.type}`);
                 }
             });
         }
         
-        // Fallback for unexpected content format
-        console.warn(`[GOOGLE-ADAPTER] Unexpected content format:`, typeof content);
-        return [{ text: String(content) }];
+        throw new Error(`[GOOGLE-ADAPTER] Unexpected content format: ${typeof content}`);
     }
 
     /**
-     * Clean schema for Gemini compatibility
-     * Removes fields that Gemini doesn't support
+     * Clean schema for Gemini compatibility.
+     * Removes `additionalProperties` and `default` keys that Gemini's schema
+     * validator rejects. This changes JSON Schema semantics but is required
+     * for the Gemini API to accept tool definitions.
      */
     cleanSchemaForGemini(schema) {
         if (!schema || typeof schema !== 'object') return schema;
@@ -413,50 +406,7 @@ class GoogleAdapter extends BaseResponseAdapter {
      */
     supportsThinking(modelName) {
         return modelName.toLowerCase().includes('2.5');
-    }
-    /**
-     * Check if a model supports vision/image input
-     * All current Gemini models support vision
-     */
-    supportsVision(modelName) {
-        // All Gemini models (1.5+, 2.0+, 2.5+) support vision
-        // Could add more specific logic here if needed in the future
-        return true;
-    }
-
-    /**
-     * Check if thinking mode is enabled in settings
-     */
-    isThinkingEnabled() {
-        try {
-            const { getCurrentSettings } = require('../services/settingsService');
-            const settings = getCurrentSettings();
-            return settings.enableThinkingGoogle !== false;
-        } catch (error) {
-            return true; // default to enabled for Google
-        }
-    }
-
-    /**
-     * Get thinking budget from settings
-     */
-    getThinkingBudget() {
-        try {
-            const { getCurrentSettings } = require('../services/settingsService');
-            const settings = getCurrentSettings();
-            const rawBudget = settings.thinkingBudgetGoogle;
-            
-            // Handle auto mode
-            if (rawBudget === -1 || rawBudget === '-1') {
-                return -1;
-            }
-            
-            const budget = parseInt(rawBudget) || 8192;
-            return Math.max(0, Math.min(24576, budget));
-        } catch (error) {
-            return 8192;
-        }
-    }
+   }
 }
 
 module.exports = GoogleAdapter;

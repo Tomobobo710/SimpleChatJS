@@ -31,7 +31,7 @@ function initiateMessageRequest(
     requestId = null,
     parentTurnId = null,
     turnId = null,
-    lineageAnchorTurnId = null
+    historyAnchorTurnId = null
 ) {
     try {
         // Require a requestId; missing requestId is a programmer error.
@@ -46,7 +46,7 @@ function initiateMessageRequest(
             request_id: generatedRequestId,
             parent_turn_id: parentTurnId,
             turn_id: turnId,
-            lineage_anchor_turn_id: lineageAnchorTurnId
+            history_anchor_turn_id: historyAnchorTurnId
         };
 
         // Create abort controller for this request

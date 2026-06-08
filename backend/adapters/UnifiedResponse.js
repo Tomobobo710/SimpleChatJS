@@ -91,8 +91,4 @@ class UnifiedResponse {
     }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = UnifiedResponse;
-} else {
-    window.UnifiedResponse = UnifiedResponse;
-}
+module.exports = UnifiedResponse;

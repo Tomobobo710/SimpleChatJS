@@ -1,11 +1,41 @@
 // Tool Event Service - Handle real-time tool events via Server-Sent Events
 const { log } = require('../utils/logger');
 
+// TTL for in-memory stores (5 minutes)
+const STORE_TTL_MS = 5 * 60 * 1000;
+
 // Tool events storage - separate from content stream
-const toolEventsStore = new Map(); // requestId -> { events: [], listeners: Set }
+const toolEventsStore = new Map(); // requestId -> { events: [], listeners: Set, timestamp: number }
 
 // Debug data storage - separate from content stream
-const debugDataStore = new Map(); // requestId -> debugData
+const debugDataStore = new Map(); // requestId -> { data, timestamp: number }
+
+// TTL cleanup interval
+let cleanupInterval = null;
+
+function startTtlCleanup() {
+    if (cleanupInterval) return;
+    cleanupInterval = setInterval(() => {
+        const now = Date.now();
+        for (const [key, entry] of toolEventsStore) {
+            if (now - entry.timestamp > STORE_TTL_MS) {
+                // Notify and remove dead listeners
+                entry.listeners.forEach(l => {
+                    try { l.end(); } catch (_) {}
+                });
+                toolEventsStore.delete(key);
+            }
+        }
+        for (const [key, entry] of debugDataStore) {
+            if (now - entry.timestamp > STORE_TTL_MS) {
+                debugDataStore.delete(key);
+            }
+        }
+    }, 60 * 1000); // Check every minute
+}
+
+// Start cleanup on module load
+startTtlCleanup();
 
 // Generate unique request ID
 function generateRequestId() {
@@ -25,7 +55,8 @@ function initializeToolEvents(requestId) {
     
     toolEventsStore.set(requestId, {
         events: [],
-        listeners: new Set()
+        listeners: new Set(),
+        timestamp: Date.now()
     });
     log(`[TOOL-EVENT-SERVICE] Tool events initialized, store now has ${toolEventsStore.size} entries`);
 }
@@ -75,7 +106,8 @@ function handleToolEventsStream(req, res) {
         // Initialize toolData if SSE connects before chat request
         toolData = {
             events: [],
-            listeners: new Set()
+            listeners: new Set(),
+            timestamp: Date.now()
         };
         toolEventsStore.set(requestId, toolData);
         log(`[TOOL-EVENTS] Initialized toolData for early SSE connection: ${requestId}`);
@@ -103,7 +135,8 @@ function handleToolEventsStream(req, res) {
         log(`[TOOL-EVENTS] No tool data yet for request: ${requestId}, initializing and keeping connection open`);
         toolEventsStore.set(requestId, {
             events: [],
-            listeners: new Set([res])
+            listeners: new Set([res]),
+            timestamp: Date.now()
         });
         
         // Clean up when client disconnects
@@ -119,13 +152,8 @@ function handleToolEventsStream(req, res) {
 
 // Store debug data
 function storeDebugData(requestId, debugData) {
-    debugDataStore.set(requestId, debugData);
+    debugDataStore.set(requestId, { data: debugData, timestamp: Date.now() });
     log(`[DEBUG-SEPARATION] Stored debug data for request: ${requestId}`);
-}
-
-// Get debug data
-function getDebugData(requestId) {
-    return debugDataStore.get(requestId);
 }
 
 // Handle debug data endpoint
@@ -152,6 +180,5 @@ module.exports = {
     addToolEvent,
     handleToolEventsStream,
     storeDebugData,
-    getDebugData,
     handleDebugDataRequest
 };

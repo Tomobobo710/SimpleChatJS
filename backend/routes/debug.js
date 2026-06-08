@@ -7,11 +7,18 @@ const { log } = require('../utils/logger');
 const router = express.Router();
 
 // Database schema debug endpoint
+// Only expose tables that are known to be safe for inspection.
+const ALLOWED_DEBUG_TABLES = new Set(['chats', 'messages', 'projects', 'chat_branch_selections', 'mcp_servers']);
+
 router.get('/debug/schema', (req, res) => {
     try {
         const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
         const result = {};
         for (const { name } of tables) {
+            if (!ALLOWED_DEBUG_TABLES.has(name)) {
+                log(`[DEBUG-SCHEMA] Skipping table: ${name} (not in allowed list)`);
+                continue;
+            }
             const columns = db.prepare(`PRAGMA table_info(${name})`).all();
             const rowCount = db.prepare(`SELECT COUNT(*) as count FROM ${name}`).get();
             const sample = db.prepare(`SELECT * FROM ${name} LIMIT 20`).all();
