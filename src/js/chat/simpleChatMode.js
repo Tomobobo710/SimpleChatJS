@@ -1,19 +1,19 @@
 // Simple Chat Mode - Direct streaming chat
 
-async function attachUserDebugPanel(userTurnNumber, userDebugData) {
-    const userMessages = turnsContainer.querySelectorAll('.turn.user-turn, .message.user');
-    const lastUserMessage = userMessages[userMessages.length - 1];
-    if (!lastUserMessage) return;
+async function attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
+    const requestMessages = turnsContainer.querySelectorAll('.turn.user-turn, .message.user');
+    const lastRequestMessage = requestMessages[requestMessages.length - 1];
+    if (!lastRequestMessage) return;
 
-    const messageId = lastUserMessage.dataset.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    lastUserMessage.dataset.messageId = messageId;
+    const messageId = lastRequestMessage.dataset.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    lastRequestMessage.dataset.messageId = messageId;
 
-    const existingDebug = lastUserMessage.querySelector('.debug-panel-container');
-    const existingToggle = lastUserMessage.querySelector('.debug-toggle');
+    const existingDebug = lastRequestMessage.querySelector('.debug-panel-container');
+    const existingToggle = lastRequestMessage.querySelector('.debug-toggle');
     if (existingDebug) existingDebug.remove();
     if (existingToggle) existingToggle.remove();
 
-    lastUserMessage.classList.add('has-debug');
+    lastRequestMessage.classList.add('has-debug');
 
     const debugToggle = document.createElement('button');
     debugToggle.className = 'debug-toggle';
@@ -27,7 +27,7 @@ async function attachUserDebugPanel(userTurnNumber, userDebugData) {
     }
 
     debugToggle.addEventListener('click', () => {
-        const debugPanel = lastUserMessage.querySelector('.debug-panel-container');
+        const debugPanel = lastRequestMessage.querySelector('.debug-panel-container');
         if (debugPanel) {
             const isHidden = debugPanel.style.display === 'none';
             debugPanel.style.display = isHidden ? 'block' : 'none';
@@ -36,13 +36,13 @@ async function attachUserDebugPanel(userTurnNumber, userDebugData) {
         }
     });
 
-    lastUserMessage.appendChild(debugToggle);
+    lastRequestMessage.appendChild(debugToggle);
 
-    const debugPanel = createDebugPanel(lastUserMessage, messageId, userDebugData, userTurnNumber);
-    lastUserMessage.appendChild(debugPanel);
+    const debugPanel = createDebugPanel(lastRequestMessage, messageId, requestDebugData, requestTurnNumber);
+    lastRequestMessage.appendChild(debugPanel);
 }
 
-function buildUserDebugData({ message, userTurnNumber, requestId, conversationHistory, inputMethod, enabledToolsFlags }) {
+function buildRequestDebugData({ message, requestTurnNumber, requestId, conversationHistory, inputMethod, enabledToolsFlags }) {
     return {
         sequence: [
             {
@@ -54,7 +54,7 @@ function buildUserDebugData({ message, userTurnNumber, requestId, conversationHi
                         chat_id: currentChatId,
                         timestamp: new Date().toISOString(),
                         message_length: message.length,
-                        turn_number: userTurnNumber,
+                        turn_number: requestTurnNumber,
                     },
                     tools: {
                         total: Object.keys(enabledToolsFlags).length,
@@ -73,26 +73,26 @@ function buildUserDebugData({ message, userTurnNumber, requestId, conversationHi
             timestamp: new Date().toISOString(),
             tools: Object.keys(enabledToolsFlags).length,
         },
-        currentTurnNumber: userTurnNumber,
+        currentTurnNumber: requestTurnNumber,
         completeMessageHistory: conversationHistory || [],
         conversationHistory: conversationHistory || [],
     };
 }
 
-function addApiRequestToDebugData(userDebugData, { requestId, message, userTurnNumber, enabledToolsFlags }) {
-    userDebugData.sequence.push({
+function addApiRequestToDebugData(requestDebugData, { requestId, message, requestTurnNumber, enabledToolsFlags }) {
+    requestDebugData.sequence.push({
         type: 'ai_http_request',
-        step: userDebugData.sequence.length + 1,
+        step: requestDebugData.sequence.length + 1,
         timestamp: new Date().toISOString(),
         data: {
             requestId: requestId,
             endpoint: 'chat',
             message: message,
             tools_enabled: Object.keys(enabledToolsFlags).length,
-            turn_number: userTurnNumber,
+            turn_number: requestTurnNumber,
         },
     });
-    userDebugData.apiRequest = {
+    requestDebugData.apiRequest = {
         url: `${window.location.origin}/api/chat`,
         method: 'POST',
         requestId: requestId,
@@ -110,7 +110,7 @@ function updateChatTitleFromMessage(message) {
 }
 
 // Render-only error handler for the simple-chat flow. The backend owns
-// the save for all error types (assistant row + optional system message),
+// the save for all error types (response row + optional system message),
 // so this function just renders the in-memory state (partial streamed
 // content + an error block + a system message when partial content
 // exists) so the user sees something while the request wraps up. The
@@ -121,19 +121,19 @@ function updateChatTitleFromMessage(message) {
 //                        non-stream errors). Provides the partial content
 //                        for the user-stop and mid-stream connection_error
 //                        cases.
-//   userTurnInfo       - the user's saved turn info (used as parent for
-//                        the assistant turn).
-//   savedAssistantTurn - {turn_id, parent_turn_id} from the response
+//   requestTurnInfo    - the request's saved turn info (used as parent for
+//                        the response turn).
+//   savedResponseTurn  - {turn_id, parent_turn_id} from the response
 //                        headers, when available. For api/connection/
 //                        processing errors this is what the backend saved
 //                        under. For user_stopped this is null (headers
 //                        weren't read).
-//   userTurnNumber     - turn number of the user turn.
-//   message            - the original user message (for chat preview/title
+//   requestTurnNumber  - turn number of the request turn.
+//   message            - the original request message (for chat preview/title
 //                        updates).
 //   errorText          - the actual error text. Stored in debug_data and
 //                        shown in the dropdown.
-async function handleSimpleChatError({ errorType, processor, userTurnInfo, savedAssistantTurn, userTurnNumber, message, errorText = "" }) {
+async function handleSimpleChatError({ errorType, processor, requestTurnInfo, savedResponseTurn, requestTurnNumber, message, errorText = "" }) {
     const resolvedErrorText = errorText
         || (errorType === "user_stopped" ? "Generation stopped by user." : "")
         || `Error: ${errorType}`;
@@ -143,7 +143,7 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
     const partialContent = (processor && typeof processor.getRawContent === "function")
         ? (processor.getRawContent() || "")
         : "";
-    const assistantTurnNumber = userTurnNumber + 1;
+    const responseTurnNumber = requestTurnNumber + 1;
 
     if (processor && typeof processor.finalize === "function") {
         processor.finalize();
@@ -155,9 +155,9 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
         id: null,
         role: "assistant",
         content: partialContent,
-        turn_number: assistantTurnNumber,
-        turn_id: savedAssistantTurn?.turn_id || null,
-        parent_turn_id: savedAssistantTurn?.parent_turn_id || null,
+        turn_number: responseTurnNumber,
+        turn_id: savedResponseTurn?.turn_id || null,
+        parent_turn_id: savedResponseTurn?.parent_turn_id || null,
         error_state: errorType,
         debug_data: debugData,
         edit_count: 0,
@@ -169,9 +169,9 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
             id: null,
             role: "system",
             content: defaultErrorBlockContent(errorType),
-            turn_number: assistantTurnNumber,
-            turn_id: savedAssistantTurn?.turn_id || null,
-            parent_turn_id: savedAssistantTurn?.parent_turn_id || null,
+            turn_number: responseTurnNumber,
+            turn_id: savedResponseTurn?.turn_id || null,
+            parent_turn_id: savedResponseTurn?.parent_turn_id || null,
             error_state: null,
             debug_data: null,
             edit_count: 0,
@@ -180,10 +180,10 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
     }
 
     const errorTurn = new Turn(
-        assistantTurnNumber,
+        responseTurnNumber,
         turnMessages,
-        savedAssistantTurn?.turn_id || null,
-        savedAssistantTurn?.parent_turn_id || null
+        savedResponseTurn?.turn_id || null,
+        savedResponseTurn?.parent_turn_id || null
     );
     chatRenderer.renderTurn(errorTurn.renderable(), true);
 
@@ -194,18 +194,18 @@ async function handleSimpleChatError({ errorType, processor, userTurnInfo, saved
 async function handleSimpleChat(message, conversationHistory, parentTurnId = null) {
     logger.info('Starting simple chat');
 
-    const userTurnNumber = getNextTurnNumber();
+    const requestTurnNumber = getNextTurnNumber();
     const inputMethod = 'manual';
-    let savedUserDebugData = null;
+    let savedRequestDebugData = null;
 
     try {
         await sendAndStream({
-            userTurnNumber,
+            requestTurnNumber,
             parentTurnId,
             turnId: null,
             inputMethod,
 
-            saveUserMessage: async () => {
+            saveRequestMessage: async () => {
                 const messageForSaving = { role: 'user', content: message };
                 if (Array.isArray(message)) {
                     const filesPart = message.find(part => part.type === 'files');
@@ -222,7 +222,7 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                 // Pass the active terminal as parent_turn_id so the new turn
                 // continues the current branch (null only for a fresh chat).
                 const saveResult = await saveCompleteMessage(
-                    currentChatId, messageForSaving, userTurnNumber,
+                    currentChatId, messageForSaving, requestTurnNumber,
                     parentTurnId ? { parent_turn_id: parentTurnId } : null
                 );
                 // A failed save is a hard error — throw to abort before the request.
@@ -232,52 +232,52 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                 return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
             },
 
-            renderUserBubble: async (userTurnInfo, requestId) => {
-                if (!userTurnInfo) return;
+            renderRequestTurn: async (requestTurnInfo, requestId) => {
+                if (!requestTurnInfo) return;
 
                 // Pass turn_id and parent_turn_id to the Message constructor up front.
-                const userMessage = new Message({
+                const requestMessage = new Message({
                     id: null,
                     role: 'user',
                     content: message,
-                    turn_number: userTurnNumber,
-                    turn_id: userTurnInfo.turn_id,
-                    parent_turn_id: userTurnInfo.parent_turn_id,
+                    turn_number: requestTurnNumber,
+                    turn_id: requestTurnInfo.turn_id,
+                    parent_turn_id: requestTurnInfo.parent_turn_id,
                     edit_count: 0,
                 });
 
-                const userTurn = new Turn(userTurnNumber, [userMessage], userTurnInfo.turn_id, userTurnInfo.parent_turn_id);
-                chatRenderer.renderTurn(userTurn.renderable(), true);
+                const requestTurn = new Turn(requestTurnNumber, [requestMessage], requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
+                chatRenderer.renderTurn(requestTurn.renderable(), true);
 
                 const enabledToolsFlags = loadEnabledTools();
-                const userDebugData = buildUserDebugData({
+                const requestDebugData = buildRequestDebugData({
                     message,
-                    userTurnNumber,
+                    requestTurnNumber,
                     requestId,
                     conversationHistory,
                     inputMethod,
                     enabledToolsFlags,
                 });
-                addApiRequestToDebugData(userDebugData, { requestId, message, userTurnNumber, enabledToolsFlags });
-                savedUserDebugData = userDebugData;
+                addApiRequestToDebugData(requestDebugData, { requestId, message, requestTurnNumber, enabledToolsFlags });
+                savedRequestDebugData = requestDebugData;
 
                 try {
-                    await saveTurnData(currentChatId, userTurnInfo.turn_id, userDebugData);
-                    logger.info(`[TURN-DEBUG] Saved user debug data for turn_id=${userTurnInfo.turn_id}`);
+                    await saveTurnData(currentChatId, requestTurnInfo.turn_id, requestDebugData);
+                    logger.info(`[TURN-DEBUG] Saved request debug data for turn_id=${requestTurnInfo.turn_id}`);
                 } catch (error) {
-                    logger.warn('Failed to save user turn debug data:', error);
+                    logger.warn('Failed to save request turn debug data:', error);
                 }
 
-                attachUserDebugPanel(userTurnNumber, userDebugData);
+                attachRequestDebugPanel(requestTurnNumber, requestDebugData);
             },
 
-            onAssistantRendered: async ({ processor }) => {
-                const assistantContent = processor.getRawContent() || '';
-                updateChatPreview(currentChatId, assistantContent);
+            onResponseRendered: async ({ processor }) => {
+                const responseContent = processor.getRawContent() || '';
+                updateChatPreview(currentChatId, responseContent);
                 updateChatTitleFromMessage(message);
             },
 
-            onError: (error, processor, userTurnInfo, savedAssistantTurn) => {
+            onError: (error, processor, requestTurnInfo, savedResponseTurn) => {
                 const errorType = error.name === 'AbortError'
                     ? 'user_stopped'
                     : (error.streamErrorType || 'api_error');
@@ -288,9 +288,9 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                 handleSimpleChatError({
                     errorType,
                     processor,
-                    userTurnInfo,
-                    savedAssistantTurn,
-                    userTurnNumber,
+                    requestTurnInfo,
+                    savedResponseTurn,
+                    requestTurnNumber,
                     message,
                     errorText
                 });

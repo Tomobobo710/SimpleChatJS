@@ -71,7 +71,7 @@ async function handleChatWithTools(
     requestId = null,
     existingDebugData = null,
     parentTurnId = null,
-    userTurnId = null
+    requestTurnId = null
 ) {
     const currentSettings = getCurrentSettings();
 
@@ -93,10 +93,10 @@ async function handleChatWithTools(
 
     // Generate turn info for this conversation turn
     let turnInfo;
-    if (responseCounter > 1 && userTurnId) {
-        turnInfo = getTurnInfo(parentTurnId, userTurnId);
-    } else if (userTurnId) {
-        turnInfo = getTurnInfo(userTurnId);
+    if (responseCounter > 1 && requestTurnId) {
+        turnInfo = getTurnInfo(parentTurnId, requestTurnId);
+    } else if (requestTurnId) {
+        turnInfo = getTurnInfo(requestTurnId);
     } else {
         turnInfo = getTurnInfo(null);
     }
@@ -116,12 +116,12 @@ async function handleChatWithTools(
             res.setHeader("X-Request-Id", requestId);
         }
 
-        // Assistant turn identifiers in response headers
+       // Response turn identifiers in response headers
         if (turnInfo?.turn_id) {
-            res.setHeader("X-Assistant-Turn-Id", turnInfo.turn_id);
+            res.setHeader("X-Response-Turn-Id", turnInfo.turn_id);
         }
         if (turnInfo?.parent_turn_id) {
-            res.setHeader("X-Assistant-Parent-Turn-Id", turnInfo.parent_turn_id);
+            res.setHeader("X-Response-Parent-Turn-Id", turnInfo.parent_turn_id);
         }
     }
 
@@ -507,15 +507,15 @@ async function handleChatWithTools(
                     log(`[CHAT-SAVE] Content preview: "${unifiedResponse.content.substring(0, 200)}..."`);
                     log(`[CHAT-SAVE] Turn number: ${currentTurn}`);
 
-                    const finalAssistantMessage = {
+                    const finalResponseMessage = {
                         role: "assistant",
                         content: unifiedResponse.content
                     };
                     try {
-                        await saveMessage(chatId, finalAssistantMessage, currentTurn, null, turnInfo);
-                        log(`[CHAT-SAVE] Successfully saved final assistant response to history`);
+                        await saveMessage(chatId, finalResponseMessage, currentTurn, null, turnInfo);
+                        log(`[CHAT-SAVE] Successfully saved final response to history`);
                     } catch (error) {
-                        log(`[CHAT-SAVE] Error saving final assistant response: ${error.message}`);
+                        log(`[CHAT-SAVE] Error saving final response: ${error.message}`);
                     }
                 } else {
                     log(
@@ -643,7 +643,7 @@ async function executeToolCallsAndContinue(
     // Save assistant message with tool calls to database
     if (chatId) {
         await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
-        log(`[CHAT-SAVE] Saved assistant message with ${toolCalls.length} tool calls`);
+        log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
     }
 
     // Execute each tool call
@@ -866,8 +866,8 @@ async function processChatRequest(req, res) {
 
         if (!res.headersSent) {
             res.setHeader("X-Stream-Error", "processing_error");
-            if (turnInfo?.turn_id) res.setHeader("X-Assistant-Turn-Id", turnInfo.turn_id);
-            if (turnInfo?.parent_turn_id) res.setHeader("X-Assistant-Parent-Turn-Id", turnInfo.parent_turn_id);
+            if (turnInfo?.turn_id) res.setHeader("X-Response-Turn-Id", turnInfo.turn_id);
+            if (turnInfo?.parent_turn_id) res.setHeader("X-Response-Parent-Turn-Id", turnInfo.parent_turn_id);
             res.status(500).json({ error: error.message });
         } else {
             res.write(`\n[ERROR] ${error.message}`);
