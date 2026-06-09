@@ -18,7 +18,10 @@ class DebugPanel {
             return this.renderUserDebugData(debugData);
         }
 
-        // Handle assistant debug data (minimal from backend)
+        // Handle assistant debug data — from DB (debugDataAll) or transient store (request/response)
+        if (debugData.debugDataAll && Array.isArray(debugData.debugDataAll)) {
+            return this.renderAssistantDebugData(debugData);
+        }
         if (debugData.request || debugData.response || debugData.error) {
             return this.renderAssistantDebugData(debugData);
         }
@@ -129,53 +132,51 @@ class DebugPanel {
             content += `<div class="debug-note">Parent Turn: ${debugData.parentTurnId}</div>`;
         }
 
-        // Collect all responses and errors from all messages in the turn
-        const allResponses = [];
-        const allErrors = [];
-        const allToolCalls = [];
-
-        if (debugData.response) {
-            allResponses.push(debugData.response);
-        }
-        if (debugData.error) {
-            allErrors.push(debugData.error);
-        }
-        if (debugData.debugDataAll && Array.isArray(debugData.debugDataAll)) {
-            for (const d of debugData.debugDataAll) {
-                if (d.response) {
-                    allResponses.push(d.response);
-                }
-                if (d.error) {
-                    allErrors.push(d.error);
-                }
-                if (d.response && d.response.toolCalls && d.response.toolCalls.length > 0) {
-                    allToolCalls.push(...d.response.toolCalls);
-                }
-            }
-        }
-
         // Show errors
-        for (const err of allErrors) {
+        if (debugData.error) {
             content += `<div class="debug-section timeline-item error-section">`;
-            content += `<div class="debug-section-title">ERROR: ${err.type}</div>`;
+            content += `<div class="debug-section-title">ERROR: ${debugData.error.type}</div>`;
             content += `<div class="debug-timestamp">${new Date().toISOString()}</div>`;
-            content += `<div class="tool-info">Message: ${err.message || 'No message'}</div>`;
-            if (err.status_code) {
-                content += `<div class="tool-info">Status: ${err.status_code}</div>`;
+            content += `<div class="tool-info">Message: ${debugData.error.message || 'No message'}</div>`;
+            if (debugData.error.status_code) {
+                content += `<div class="tool-info">Status: ${debugData.error.status_code}</div>`;
             }
             content += `</div>`;
+            content += '</div>';
+            return content;
         }
 
-        // Show all responses
-        for (let i = 0; i < allResponses.length; i++) {
-            const resp = allResponses[i];
-            const label = allResponses.length > 1 ? `Response #${i + 1}` : 'HTTP RESPONSE';
+        // Collect all debug entries for this turn from debugDataAll (DB query returns all messages)
+        // debugData from transient store is just the last response — skip it to avoid duplication
+        const allEntries = [];
+        if (debugData.debugDataAll && Array.isArray(debugData.debugDataAll)) {
+            for (const d of debugData.debugDataAll) {
+                if (d.response || d.error) {
+                    allEntries.push(d);
+                }
+            }
+        }
+
+        // If no debugDataAll, fall back to debugData alone (edge case)
+        if (allEntries.length === 0 && debugData.response) {
+            allEntries.push(debugData);
+        }
+
+        // Render sequential response timeline
+        for (let i = 0; i < allEntries.length; i++) {
+            const entry = allEntries[i];
+            const resp = entry.response;
+            const isLast = i === allEntries.length - 1;
+            const nextEntry = allEntries[i + 1] || null;
+
             content += `<div class="debug-section timeline-item">`;
-            content += `<div class="debug-section-title">${label}${resp.hasToolCalls ? ' (' + resp.toolCalls.length + ' tool calls)' : ''}</div>`;
-            content += `<div class="debug-timestamp">${resp.timestamp || ''}</div>`;
+            content += `<div class="debug-section-title">Response ${i + 1}</div>`;
+
             if (resp.status) {
                 content += `<div class="tool-info">Status: ${resp.status}</div>`;
             }
+
+            // SSE stream
             if (resp.rawBody) {
                 const lines = resp.rawBody.split('\n');
                 const prettyLines = lines.map(line => {
@@ -192,20 +193,34 @@ class DebugPanel {
                     }
                     return trimmed;
                 }).join('\n');
-                content += this.createDropdown('Response JSON (SSE stream)', prettyLines, false, 'json');
+                content += this.createDropdown('SSE Stream', prettyLines, false, 'json');
             }
+
+            // Content
             if (resp.content) {
                 const preview = resp.content.length > 500
                     ? resp.content.substring(0, 500) + '...'
                     : resp.content;
-                content += this.createDropdown('Response Content', preview, false, 'json');
+                content += this.createDropdown('Content', preview, false, 'json');
             }
-            content += `</div>`;
-        }
 
-        // Show aggregated tool calls from all responses
-        if (allToolCalls.length > 0) {
-            content += this.createDropdown('Tool Calls', JSON.stringify(allToolCalls, null, 2));
+            // Tool calls with results
+            if (resp.toolCalls && resp.toolCalls.length > 0) {
+                const toolCallHtml = this.renderToolCallsWithResults(resp.toolCalls, nextEntry);
+                content += toolCallHtml;
+            }
+
+            // Recursive request body (next response's request)
+            if (nextEntry && nextEntry.request && nextEntry.request.body) {
+                content += this.createDropdown('Recursive Request', JSON.stringify(nextEntry.request.body, null, 2), false, 'json');
+            }
+
+            // Done marker for last response
+            if (isLast) {
+                content += `<div class="debug-note" style="margin-top:8px;">✓ Done</div>`;
+            }
+
+            content += `</div>`;
         }
 
         // Show Messages In This Turn (query from DB on demand)
@@ -224,6 +239,35 @@ class DebugPanel {
 
         content += '</div>';
         return content;
+    }
+
+    renderToolCallsWithResults(toolCalls, nextEntry) {
+        let html = '<div class="debug-section timeline-item">';
+        html += '<div class="debug-section-title">Tool Calls</div>';
+
+        for (const tc of toolCalls) {
+            const toolName = tc.function?.name || 'unknown';
+            const toolId = tc.id;
+            let args;
+            try {
+                args = JSON.parse(tc.function?.arguments || '{}');
+            } catch (e) {
+                args = { raw: tc.function?.arguments || '{}' };
+            }
+
+            html += `<div class="debug-dropdown" data-content-type="json">`;
+            html += `<div class="debug-dropdown-header" onclick="toggleDebugDropdown(this)">`;
+            html += `<span class="dropdown-icon">▶</span>`;
+            html += `<span class="dropdown-title">${toolName} (${toolId})</span>`;
+            html += `</div>`;
+            html += `<div class="debug-dropdown-content" style="display: none">`;
+            html += `<pre>${JSON.stringify({ id: toolId, name: toolName, arguments: args }, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+            html += `</div>`;
+            html += `</div>`;
+        }
+
+        html += '</div>';
+        return html;
     }
 
     createDropdown(title, content, isExpanded = false, contentType = 'text') {

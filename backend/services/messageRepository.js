@@ -53,10 +53,11 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         const updateChatStmt = db.prepare("UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         updateChatStmt.run(chatId);
 
+        const msgId = result.lastInsertRowid;
         log(
-            `[SAVE] Saved ${role} message to chat ${chatId} (turn ${finalTurnNumber}, turn_id=${turnId}, parent_turn_id=${parentTurnId})`
+            `[SAVE] Saved ${role} message to chat ${chatId} (id=${msgId}, turn ${finalTurnNumber}, turn_id=${turnId}, parent_turn_id=${parentTurnId})`
         );
-        return result.lastInsertRowid;
+        return msgId;
     } catch (error) {
         log("[SAVE] Error saving message:", error);
         throw error;
@@ -150,58 +151,33 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
     }
 }
 
-// Save turn debug data keyed on turn_id, merging with existing data
-async function saveTurnDebugData(chatId, turnId, debugData) {
+// Save debug data on a specific message row
+async function saveTurnDebugData(chatId, messageId, debugData) {
     const { db } = require('../config/database');
 
     try {
-        if (!turnId) {
-            log(`[TURN-DEBUG] Skipping debug save for chat ${chatId}: no turn_id yet (aborted stream?)`);
+        if (!messageId) {
+            log(`[TURN-DEBUG] Skipping debug save: no messageId`);
             return null;
         }
 
-        // Check if debug data already exists for this turn (e.g. from a tool-call response)
-        const existingStmt = db.prepare(`
-            SELECT debug_data FROM messages
-            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
-            LIMIT 1
-        `);
-        const existing = existingStmt.get(chatId, turnId);
-
-        let mergedData;
-        if (existing && existing.debug_data) {
-            try {
-                const existingParsed = JSON.parse(existing.debug_data);
-                // Merge: existing data takes priority for response/toolCalls (first response had the tool calls)
-                mergedData = {
-                    ...existingParsed,
-                    ...debugData,
-                    response: existingParsed.response || debugData.response
-                };
-            } catch (e) {
-                mergedData = debugData;
-            }
-        } else {
-            mergedData = debugData;
-        }
-
-        const debugDataJson = JSON.stringify(mergedData);
+        const debugDataJson = JSON.stringify(debugData);
 
         const updateStmt = db.prepare(`
             UPDATE messages
             SET debug_data = ?
-            WHERE chat_id = ? AND turn_id = ?
+            WHERE chat_id = ? AND id = ?
         `);
-        const result = updateStmt.run(debugDataJson, chatId, turnId);
+        const result = updateStmt.run(debugDataJson, chatId, messageId);
 
         if (result.changes === 0) {
-            log(`[TURN-DEBUG] No message found for chat=${chatId} turn_id=${turnId}; debug data not saved`);
+            log(`[TURN-DEBUG] No message found for chat=${chatId} id=${messageId}; debug data not saved`);
         } else {
-            log(`[TURN-DEBUG] Saved debug data for turn_id=${turnId} in chat ${chatId}`);
+            log(`[TURN-DEBUG] Saved debug data for message id=${messageId} in chat ${chatId}`);
         }
         return result;
     } catch (err) {
-        log("[TURN-DEBUG] Error saving turn debug data:", err);
+        log("[TURN-DEBUG] Error saving debug data:", err);
         throw err;
     }
 }

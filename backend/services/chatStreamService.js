@@ -439,8 +439,36 @@ async function handleChatWithTools(
                         content: unifiedResponse.content
                     };
                     try {
-                        await saveMessage(chatId, finalResponseMessage, currentTurn, null, turnInfo);
+                        const finalMsgId = await saveMessage(chatId, finalResponseMessage, currentTurn, null, turnInfo);
                         log(`[CHAT-SAVE] Successfully saved final response to history`);
+
+                        // Build and store debug data for the final response
+                        const debugPayload = buildMessageDebugData({
+                            requestId,
+                            chatId,
+                            turnId: turnInfo?.turn_id,
+                            parentTurnId: turnInfo?.parent_turn_id,
+                            currentTurn,
+                            targetUrl,
+                            requestData,
+                            apiRes,
+                            unifiedResponse,
+                            rawResponseBody
+                        });
+
+                        if (requestId) {
+                            storeDebugData(requestId, debugPayload);
+                            log(`[ADAPTER-DEBUG] Transient debug data stored for request:`, requestId);
+                        }
+
+                        if (turnInfo) {
+                            try {
+                                await saveTurnDebugData(chatId, finalMsgId, debugPayload);
+                                log(`[ADAPTER-DEBUG] Debug data stored for message id=${finalMsgId}`);
+                            } catch (error) {
+                                log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
+                            }
+                        }
                     } catch (error) {
                         log(`[CHAT-SAVE] Error saving final response: ${error.message}`);
                     }
@@ -536,7 +564,7 @@ async function executeToolCallsAndContinue(
 
     // Save assistant message with tool calls to database
     if (chatId) {
-        await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
+        const msgId = await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
         log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
 
         // Store debug data for the tool-call response (now that the message row exists)
@@ -561,8 +589,8 @@ async function executeToolCallsAndContinue(
 
             if (turnInfo) {
                 try {
-                    await saveTurnDebugData(chatId, turnInfo.turn_id, debugPayload);
-                    log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
+                    await saveTurnDebugData(chatId, msgId, debugPayload);
+                    log(`[ADAPTER-DEBUG] Debug data stored for message id=${msgId}`);
                 } catch (error) {
                     log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
                 }

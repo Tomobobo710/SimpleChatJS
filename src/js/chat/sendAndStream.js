@@ -151,16 +151,6 @@ async function streamAndRenderResponse({
 
         processor.finalize();
 
-        let debugData = null;
-        try {
-            const debugResponse = await fetch(`${window.location.origin}/api/debug/${requestId}`);
-            if (debugResponse.ok) {
-                debugData = await debugResponse.json();
-            }
-        } catch (error) {
-            logger.warn("Failed to fetch debug data:", error);
-        }
-
         // Fetch all debug data for messages in this turn from the DB
         let debugDataAll = null;
         try {
@@ -200,8 +190,11 @@ async function streamAndRenderResponse({
         responseTurnDiv.remove();
 
         const responseTurnNumber = requestTurnNumber + 1;
-        if (debugData) {
-            debugData.currentTurnNumber = responseTurnNumber;
+        // Set currentTurnNumber on all entries
+        if (debugDataAll && Array.isArray(debugDataAll)) {
+            for (const d of debugDataAll) {
+                d.currentTurnNumber = responseTurnNumber;
+            }
         }
 
         const rto = RenderableTurnObject.fromStreamingProcessor({
@@ -209,27 +202,13 @@ async function streamAndRenderResponse({
             turnNumber: responseTurnNumber,
             turnId: savedResponseTurn?.turn_id || null,
             parentTurnId: savedResponseTurn?.parent_turn_id || null,
-            debugData,
             debugDataAll,
             dropdownStates
         });
 
         chatRenderer.renderTurn(rto, true);
 
-        if (debugData) {
-            try {
-                debugData.turn_id = savedResponseTurn?.turn_id || null;
-                debugData.parent_turn_id = savedResponseTurn?.parent_turn_id || null;
-                await saveTurnData(currentChatId, savedResponseTurn?.turn_id, debugData);
-                logger.info(
-                    `[${inputMethod.toUpperCase()}] Saved response debug data for turn_id=${savedResponseTurn?.turn_id}`
-                );
-            } catch (error) {
-                logger.warn(`[${inputMethod.toUpperCase()}] Failed to save response debug data:`, error);
-            }
-        }
-
-        return { savedResponseTurn, debugData, processor };
+        return { savedResponseTurn, debugDataAll, processor };
     } catch (error) {
         if (!errorAlreadyHandled) {
             if (toolEventSource) {
@@ -328,7 +307,7 @@ async function sendAndStream({
         requestTurnInfo || (inputMethod === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
 
     const container = truncateContainer || turnsContainer;
-    const { savedResponseTurn, debugData, processor } = await streamAndRenderResponse({
+   const { savedResponseTurn, debugDataAll, processor } = await streamAndRenderResponse({
         fetchPromise: requestInfo.fetchPromise,
         requestId,
         requestTurnInfo: effectiveRequestTurnInfo,
@@ -348,7 +327,7 @@ async function sendAndStream({
                 requestTurnInfo,
                 responseTurnInfo,
                 requestId,
-                debugData,
+                debugDataAll,
                 processor
             });
         } catch (error) {

@@ -51,7 +51,7 @@ router.get('/debug/turn/:chatId/:turnId', (req, res) => {
     const { chatId, turnId } = req.params;
     try {
         const stmt = db.prepare(`
-            SELECT debug_data FROM messages
+            SELECT id, role, content, debug_data FROM messages
             WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
         `);
         const rows = stmt.all(chatId, turnId);
@@ -61,6 +61,10 @@ router.get('/debug/turn/:chatId/:turnId', (req, res) => {
                 catch (_) { return null; }
             })
             .filter(d => d && (d.response || d.error));
+        log(`[DEBUG-ROUTE] Turn ${turnId} has ${rows.length} messages with debug_data, ${debugDataAll.length} have response/error`);
+        debugDataAll.forEach((d, i) => {
+            log(`[DEBUG-ROUTE]   [${i}] role=${rows[i]?.role}, hasContent=${!!d.response?.content}, contentLen=${d.response?.content?.length}, hasToolCalls=${d.response?.hasToolCalls}, toolCallCount=${d.response?.toolCalls?.length}`);
+        });
         res.json(debugDataAll);
     } catch (err) {
         res.status(500).json({ error: err.message });

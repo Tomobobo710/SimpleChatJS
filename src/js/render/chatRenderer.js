@@ -14,6 +14,7 @@ class ChatRenderer {
                 blocks,
                 content,
                 debugData,
+                debugDataAll,
                 dropdownStates = {},
                 originalContent,
                 turnNumber,
@@ -120,8 +121,8 @@ class ChatRenderer {
             this.addMessageActions(turnDiv, role, turnNumber, id, turnId, parentTurnId, branchMap);
 
             // Add debug toggle and panel if debug data provided
-            if (debugData) {
-                this.addDebugPanel(turnDiv, domId, debugData, turnNumber);
+            if (debugData || debugDataAll) {
+                this.addDebugPanel(turnDiv, domId, { ...debugData, debugDataAll }, turnNumber);
             }
 
             // Edit badge: edit_count is incremented only by in-place edits
