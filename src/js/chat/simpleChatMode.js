@@ -1,7 +1,7 @@
 // Simple Chat Mode - Direct streaming chat
 
 async function attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
-    const requestMessages = turnsContainer.querySelectorAll('.turn.user-turn, .message.user');
+    const requestMessages = turnsContainer.querySelectorAll('.turn.request-turn, .message.user');
     const lastRequestMessage = requestMessages[requestMessages.length - 1];
     if (!lastRequestMessage) return;
 
@@ -42,63 +42,7 @@ async function attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
     lastRequestMessage.appendChild(debugPanel);
 }
 
-function buildRequestDebugData({ message, requestTurnNumber, requestId, conversationHistory, inputMethod, enabledToolsFlags }) {
-    return {
-        sequence: [
-            {
-                type: 'user_input',
-                step: 1,
-                data: {
-                    userQuery: {
-                        message: message,
-                        chat_id: currentChatId,
-                        timestamp: new Date().toISOString(),
-                        message_length: message.length,
-                        turn_number: requestTurnNumber,
-                    },
-                    tools: {
-                        total: Object.keys(enabledToolsFlags).length,
-                        flags: enabledToolsFlags,
-                    },
-                    context: {
-                        input_method: inputMethod,
-                        current_chat: currentChatId,
-                    },
-                },
-                timestamp: new Date().toISOString(),
-            },
-        ],
-        metadata: {
-            endpoint: 'user_input',
-            timestamp: new Date().toISOString(),
-            tools: Object.keys(enabledToolsFlags).length,
-        },
-        currentTurnNumber: requestTurnNumber,
-        completeMessageHistory: conversationHistory || [],
-        conversationHistory: conversationHistory || [],
-    };
-}
 
-function addApiRequestToDebugData(requestDebugData, { requestId, message, requestTurnNumber, enabledToolsFlags }) {
-    requestDebugData.sequence.push({
-        type: 'ai_http_request',
-        step: requestDebugData.sequence.length + 1,
-        timestamp: new Date().toISOString(),
-        data: {
-            requestId: requestId,
-            endpoint: 'chat',
-            message: message,
-            tools_enabled: Object.keys(enabledToolsFlags).length,
-            turn_number: requestTurnNumber,
-        },
-    });
-    requestDebugData.apiRequest = {
-        url: `${window.location.origin}/api/chat`,
-        method: 'POST',
-        requestId: requestId,
-        timestamp: new Date().toISOString(),
-    };
-}
 
 function updateChatTitleFromMessage(message) {
     const currentTitle = document.getElementById('chatTitle').textContent;
@@ -247,34 +191,41 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                 });
 
                 const requestTurn = new Turn(requestTurnNumber, [requestMessage], requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
-                chatRenderer.renderTurn(requestTurn.renderable(), true);
+                const rto = requestTurn.renderable();
+                chatRenderer.renderTurn(rto, true);
 
-                const enabledToolsFlags = loadEnabledTools();
-                const requestDebugData = buildRequestDebugData({
-                    message,
-                    requestTurnNumber,
-                    requestId,
-                    conversationHistory,
-                    inputMethod,
-                    enabledToolsFlags,
-                });
-                addApiRequestToDebugData(requestDebugData, { requestId, message, requestTurnNumber, enabledToolsFlags });
-                savedRequestDebugData = requestDebugData;
+                // Extract turnMessages from RTO for the debug panel
+                const turnMessages = rto.turnMessages || [{ role: 'user', content: message }];
 
-                try {
-                    await saveTurnData(currentChatId, requestTurnInfo.turn_id, requestDebugData);
-                    logger.info(`[TURN-DEBUG] Saved request debug data for turn_id=${requestTurnInfo.turn_id}`);
-                } catch (error) {
-                    logger.warn('Failed to save request turn debug data:', error);
-                }
-
-                attachRequestDebugPanel(requestTurnNumber, requestDebugData);
+                // Store requestId and turnMessages so onResponseRendered can fetch the debug data later
+                savedRequestDebugData = { _requestId: requestId, _turnId: requestTurnInfo.turn_id, _turnMessages: turnMessages };
             },
 
-            onResponseRendered: async ({ processor }) => {
+            onResponseRendered: async ({ processor, debugDataAll }) => {
                 const responseContent = processor.getRawContent() || '';
                 updateChatPreview(currentChatId, responseContent);
                 updateChatTitleFromMessage(message);
+
+                // Fetch request debug data now that backend has finished processing
+                try {
+                    const turnId = savedRequestDebugData?._turnId;
+                    const turnMessages = savedRequestDebugData?._turnMessages;
+                    if (turnId) {
+                        const debugResponse = await fetch(`${window.location.origin}/api/debug/turn/${currentChatId}/${turnId}`);
+                        if (debugResponse.ok) {
+                            const allDebugData = await debugResponse.json();
+                            const requestEntry = allDebugData.find(d => d.sequence);
+                            if (requestEntry) {
+                                requestEntry.turnMessages = turnMessages;
+                                savedRequestDebugData = requestEntry;
+                                // Re-attach the debug panel with proper data
+                                attachRequestDebugPanel(requestTurnNumber, userEntry);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    logger.warn('Failed to fetch request debug data:', error);
+                }
             },
 
             onError: (error, processor, requestTurnInfo, savedResponseTurn) => {

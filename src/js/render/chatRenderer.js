@@ -15,6 +15,7 @@ class ChatRenderer {
                 content,
                 debugData,
                 debugDataAll,
+                turnMessages,
                 dropdownStates = {},
                 originalContent,
                 turnNumber,
@@ -67,9 +68,9 @@ class ChatRenderer {
 
             // Use the new turn-based class names
             if (role === "user") {
-                turnDiv.className = "turn user-turn";
+                turnDiv.className = "turn request-turn";
             } else if (role === "assistant") {
-                turnDiv.className = "turn assistant-turn";
+                turnDiv.className = "turn response-turn";
             } else {
                 turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
             }
@@ -122,7 +123,7 @@ class ChatRenderer {
 
             // Add debug toggle and panel if debug data provided
             if (debugData || debugDataAll) {
-                this.addDebugPanel(turnDiv, domId, { ...debugData, debugDataAll }, turnNumber);
+                this.addDebugPanel(turnDiv, domId, { ...debugData, debugDataAll, turnMessages }, turnNumber);
             }
 
             // Edit badge: edit_count is incremented only by in-place edits
@@ -156,7 +157,7 @@ class ChatRenderer {
 
             // Create a simple error message instead of crashing
             const errorDiv = document.createElement("div");
-            errorDiv.className = "turn assistant-turn error";
+            errorDiv.className = "turn response-turn error";
             errorDiv.innerHTML = `
                 <div class="turn-content">
                     <div class="error-message">Error rendering message: ${error.message}</div>
@@ -1879,10 +1880,10 @@ class ChatRenderer {
                         const requestDebugData = {
                             sequence: [
                                 {
-                                    type: "user_input",
+                                    type: "request_input",
                                     step: 1,
                                     data: {
-                                        userQuery: {
+                                        requestQuery: {
                                             message: firstContent,
                                             chat_id: currentChatId,
                                             timestamp: new Date().toISOString(),
@@ -1905,7 +1906,7 @@ class ChatRenderer {
                                 }
                             ],
                             metadata: {
-                                endpoint: "user_input_retry",
+                                endpoint: "request_input_retry",
                                 timestamp: new Date().toISOString(),
                                 tools: Object.keys(enabledToolsFlags).length
                             },

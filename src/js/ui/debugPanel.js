@@ -1,7 +1,7 @@
 // Debug Panel - Shows request/response data for a turn.
 // Two data sources:
-//   1. User debug data (built frontend): sequence format with user_input + ai_http_request
-//   2. Assistant debug data (from backend): minimal { request, response, error } + transient HTTP data
+//   1. Request debug data (from backend): sequence format with user_http_request, unified_request, ai_http_request
+//   2. Response debug data (from backend): sequential responses with SSE streams, tool calls, and results
 
 class DebugPanel {
     constructor() {
@@ -13,99 +13,82 @@ class DebugPanel {
             return '<div class="debug-panel"><p>No debug data available</p></div>';
         }
 
-        // Handle user debug data (sequence format from frontend)
+        // Handle request debug data (sequence format from backend)
         if (debugData.sequence && !debugData.request) {
-            return this.renderUserDebugData(debugData);
+            return this.renderRequestDebugData(debugData);
         }
 
-        // Handle assistant debug data — from DB (debugDataAll) or transient store (request/response)
+        // Handle response debug data — from DB (debugDataAll) or transient store (request/response)
         if (debugData.debugDataAll && Array.isArray(debugData.debugDataAll)) {
-            return this.renderAssistantDebugData(debugData);
+            return this.renderResponseDebugData(debugData);
         }
         if (debugData.request || debugData.response || debugData.error) {
-            return this.renderAssistantDebugData(debugData);
+            return this.renderResponseDebugData(debugData);
         }
-
- 
 
         return '<div class="debug-panel"><p>No debug data available</p></div>';
     }
 
-    renderUserDebugData(debugData) {
+    renderRequestDebugData(debugData) {
         let content = '<div class="debug-panel">';
-        content += '<h3>User Request Debug</h3>';
-        content += '<div class="debug-note">HTTP request payload sent to AI provider</div>';
+        content += '<h3>Request Debug</h3>';
+        content += '<div class="debug-note">Request pipeline: frontend &rarr; SimpleChat &rarr; AI provider</div>';
 
-        // Show the ai_http_request event
-        const requestEvent = debugData.sequence.find(step => step.type === 'ai_http_request');
-        if (requestEvent) {
-            content += `<div class="debug-section timeline-item">`;
-            content += `<div class="debug-section-title">STEP 1: AI HTTP REQUEST</div>`;
-            content += `<div class="debug-timestamp">${requestEvent.timestamp}</div>`;
-            content += `<div class="debug-note">Request initiated from user bubble phase</div>`;
-            content += this.createDropdown('Request Details', JSON.stringify(requestEvent.data, null, 2));
+        // Show turn info
+        if (debugData.currentTurnNumber) {
+            content += `<div class="debug-note">Turn #${debugData.currentTurnNumber}</div>`;
+        }
+
+        // Show the 3-step sequence
+        if (debugData.sequence && Array.isArray(debugData.sequence)) {
+            for (const step of debugData.sequence) {
+                const labels = {
+                    'user_http_request': 'Frontend &rarr; SimpleChat',
+                    'unified_request': 'SimpleChat &rarr; Unified Format',
+                    'ai_http_request': 'SimpleChat &rarr; AI Provider'
+                };
+                const label = labels[step.type] || step.type;
+
+                content += `<div class="debug-section timeline-item">`;
+                content += `<div class="debug-section-title">Step ${step.step}: ${label}</div>`;
+                content += `<div class="debug-timestamp">${step.timestamp}</div>`;
+
+                if (step.data && step.data.requestBody) {
+                    content += this.createDropdown('Request Body', JSON.stringify(step.data.requestBody, null, 2), false, 'json');
+                }
+
+                content += `</div>`;
+            }
+        }
+
+        // Get messages from the AI HTTP request (authoritative source — includes all roles)
+        const aiRequestStep = debugData.sequence.find(s => s.type === 'ai_http_request');
+        const allMessages = aiRequestStep && aiRequestStep.data && aiRequestStep.data.requestBody && Array.isArray(aiRequestStep.data.requestBody.messages)
+            ? aiRequestStep.data.requestBody.messages
+            : null;
+
+        // Show Messages In This Turn
+        if (allMessages && allMessages.length > 0) {
+            content += `<div class="message-history-section">`;
+            content += `<h4>Messages In This Turn</h4>`;
+            content += `<div class="debug-note">${allMessages.length} message(s)</div>`;
+            content += this.createDropdown(
+                `Turn Messages (${allMessages.length} messages)`,
+                JSON.stringify(allMessages, null, 2),
+                false,
+                'json'
+            );
             content += `</div>`;
         }
 
-        // Show turn info
-        content += `<div class="message-history-section">`;
-        content += `<h4>Messages In This Turn</h4>`;
-        if (debugData.currentTurnNumber) {
-            content += `<div class="debug-note">Turn #${debugData.currentTurnNumber}</div>`;
-        } else {
-            content += `<div class="debug-note">Current user message</div>`;
-        }
-
-        // Show the user message
-        const userInputStep = debugData.sequence.find(step => step.type === 'user_input');
-        if (userInputStep && userInputStep.data && userInputStep.data.userQuery) {
-            const userMessage = {
-                role: 'user',
-                content: userInputStep.data.userQuery.message
-            };
-            content += this.createDropdown(
-                `Current User Message`,
-                JSON.stringify([userMessage], null, 2),
-                true,
-                'json'
-            );
-
-            // Show conversation history
-            if (debugData.conversationHistory && debugData.conversationHistory.length > 0) {
-                const prevTurnMessages = [];
-                let foundPrevTurn = false;
-                for (let i = debugData.conversationHistory.length - 1; i >= 0; i--) {
-                    const msg = debugData.conversationHistory[i];
-                    if (msg.role === 'assistant' && !foundPrevTurn) {
-                        prevTurnMessages.unshift(msg);
-                        foundPrevTurn = true;
-                    } else if (foundPrevTurn && msg.role === 'user') {
-                        prevTurnMessages.unshift(msg);
-                        break;
-                    }
-                }
-                if (prevTurnMessages.length > 0) {
-                    content += this.createDropdown(
-                        `Previous Turn Context (${prevTurnMessages.length} messages)`,
-                        JSON.stringify(prevTurnMessages, null, 2),
-                        false,
-                        'json'
-                    );
-                }
-            }
-        } else {
-            content += `<div class="debug-note">No user message found in debug data</div>`;
-        }
-        content += `</div>`;
-
-        // Show complete history
-        if (debugData.conversationHistory && debugData.conversationHistory.length > 0) {
+        // Show Complete Message History
+        if (allMessages && allMessages.length > 0) {
             content += `<div class="message-history-section">`;
             content += `<h4>Complete Message History</h4>`;
-            content += `<div class="debug-note">Complete history across all turns</div>`;
+            content += `<div class="debug-note">${allMessages.length} message(s) sent to provider</div>`;
             content += this.createDropdown(
-                `Complete Message History (${debugData.conversationHistory.length} messages)`,
-                JSON.stringify(debugData.conversationHistory, null, 2),
+                `Complete Message History (${allMessages.length} messages)`,
+                JSON.stringify(allMessages, null, 2),
                 false,
                 'json'
             );
@@ -116,7 +99,7 @@ class DebugPanel {
         return content;
     }
 
-    renderAssistantDebugData(debugData) {
+    renderResponseDebugData(debugData) {
         let content = '<div class="debug-panel">';
         content += '<h3>Response Debug</h3>';
         content += '<div class="debug-note">AI response and HTTP data</div>';
@@ -147,7 +130,7 @@ class DebugPanel {
         }
 
         // Collect all debug entries for this turn from debugDataAll (DB query returns all messages)
-        // debugData from transient store is just the last response — skip it to avoid duplication
+        // debugData from transient store is just the last response &mdash; skip it to avoid duplication
         const allEntries = [];
         if (debugData.debugDataAll && Array.isArray(debugData.debugDataAll)) {
             for (const d of debugData.debugDataAll) {
@@ -217,25 +200,26 @@ class DebugPanel {
 
             // Done marker for last response
             if (isLast) {
-                content += `<div class="debug-note" style="margin-top:8px;">✓ Done</div>`;
+                content += `<div class="debug-note" style="margin-top:8px;">&#10003; Done</div>`;
             }
 
             content += `</div>`;
         }
 
-        // Show Messages In This Turn (query from DB on demand)
-        content += `<div class="message-history-section">`;
-        content += `<h4>Messages In This Turn</h4>`;
-        content += `<div class="debug-note">Turn #${debugData.currentTurnNumber || 'N/A'} — loaded from database</div>`;
-        content += `<div class="debug-info" id="turn-messages-loading">Loading...</div>`;
-        content += `</div>`;
-
-        // Show complete history (query from DB on demand)
-        content += `<div class="message-history-section">`;
-        content += `<h4>Complete Message History</h4>`;
-        content += `<div class="debug-note">Loaded from database</div>`;
-        content += `<div class="debug-info" id="history-loading">Loading...</div>`;
-        content += `</div>`;
+        // Show Messages In This Turn
+        if (debugData.turnMessages && Array.isArray(debugData.turnMessages) && debugData.turnMessages.length > 0) {
+            const messages = debugData.turnMessages;
+            content += `<div class="message-history-section">`;
+            content += `<h4>Messages In This Turn</h4>`;
+            content += `<div class="debug-note">${messages.length} message(s)</div>`;
+            content += this.createDropdown(
+                `Turn Messages (${messages.length} messages)`,
+                JSON.stringify(messages, null, 2),
+                false,
+                'json'
+            );
+            content += `</div>`;
+        }
 
         content += '</div>';
         return content;
@@ -260,8 +244,8 @@ class DebugPanel {
 
             html += `<div class="debug-dropdown" data-content-type="json">`;
             html += `<div class="debug-dropdown-header" onclick="toggleDebugDropdown(this)">`;
-            html += `<span class="dropdown-icon">▶</span>`;
-            html += `<span class="dropdown-title">${toolName} (${toolId})${hasResult ? ' ✓' : ''}</span>`;
+            html += `<span class="dropdown-icon">&#9654;</span>`;
+            html += `<span class="dropdown-title">${toolName} (${toolId})${hasResult ? ' &#10003;' : ''}</span>`;
             html += `</div>`;
             html += `<div class="debug-dropdown-content" style="display: none">`;
 
@@ -287,7 +271,7 @@ class DebugPanel {
         return `
             <div class="debug-dropdown ${expandedClass}" data-content-type="${contentType}">
                 <div class="debug-dropdown-header" onclick="toggleDebugDropdown(this)">
-                    <span class="dropdown-icon">▶</span>
+                    <span class="dropdown-icon">&#9654;</span>
                     <span class="dropdown-title">${title}</span>
                 </div>
                 <div class="debug-dropdown-content" style="display: ${displayStyle}">
@@ -317,10 +301,9 @@ function toggleDebugDropdown(headerElement) {
     const icon = headerElement.querySelector('.dropdown-icon');
 
     if (dropdown && content && icon) {
-        const isExpanded = dropdown.classList.contains('expanded');
-
+        const expanding = !dropdown.classList.contains('expanded');
         dropdown.classList.toggle('expanded');
-        content.style.display = isExpanded ? 'none' : 'block';
-        icon.textContent = isExpanded ? '▶' : '▼';
+        content.style.display = expanding ? 'block' : 'none';
+        icon.textContent = expanding ? '▼' : '▶';
     }
 }

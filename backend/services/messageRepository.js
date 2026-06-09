@@ -151,29 +151,30 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
     }
 }
 
-// Save debug data on a specific message row
-async function saveTurnDebugData(chatId, messageId, debugData) {
+// Save debug data on a specific message row by id or turn_id
+async function saveTurnDebugData(chatId, identifier, debugData) {
     const { db } = require('../config/database');
 
     try {
-        if (!messageId) {
-            log(`[TURN-DEBUG] Skipping debug save: no messageId`);
+        if (!identifier) {
+            log(`[TURN-DEBUG] Skipping debug save: no identifier`);
             return null;
         }
 
         const debugDataJson = JSON.stringify(debugData);
 
+        // Try message id first, fall back to turn_id
         const updateStmt = db.prepare(`
             UPDATE messages
             SET debug_data = ?
-            WHERE chat_id = ? AND id = ?
+            WHERE chat_id = ? AND (id = ? OR turn_id = ?)
         `);
-        const result = updateStmt.run(debugDataJson, chatId, messageId);
+        const result = updateStmt.run(debugDataJson, chatId, identifier, identifier);
 
         if (result.changes === 0) {
-            log(`[TURN-DEBUG] No message found for chat=${chatId} id=${messageId}; debug data not saved`);
+            log(`[TURN-DEBUG] No message found for chat=${chatId} id/turn_id=${identifier}; debug data not saved`);
         } else {
-            log(`[TURN-DEBUG] Saved debug data for message id=${messageId} in chat ${chatId}`);
+            log(`[TURN-DEBUG] Saved debug data for identifier=${identifier} in chat ${chatId}`);
         }
         return result;
     } catch (err) {

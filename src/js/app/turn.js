@@ -44,11 +44,11 @@ class Turn {
         return this.errorMessages.length > 0;
     }
 
-    hasUserMessages() {
+    hasRequestMessages() {
         return this.userMessages.length > 0;
     }
 
-    hasAssistantMessages() {
+    hasResponseMessages() {
         return this.assistantMessages.length > 0;
     }
 
@@ -56,7 +56,7 @@ class Turn {
     // there is real streamed text to render). Used to gate the
     // "content + error" render branch so error-only messages don't
     // accidentally fall through and render an empty chat block.
-    hasRenderableAssistantContent() {
+    hasRenderableResponseContent() {
         return this.assistantMessages.some(
             (m) => m.content && (typeof m.content === 'string' ? m.content !== '' : true)
         );
@@ -74,8 +74,8 @@ class Turn {
         // etc. show what was streamed and what interrupted it).
         if (
             this.hasErrors() &&
-            this.hasAssistantMessages() &&
-            this.hasRenderableAssistantContent()
+            this.hasResponseMessages() &&
+            this.hasRenderableResponseContent()
         ) {
             const assistantRto = this._renderableAssistant(liveProcessor);
             const errorMsg = this.errorMessages[0];
@@ -126,12 +126,12 @@ class Turn {
         }
 
         // User messages render directly
-        if (this.hasUserMessages()) {
-            return RenderableTurnObject.fromUserMessage(this.userMessages[0]);
+        if (this.hasRequestMessages()) {
+            return RenderableTurnObject.fromRequestMessage(this.userMessages[0]);
         }
 
         // Assistant messages: pure content path (no error attached).
-        if (this.hasAssistantMessages()) {
+        if (this.hasResponseMessages()) {
             return this._renderableAssistant(liveProcessor);
         }
 
@@ -253,6 +253,7 @@ class Turn {
             parentTurnId: this.parentTurnId,
             debugData: primary?.debugData || turnDebugData,
             debugDataAll: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
+            turnMessages: this.messages.map(m => ({ role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName })),
             editCount: primary.editCount,
         });
     }

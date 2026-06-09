@@ -136,12 +136,12 @@
 /* Simple 90s-style layout - no fancy responsive stuff */
 
 /* Special styling for user vs assistant turns - 90s style */
-.user-turn .message-actions {
+.request-turn .message-actions {
     background: #2a4a7a;
     border: 1px inset #4a6a9a;
 }
 
-.assistant-turn .message-actions {
+.response-turn .message-actions {
     background: #4a4a4a;
     border: 1px inset #6a6a6a;
 }

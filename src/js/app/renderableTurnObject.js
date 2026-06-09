@@ -3,7 +3,7 @@
 // The UI renders directly from this object.
 
 class RenderableTurnObject {
-    constructor({ role = 'other', content = '', blocks = null, turnNumber = 0, turnId = null, parentTurnId = null, debugData = null, debugDataAll = null, editCount = 0, dropdownStates = {} } = {}) {
+    constructor({ role = 'other', content = '', blocks = null, turnNumber = 0, turnId = null, parentTurnId = null, debugData = null, debugDataAll = null, turnMessages = null, editCount = 0, dropdownStates = {} } = {}) {
         this.role = role;
         this.content = content;
         this.blocks = blocks;
@@ -12,6 +12,7 @@ class RenderableTurnObject {
         this.parentTurnId = parentTurnId;
         this.debugData = debugData;
         this.debugDataAll = debugDataAll;
+        this.turnMessages = turnMessages;
         this.editCount = editCount;
         this.dropdownStates = dropdownStates;
     }
@@ -28,7 +29,7 @@ class RenderableTurnObject {
         return this.role === 'error';
     }
 
-    static fromUserMessage(message) {
+    static fromRequestMessage(message) {
         return new RenderableTurnObject({
             role: 'user',
             content: message.content,
@@ -37,11 +38,12 @@ class RenderableTurnObject {
             turnId: message.turnId,
             parentTurnId: message.parentTurnId,
             debugData: message.debugData,
+            turnMessages: [{ role: message.role, content: message.content }],
             editCount: message.editCount,
         });
     }
 
-    static fromStreamingProcessor({ processor, turnNumber, turnId = null, parentTurnId = null, debugData = null, debugDataAll = null, dropdownStates = {} }) {
+    static fromStreamingProcessor({ processor, turnNumber, turnId = null, parentTurnId = null, debugData = null, debugDataAll = null, turnMessages = null, dropdownStates = {} }) {
         return new RenderableTurnObject({
             role: 'assistant',
             content: processor.getRawContent() || '',
@@ -51,6 +53,7 @@ class RenderableTurnObject {
             parentTurnId,
             debugData,
             debugDataAll,
+            turnMessages,
             dropdownStates,
         });
     }

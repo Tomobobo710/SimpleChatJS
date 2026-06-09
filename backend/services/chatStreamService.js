@@ -141,6 +141,34 @@ async function handleChatWithTools(
     // Convert to provider-specific format (settings injected for thinking, etc.)
     const requestData = adapter.convertRequest(unifiedRequest, currentSettings);
 
+    // Build the 3-step request sequence for the request debug panel
+    const requestSequence = [
+        {
+            type: 'user_http_request',
+            step: 1,
+            timestamp: new Date().toISOString(),
+            data: {
+                requestBody: req.body || {}
+            }
+        },
+        {
+            type: 'unified_request',
+            step: 2,
+            timestamp: new Date().toISOString(),
+            data: {
+                requestBody: unifiedRequest
+            }
+        },
+        {
+            type: 'ai_http_request',
+            step: 3,
+            timestamp: new Date().toISOString(),
+            data: {
+                requestBody: requestData
+            }
+        }
+    ];
+
     // Set up streaming response headers FIRST.
     if (!res.headersSent) {
         res.setHeader("Content-Type", "text/plain");
@@ -178,19 +206,15 @@ async function handleChatWithTools(
         log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
     }
 
-    // Store the real request data in the user's debug data (enrich the frontend's request debug)
-    if (chatId && currentTurn) {
+    // Store the request sequence in the user's debug data
+    if (chatId && requestTurnId) {
         try {
-            const userDebugData = getTurnDebugData(chatId, currentTurn);
-            if (userDebugData) {
-                userDebugData.actualHttpRequest = {
-                    url: targetUrl,
-                    method: "POST",
-                    headers: { ...headers },
-                    body: requestData
-                };
-                saveTurnDebugData(chatId, currentTurn, userDebugData);
+            let userDebugData = getTurnDebugData(chatId, requestTurnId);
+            if (!userDebugData) {
+                userDebugData = {};
             }
+            userDebugData.sequence = requestSequence;
+            saveTurnDebugData(chatId, requestTurnId, userDebugData);
         } catch (error) {
             log("[DEBUG-STORE] ERROR:", error.message);
         }

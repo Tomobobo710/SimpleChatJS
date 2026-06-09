@@ -42,7 +42,7 @@ async function streamAndRenderResponse({
     const liveRenderer = new ChatRenderer(tempContainer);
 
     const responseTurnDiv = document.createElement("div");
-    responseTurnDiv.className = "turn assistant-turn";
+    responseTurnDiv.className = "turn response-turn";
     responseTurnDiv.innerHTML = "";
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
