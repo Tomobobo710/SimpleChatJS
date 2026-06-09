@@ -46,6 +46,27 @@ router.get('/debug/schema', (req, res) => {
 // Debug data endpoint - completely separate from content
 router.get('/debug/:requestId', handleDebugDataRequest);
 
+// Get all debug data for messages in a turn
+router.get('/debug/turn/:chatId/:turnId', (req, res) => {
+    const { chatId, turnId } = req.params;
+    try {
+        const stmt = db.prepare(`
+            SELECT debug_data FROM messages
+            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
+        `);
+        const rows = stmt.all(chatId, turnId);
+        const debugDataAll = rows
+            .map(row => {
+                try { return JSON.parse(row.debug_data); }
+                catch (_) { return null; }
+            })
+            .filter(d => d && (d.response || d.error));
+        res.json(debugDataAll);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Tool events endpoint - Server-Sent Events for real-time tool data
 router.get('/tools/:requestId', handleToolEventsStream);
 

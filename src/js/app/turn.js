@@ -239,6 +239,11 @@ class Turn {
         const blocks = processor.getBlocks();
         const primary = primaryMessage || this.assistantMessages[0];
 
+        // Collect debug data from all messages in this turn
+        const turnDebugDataArray = this.messages
+            .map(m => m.debugData)
+            .filter(d => d && (d.response || d.error));
+
         return new RenderableTurnObject({
             role: 'assistant',
             content: processor.getRawContent() || '',
@@ -246,7 +251,8 @@ class Turn {
             turnNumber: primary.turnNumber,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
-            debugData: turnDebugData,
+            debugData: primary?.debugData || turnDebugData,
+            debugDataAll: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
             editCount: primary.editCount,
         });
     }

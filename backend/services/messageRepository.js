@@ -150,7 +150,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
     }
 }
 
-// Save turn debug data keyed on turn_id
+// Save turn debug data keyed on turn_id, merging with existing data
 async function saveTurnDebugData(chatId, turnId, debugData) {
     const { db } = require('../config/database');
 
@@ -160,7 +160,32 @@ async function saveTurnDebugData(chatId, turnId, debugData) {
             return null;
         }
 
-        const debugDataJson = JSON.stringify(debugData);
+        // Check if debug data already exists for this turn (e.g. from a tool-call response)
+        const existingStmt = db.prepare(`
+            SELECT debug_data FROM messages
+            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
+            LIMIT 1
+        `);
+        const existing = existingStmt.get(chatId, turnId);
+
+        let mergedData;
+        if (existing && existing.debug_data) {
+            try {
+                const existingParsed = JSON.parse(existing.debug_data);
+                // Merge: existing data takes priority for response/toolCalls (first response had the tool calls)
+                mergedData = {
+                    ...existingParsed,
+                    ...debugData,
+                    response: existingParsed.response || debugData.response
+                };
+            } catch (e) {
+                mergedData = debugData;
+            }
+        } else {
+            mergedData = debugData;
+        }
+
+        const debugDataJson = JSON.stringify(mergedData);
 
         const updateStmt = db.prepare(`
             UPDATE messages

@@ -155,13 +155,24 @@ async function streamAndRenderResponse({
         try {
             const debugResponse = await fetch(`${window.location.origin}/api/debug/${requestId}`);
             if (debugResponse.ok) {
-                const rawDebugData = await debugResponse.json();
-                if (rawDebugData.sequence) {
-                    debugData = rawDebugData;
-                }
+                debugData = await debugResponse.json();
             }
         } catch (error) {
             logger.warn("Failed to fetch debug data:", error);
+        }
+
+        // Fetch all debug data for messages in this turn from the DB
+        let debugDataAll = null;
+        try {
+            const turnId = savedResponseTurn?.turn_id || null;
+            if (turnId) {
+                const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/turn/${currentChatId}/${turnId}`);
+                if (turnDebugResponse.ok) {
+                    debugDataAll = await turnDebugResponse.json();
+                }
+            }
+        } catch (error) {
+            logger.warn("Failed to fetch turn debug data:", error);
         }
 
         const dropdownStates = {};
@@ -199,6 +210,7 @@ async function streamAndRenderResponse({
             turnId: savedResponseTurn?.turn_id || null,
             parentTurnId: savedResponseTurn?.parent_turn_id || null,
             debugData,
+            debugDataAll,
             dropdownStates
         });
 

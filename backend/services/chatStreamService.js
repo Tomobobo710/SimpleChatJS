@@ -7,7 +7,7 @@ const crypto = require("crypto");
 const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
 const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
-const { addToolEvent, storeDebugData } = require("./toolEventService");
+const { addToolEvent, storeDebugData, storeHttpRequest, storeHttpChunk } = require("./toolEventService");
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
 const { incrementTurnNumber, getTurnInfo, getCurrentTurnNumber } = require("./turnService");
 const { buildSystemMessageIfEnabled } = require("./systemPromptService");
@@ -16,6 +16,14 @@ const UnifiedResponse = require("../adapters/UnifiedResponse");
 
 // In-flight chat requests, keyed by requestId.
 const inFlightRequests = new Map();
+
+// Minimal debug_data structure stored on message rows:
+// {
+//   turnId, parentTurnId, currentTurnNumber,
+//   request: { url, body },
+//   response: { content, toolCalls, status },
+//   error: { type, message, status_code }  // only on error messages
+// }
 
 // Cancel an in-flight chat request by requestId.
 function cancelInFlightRequest(requestId) {
@@ -30,7 +38,7 @@ function cancelInFlightRequest(requestId) {
     state.saved = true;
     inFlightRequests.delete(requestId);
 
-    const streamedSoFar = (state.collectedDebugData && state.collectedDebugData.streamedContent) || "";
+    const streamedSoFar = state.streamedContent || "";
     const errorMessage = {
         role: "assistant",
         content: streamedSoFar,
@@ -57,6 +65,32 @@ function cancelInFlightRequest(requestId) {
         state.destroyWhenCreated = true;
     }
     return { found: true, reason: "cancelled" };
+}
+
+  // Build the minimal debug_data to store on a message row.
+function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, currentTurn, targetUrl, requestData, apiRes, unifiedResponse, rawResponseBody }) {
+    const data = {
+        requestId,
+        turnId,
+        parentTurnId,
+        currentTurnNumber: currentTurn
+    };
+
+    if (targetUrl) {
+        data.request = { url: targetUrl, body: requestData };
+    }
+
+    if (unifiedResponse) {
+        data.response = {
+            content: unifiedResponse.content || "",
+            toolCalls: unifiedResponse.toolCalls || [],
+            hasToolCalls: unifiedResponse.hasToolCalls(),
+            status: apiRes ? apiRes.statusCode : null,
+            rawBody: rawResponseBody || ""
+        };
+    }
+
+    return data;
 }
 
 // Handle chat with potential tool calls
@@ -116,7 +150,7 @@ async function handleChatWithTools(
             res.setHeader("X-Request-Id", requestId);
         }
 
-       // Response turn identifiers in response headers
+        // Response turn identifiers in response headers
         if (turnInfo?.turn_id) {
             res.setHeader("X-Response-Turn-Id", turnInfo.turn_id);
         }
@@ -125,54 +159,12 @@ async function handleChatWithTools(
         }
     }
 
-    // Initialize debug data and turn number
-    let collectedDebugData = existingDebugData;
-
-    // Use the user turn number provided by frontend
+    // Initialize turn number
     let currentTurn;
-    if (collectedDebugData && collectedDebugData.currentTurn) {
-        currentTurn = collectedDebugData.currentTurn;
+    if (debugData && debugData.currentTurn) {
+        currentTurn = debugData.currentTurn;
     } else {
         currentTurn = chatId ? getCurrentTurnNumber(chatId) + 1 : 1;
-    }
-
-    // Calculate next sequence step from existing debug data
-    let sequenceStep = 1;
-    if (collectedDebugData) {
-        const sequenceCount =
-            collectedDebugData.sequence && Array.isArray(collectedDebugData.sequence)
-                ? collectedDebugData.sequence.length
-                : 0;
-        const httpSequenceCount =
-            collectedDebugData.httpSequence && Array.isArray(collectedDebugData.httpSequence)
-                ? collectedDebugData.httpSequence.length
-                : 0;
-        sequenceStep = sequenceCount + httpSequenceCount + 1;
-    }
-
-    if (debugData && requestId && !collectedDebugData) {
-        collectedDebugData = {
-            requestId: requestId,
-            currentTurn: currentTurn,
-            sequence: [],
-            metadata: {
-                endpoint: adapter.getEndpointUrl(currentSettings),
-                timestamp: new Date().toISOString(),
-                tools: tools.length,
-                provider: adapter.providerName,
-                model: currentSettings.modelName
-            },
-            rawData: {
-                httpResponse: {
-                    statusCode: null,
-                    statusMessage: null,
-                    headers: null
-                },
-                errors: []
-            }
-        };
-    } else if (collectedDebugData && !collectedDebugData.currentTurn) {
-        collectedDebugData.currentTurn = currentTurn;
     }
 
     // Get provider-specific URL and headers
@@ -186,11 +178,10 @@ async function handleChatWithTools(
         log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
     }
 
-    // Store the REAL request data in the user's debug data
+    // Store the real request data in the user's debug data (enrich the frontend's request debug)
     if (chatId && currentTurn) {
         try {
             const userDebugData = getTurnDebugData(chatId, currentTurn);
-
             if (userDebugData) {
                 userDebugData.actualHttpRequest = {
                     url: targetUrl,
@@ -198,16 +189,11 @@ async function handleChatWithTools(
                     headers: { ...headers },
                     body: requestData
                 };
-
                 saveTurnDebugData(chatId, currentTurn, userDebugData);
-            } else {
-                log("[DEBUG-STORE] FAIL - No user debug data found");
             }
         } catch (error) {
             log("[DEBUG-STORE] ERROR:", error.message);
         }
-    } else {
-        log("[DEBUG-STORE] SKIP - Missing chatId or currentTurn");
     }
 
     log("[ACTUAL-REQUEST] Sending to API:", JSON.stringify(requestData, null, 2));
@@ -234,16 +220,21 @@ async function handleChatWithTools(
     // Make HTTP request
     const httpModule = url.protocol === "https:" ? https : http;
 
+    // Track streamed content for error handling
+    let streamedContent = "";
+    // Track raw response body for debug
+    let rawResponseBody = "";
+
     // Register the in-flight state
     const inFlightState = {
         apiReq: null,
         chatId,
         currentTurn,
         turnInfo,
-        collectedDebugData,
         cancelledByUser: false,
         saved: false,
-        destroyWhenCreated: false
+        destroyWhenCreated: false,
+        streamedContent: ""
     };
     if (requestId) {
         inFlightRequests.set(requestId, inFlightState);
@@ -257,12 +248,11 @@ async function handleChatWithTools(
         if (inFlightState.apiReq) {
             try { inFlightState.apiReq.destroy(); } catch (_) {}
         }
-        const streamedSoFar = (collectedDebugData && collectedDebugData.streamedContent) || "";
+        const streamedSoFar = inFlightState.streamedContent || "";
         const errorMessage = {
             role: "assistant",
             content: streamedSoFar,
             debug_data: {
-                ...(collectedDebugData || {}),
                 error: { type: "connection_error", message: "Client disconnected" }
             }
         };
@@ -284,14 +274,6 @@ async function handleChatWithTools(
         if (inFlightState.destroyWhenCreated) {
             apiReq.destroy();
         }
-        // Capture debug data
-        if (collectedDebugData && collectedDebugData.rawData) {
-            collectedDebugData.rawData.httpResponse = {
-                statusCode: apiRes.statusCode,
-                statusMessage: apiRes.statusMessage,
-                headers: apiRes.headers
-            };
-        }
 
         if (apiRes.statusCode !== 200) {
             let errorData = "";
@@ -301,13 +283,9 @@ async function handleChatWithTools(
             apiRes.on("end", () => {
                 log(`[${adapter.providerName.toUpperCase()}-ERROR] Status:`, apiRes.statusCode);
                 log(`[${adapter.providerName.toUpperCase()}-ERROR] Response:`, errorData);
-                if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
-                    collectedDebugData.rawData.errors.push({ type: "http_error", message: errorData });
-                }
 
                 // Parse and show the actual API error message to the user
                 let userErrorMessage = `API error: ${apiRes.statusCode} ${apiRes.statusMessage}`;
-
                 try {
                     const errorObj = JSON.parse(errorData);
                     if (errorObj.error && errorObj.error.message) {
@@ -329,13 +307,11 @@ async function handleChatWithTools(
                         role: "assistant",
                         content: "",
                         debug_data: {
-                            ...(collectedDebugData || {}),
                             error: {
                                 type: "api_error",
                                 status_code: apiRes.statusCode,
                                 status_message: apiRes.statusMessage,
-                                user_message: userErrorMessage,
-                                raw_response: errorData
+                                message: userErrorMessage
                             }
                         }
                     };
@@ -385,30 +361,20 @@ async function handleChatWithTools(
                     if (newContent) {
                         res.write(newContent);
                         context.lastContentLength = unifiedResponse.content.length;
-
-                        if (collectedDebugData) {
-                            if (!collectedDebugData.streamedContent) {
-                                collectedDebugData.streamedContent = "";
-                            }
-                            collectedDebugData.streamedContent += newContent;
-                        }
+                        streamedContent += newContent;
+                        inFlightState.streamedContent = streamedContent;
                     }
                 }
 
-                if (collectedDebugData) {
-                    if (!collectedDebugData.rawResponseChunks) {
-                        collectedDebugData.rawResponseChunks = [];
-                    }
-                    collectedDebugData.rawResponseChunks.push({
-                        chunk: chunk.toString(),
-                        timestamp: new Date().toISOString()
-                    });
+                // Accumulate raw response body for debug
+                rawResponseBody += chunk.toString();
+
+                // Store raw chunks in transient debug store (not on message row)
+                if (requestId) {
+                    storeHttpChunk(requestId, chunk.toString());
                 }
             } catch (error) {
                 console.error(`[${adapter.providerName.toUpperCase()}-ADAPTER] Error processing chunk:`, error);
-                if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
-                    collectedDebugData.rawData.errors.push({ type: "processing_error", message: error.message });
-                }
             }
         });
 
@@ -422,61 +388,22 @@ async function handleChatWithTools(
             inFlightState.saved = true;
             if (requestId) inFlightRequests.delete(requestId);
 
-            // Add response step to debug sequence
-            if (collectedDebugData && collectedDebugData.sequence) {
-                const responseStep = {
-                    type: "response",
-                    step: sequenceStep++,
-                    timestamp: new Date().toISOString(),
-                    data: {
-                        raw_http_response: {
-                            status: collectedDebugData.rawData.httpResponse.statusCode,
-                            provider: adapter.providerName,
-                            response_chunks: collectedDebugData.rawResponseChunks || []
-                        },
-                        content: collectedDebugData.streamedContent || "No content streamed",
-                        has_tool_calls: unifiedResponse.hasToolCalls()
-                    }
-                };
-                collectedDebugData.sequence.push(responseStep);
-            }
-
-            // Capture complete HTTP response
-            if (collectedDebugData && requestId) {
-                if (!collectedDebugData.httpSequence) {
-                    collectedDebugData.httpSequence = [];
-                }
-
-                collectedDebugData.httpSequence.push({
+            // Capture HTTP response in transient debug store
+            if (requestId) {
+                storeHttpRequest(requestId, {
                     type: "http_response",
-                    sequence: sequenceStep++,
                     timestamp: new Date().toISOString(),
                     content: unifiedResponse.content || "",
                     toolCalls: unifiedResponse.toolCalls || [],
-                    hasToolCalls: unifiedResponse.hasToolCalls()
+                    hasToolCalls: unifiedResponse.hasToolCalls(),
+                    statusCode: apiRes.statusCode,
+                    statusMessage: apiRes.statusMessage
                 });
-
-                log(`[SEQUENTIAL-DEBUG] Captured HTTP response, hasTools: ${unifiedResponse.hasToolCalls()}`);
             }
 
-            // Handle tool calls if any
+             // Handle tool calls if any
             if (unifiedResponse.hasToolCalls()) {
                 log(`[ADAPTER] Processing ${unifiedResponse.toolCalls.length} tool calls`);
-
-                if (collectedDebugData && collectedDebugData.sequence) {
-                    for (const toolCall of unifiedResponse.toolCalls) {
-                        collectedDebugData.sequence.push({
-                            type: "tool_execution",
-                            step: sequenceStep++,
-                            timestamp: new Date().toISOString(),
-                            data: {
-                                tool_name: toolCall.function.name,
-                                tool_id: toolCall.id,
-                                arguments: JSON.parse(toolCall.function.arguments)
-                            }
-                        });
-                    }
-                }
 
                 await executeToolCallsAndContinue(
                     req,
@@ -486,15 +413,15 @@ async function handleChatWithTools(
                     tools,
                     chatId,
                     unifiedResponse.content,
-                    collectedDebugData,
-                    responseCounter,
+                    currentTurn,
                     requestId,
-                    turnInfo
+                    turnInfo,
+                    targetUrl,
+                    requestData,
+                    apiRes,
+                    rawResponseBody
                 );
             } else {
-                // No tool calls, finish response
-                res.end();
-
                 // Increment turn number now that conversation is complete
                 if (chatId) {
                     incrementTurnNumber(chatId);
@@ -523,34 +450,14 @@ async function handleChatWithTools(
                     );
                 }
 
-                // Store debug data with complete history
-                if (collectedDebugData && requestId) {
-                    if (chatId) {
-                        try {
-                            const { getChatHistoryForAPI } = require('./messageRepository');
-                            collectedDebugData.completeMessageHistory = getChatHistoryForAPI(chatId);
-                            const { getCurrentTurnNumber } = require('./turnService');
-                            collectedDebugData.currentTurnNumber = getCurrentTurnNumber(chatId);
-                            collectedDebugData.currentTurnMessages = null;
-                        } catch (error) {
-                            collectedDebugData.completeMessageHistory = { error: error.message };
-                            collectedDebugData.currentTurnMessages = { error: error.message };
-                            collectedDebugData.currentTurnNumber = null;
-                        }
-                    }
-
-                    storeDebugData(requestId, collectedDebugData);
-                    log(`[ADAPTER-DEBUG] Debug data stored for request:`, requestId);
-                }
+                // Finish response
+                res.end();
             }
         });
     });
 
     apiReq.on("error", (error) => {
         log(`[${adapter.providerName.toUpperCase()}] Request error:`, error);
-        if (collectedDebugData && collectedDebugData.rawData && collectedDebugData.rawData.errors) {
-            collectedDebugData.rawData.errors.push({ type: "request_error", message: error.message });
-        }
 
         if (inFlightState.saved) {
             return;
@@ -559,12 +466,11 @@ async function handleChatWithTools(
         if (requestId) inFlightRequests.delete(requestId);
 
         if (chatId && currentTurn) {
-            const streamedSoFar = (collectedDebugData && collectedDebugData.streamedContent) || "";
+            const streamedSoFar = inFlightState.streamedContent || "";
             const errorMessage = {
                 role: "assistant",
                 content: streamedSoFar,
                 debug_data: {
-                    ...(collectedDebugData || {}),
                     error: { type: "connection_error", message: error.message }
                 }
             };
@@ -588,28 +494,15 @@ async function handleChatWithTools(
         res.end();
     });
 
-    // Capture ACTUAL HTTP request payload being sent
+    // Capture ACTUAL HTTP request payload in transient debug store
     const actualRequestPayload = JSON.stringify(requestData);
-
-    // Add to sequential debug data
-    if (collectedDebugData && requestId) {
-        if (!collectedDebugData.httpSequence) {
-            collectedDebugData.httpSequence = [];
-        }
-
-        if (collectedDebugData.httpSequence.length > 0 || responseCounter > 1) {
-            const requestSequenceNumber = sequenceStep++;
-
-            collectedDebugData.httpSequence.push({
-                type: "http_request",
-                sequence: requestSequenceNumber,
-                timestamp: new Date().toISOString(),
-                payload: JSON.parse(actualRequestPayload),
-                rawPayload: actualRequestPayload
-            });
-        } else {
-            log(`[SEQUENTIAL-DEBUG] Skipping first HTTP request debug - already captured in user phase`);
-        }
+    if (requestId) {
+        storeHttpRequest(requestId, {
+            type: "http_request",
+            timestamp: new Date().toISOString(),
+            payload: requestData,
+            rawPayload: actualRequestPayload
+        });
     }
 
     apiReq.write(actualRequestPayload);
@@ -625,13 +518,14 @@ async function executeToolCallsAndContinue(
     tools,
     chatId,
     assistantMessage,
-    debugData,
-    responseCounter,
+    currentTurn,
     requestId,
-    turnInfo = null
+    turnInfo = null,
+    targetUrl = null,
+    requestData = null,
+    apiRes = null,
+    rawResponseBody = ""
 ) {
-    const currentTurn = debugData && debugData.currentTurn ? debugData.currentTurn : 1;
-
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
         role: "assistant",
@@ -644,6 +538,36 @@ async function executeToolCallsAndContinue(
     if (chatId) {
         await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
         log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
+
+        // Store debug data for the tool-call response (now that the message row exists)
+        if (targetUrl) {
+            const debugPayload = buildMessageDebugData({
+                requestId,
+                chatId,
+                turnId: turnInfo?.turn_id,
+                parentTurnId: turnInfo?.parent_turn_id,
+                currentTurn,
+                targetUrl,
+                requestData,
+                apiRes,
+                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, toolCalls: toolCalls || [] },
+                rawResponseBody
+            });
+
+            if (requestId) {
+                storeDebugData(requestId, debugPayload);
+                log(`[ADAPTER-DEBUG] Transient debug data stored for request:`, requestId);
+            }
+
+            if (turnInfo) {
+                try {
+                    await saveTurnDebugData(chatId, turnInfo.turn_id, debugPayload);
+                    log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
+                } catch (error) {
+                    log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
+                }
+            }
+        }
     }
 
     // Execute each tool call
@@ -690,25 +614,6 @@ async function executeToolCallsAndContinue(
                     }
                 });
             }
-
-            // Add tool result to debug sequence
-            if (debugData && debugData.sequence) {
-                const sequenceCount = debugData.sequence.length;
-                const httpSequenceCount = debugData.httpSequence ? debugData.httpSequence.length : 0;
-                const nextStep = sequenceCount + httpSequenceCount + 1;
-
-                debugData.sequence.push({
-                    type: "tool_result",
-                    step: nextStep,
-                    timestamp: new Date().toISOString(),
-                    data: {
-                        tool_name: toolCall.function.name,
-                        tool_id: toolCall.id,
-                        status: "success",
-                        result: toolResult
-                    }
-                });
-            }
         } catch (error) {
             log(`[TOOL-EXECUTION] Error executing tool ${toolCall.function.name}:`, error);
 
@@ -737,39 +642,20 @@ async function executeToolCallsAndContinue(
                     }
                 });
             }
-
-            // Add tool error to debug sequence
-            if (debugData && debugData.sequence) {
-                const sequenceCount = debugData.sequence.length;
-                const httpSequenceCount = debugData.httpSequence ? debugData.httpSequence.length : 0;
-                const nextStep = sequenceCount + httpSequenceCount + 1;
-
-                debugData.sequence.push({
-                    type: "tool_result",
-                    step: nextStep,
-                    timestamp: new Date().toISOString(),
-                    data: {
-                        tool_name: toolCall.function.name,
-                        tool_id: toolCall.id,
-                        status: "error",
-                        error: error.message
-                    }
-                });
-            }
         }
     }
 
-    // Continue conversation with tool results
+    // Continue conversation with tool results — same turn as the tool-call response
     await handleChatWithTools(
         req,
         res,
         messages,
         tools,
         chatId,
-        debugData,
-        responseCounter + 1,
+        null,  // debugData — tool calls don't need it
+        2,     // responseCounter — reuse original turn_id via getTurnInfo(parent, request)
         requestId,
-        debugData,
+        null,  // existingDebugData
         turnInfo?.parent_turn_id,
         turnInfo?.turn_id
     );
@@ -809,14 +695,6 @@ async function processChatRequest(req, res) {
 
         const tools = getAvailableToolsForChat(enabled_tools);
 
-        const currentSettings = getCurrentSettings();
-        const debugData = {
-            requestStart: Date.now(),
-            endpoint: "will_be_set_by_adapter",
-            settings: currentSettings,
-            toolsEnabled: tools.length
-        };
-
         const { generateRequestId, initializeToolEvents } = require("./toolEventService");
         const requestId = request_id || generateRequestId();
 
@@ -830,7 +708,7 @@ async function processChatRequest(req, res) {
             messages,
             tools,
             chat_id,
-            debugData,
+            null,  // debugData — no longer accumulates state
             1,
             requestId,
             null,
@@ -849,8 +727,7 @@ async function processChatRequest(req, res) {
                 debug_data: {
                     error: {
                         type: "processing_error",
-                        message: error.message,
-                        stack: error.stack
+                        message: error.message
                     }
                 }
             };
