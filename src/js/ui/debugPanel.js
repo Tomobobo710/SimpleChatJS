@@ -206,7 +206,7 @@ class DebugPanel {
 
             // Tool calls with results
             if (resp.toolCalls && resp.toolCalls.length > 0) {
-                const toolCallHtml = this.renderToolCallsWithResults(resp.toolCalls, nextEntry);
+                const toolCallHtml = this.renderToolCallsWithResults(resp.toolCalls, entry.toolResults || null);
                 content += toolCallHtml;
             }
 
@@ -241,7 +241,7 @@ class DebugPanel {
         return content;
     }
 
-    renderToolCallsWithResults(toolCalls, nextEntry) {
+    renderToolCallsWithResults(toolCalls, toolResults) {
         let html = '<div class="debug-section timeline-item">';
         html += '<div class="debug-section-title">Tool Calls</div>';
 
@@ -255,13 +255,23 @@ class DebugPanel {
                 args = { raw: tc.function?.arguments || '{}' };
             }
 
+            const result = toolResults?.find(r => r.toolId === toolId);
+            const hasResult = result && result.status === 'success';
+
             html += `<div class="debug-dropdown" data-content-type="json">`;
             html += `<div class="debug-dropdown-header" onclick="toggleDebugDropdown(this)">`;
             html += `<span class="dropdown-icon">▶</span>`;
-            html += `<span class="dropdown-title">${toolName} (${toolId})</span>`;
+            html += `<span class="dropdown-title">${toolName} (${toolId})${hasResult ? ' ✓' : ''}</span>`;
             html += `</div>`;
             html += `<div class="debug-dropdown-content" style="display: none">`;
-            html += `<pre>${JSON.stringify({ id: toolId, name: toolName, arguments: args }, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+
+            const toolInfo = { id: toolId, name: toolName, arguments: args };
+            if (result) {
+                toolInfo.result = result.result || result.error || null;
+                toolInfo.status = result.status;
+            }
+
+            html += `<pre>${JSON.stringify(toolInfo, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
             html += `</div>`;
             html += `</div>`;
         }
