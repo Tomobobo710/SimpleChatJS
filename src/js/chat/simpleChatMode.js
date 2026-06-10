@@ -1,5 +1,38 @@
 // Simple Chat Mode - Direct streaming chat
 
+// Listen on the request-scoped event channel for the request's debug data and
+// render the request's debug panel as soon as it arrives. The backend emits a
+// `request_debug` event the moment the request is built (before the AI provider
+// is contacted), so this resolves before the response begins. Events are
+// buffered server-side, so connecting here (in the request flow) is safe
+// regardless of ordering. The listener closes itself once the panel is attached.
+function listenForRequestDebug(requestId, requestTurnNumber, turnMessages) {
+    if (!requestId) return;
+    let source;
+    try {
+        source = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
+    } catch (error) {
+        logger.warn('Failed to open request-debug event stream:', error);
+        return;
+    }
+    source.onmessage = (event) => {
+        let evt;
+        try {
+            evt = JSON.parse(event.data);
+        } catch (_) {
+            return;
+        }
+        if (evt.type !== 'request_debug') return;
+        const requestDebugData = evt.data || {};
+        requestDebugData.turnMessages = turnMessages;
+        attachRequestDebugPanel(requestTurnNumber, requestDebugData);
+        source.close();
+    };
+    source.onerror = () => {
+        // The stream closes normally at request end; nothing to do.
+    };
+}
+
 async function attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
     const requestMessages = turnsContainer.querySelectorAll('.turn.request-turn, .message.user');
     const lastRequestMessage = requestMessages[requestMessages.length - 1];
@@ -140,7 +173,6 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
 
     const requestTurnNumber = getNextTurnNumber();
     const inputMethod = 'manual';
-    let savedRequestDebugData = null;
 
     try {
         await sendAndStream({
@@ -197,35 +229,19 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                 // Extract turnMessages from RTO for the debug panel
                 const turnMessages = rto.turnMessages || [{ role: 'user', content: message }];
 
-                // Store requestId and turnMessages so onResponseRendered can fetch the debug data later
-                savedRequestDebugData = { _requestId: requestId, _turnId: requestTurnInfo.turn_id, _turnMessages: turnMessages };
+                // The request's debug panel belongs to the request, not the
+                // response. The backend pushes the request's debug data on the
+                // request-scoped event channel the moment the request is built
+                // (before the AI provider is contacted), so listen for it here,
+                // in the request flow, and render the panel as soon as it
+                // arrives — independent of whether/when the response completes.
+                listenForRequestDebug(requestId, requestTurnNumber, turnMessages);
             },
 
-            onResponseRendered: async ({ processor, debugDataAll }) => {
+            onResponseRendered: async ({ processor }) => {
                 const responseContent = processor.getRawContent() || '';
                 updateChatPreview(currentChatId, responseContent);
                 updateChatTitleFromMessage(message);
-
-                // Fetch request debug data now that backend has finished processing
-                try {
-                    const turnId = savedRequestDebugData?._turnId;
-                    const turnMessages = savedRequestDebugData?._turnMessages;
-                    if (turnId) {
-                        const debugResponse = await fetch(`${window.location.origin}/api/debug/turn/${currentChatId}/${turnId}`);
-                        if (debugResponse.ok) {
-                            const allDebugData = await debugResponse.json();
-                            const requestEntry = allDebugData.find(d => d.sequence);
-                            if (requestEntry) {
-                                requestEntry.turnMessages = turnMessages;
-                                savedRequestDebugData = requestEntry;
-                                // Re-attach the debug panel with proper data
-                                attachRequestDebugPanel(requestTurnNumber, userEntry);
-                            }
-                        }
-                    }
-                } catch (error) {
-                    logger.warn('Failed to fetch request debug data:', error);
-                }
             },
 
             onError: (error, processor, requestTurnInfo, savedResponseTurn) => {

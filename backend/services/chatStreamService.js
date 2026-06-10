@@ -220,6 +220,19 @@ async function handleChatWithTools(
         }
     }
 
+    // The request is fully built and persisted, but we have not yet contacted
+    // the AI provider — this is the "request is complete, response has not
+    // begun" point. Push the request's debug data on the request-scoped event
+    // channel so the frontend can render the request's debug panel immediately,
+    // decoupled from the response. Events are buffered, so this is safe whether
+    // or not the frontend's listener has connected yet.
+    if (requestId) {
+        addToolEvent(requestId, {
+            type: "request_debug",
+            data: { sequence: requestSequence }
+        });
+    }
+
     log("[ACTUAL-REQUEST] Sending to API:", JSON.stringify(requestData, null, 2));
 
     const url = new URL(targetUrl);
