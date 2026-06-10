@@ -77,7 +77,7 @@ class Turn {
             this.hasResponseMessages() &&
             this.hasRenderableResponseContent()
         ) {
-            const assistantRto = this._renderableAssistant(liveProcessor);
+            const responseRto = this._renderResponse(liveProcessor);
             const errorMsg = this.errorMessages[0];
             const errorBlock = new Block({
                 type: 'error',
@@ -88,15 +88,15 @@ class Turn {
                 }
             });
             return new RenderableTurnObject({
-                role: assistantRto.role,
-                content: assistantRto.content,
-                blocks: [...(assistantRto.blocks || []), errorBlock],
-                turnNumber: assistantRto.turnNumber,
-                turnId: assistantRto.turnId,
-                parentTurnId: assistantRto.parentTurnId,
-                debugData: assistantRto.debugData,
-                editCount: assistantRto.editCount,
-                dropdownStates: assistantRto.dropdownStates,
+                role: responseRto.role,
+                content: responseRto.content,
+                blocks: [...(responseRto.blocks || []), errorBlock],
+                turnNumber: responseRto.turnNumber,
+                turnId: responseRto.turnId,
+                parentTurnId: responseRto.parentTurnId,
+                debugData: responseRto.debugData,
+                editCount: responseRto.editCount,
+                dropdownStates: responseRto.dropdownStates,
             });
         }
 
@@ -132,7 +132,7 @@ class Turn {
 
         // Assistant messages: pure content path (no error attached).
         if (this.hasResponseMessages()) {
-            return this._renderableAssistant(liveProcessor);
+            return this._renderResponse(liveProcessor);
         }
 
         // Fallback: empty turn
@@ -152,7 +152,7 @@ class Turn {
     // liveProcessor if provided (live render) or rebuilding blocks
     // from content (reload path). Shared by the pure-assistant and
     // "content + error" branches in renderable().
-    _renderableAssistant(liveProcessor) {
+    _renderResponse(liveProcessor) {
         const assistantMessages = this.assistantMessages;
         let primaryMessage = assistantMessages.find(m => !m.content.is && m.content !== '') || assistantMessages[0];
         let turnDebugData = null;
