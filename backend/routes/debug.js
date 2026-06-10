@@ -55,12 +55,18 @@ router.get('/debug/turn/:chatId/:turnId', (req, res) => {
             WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
         `);
         const rows = stmt.all(chatId, turnId);
+        // Return every parsed debug entry for the turn's messages. Do NOT
+        // filter by shape (e.g. response/error) here: the request's debug data
+        // is a `sequence`, the response's is `response`/`error`, and this is a
+        // generic per-turn endpoint. Consumers that only want one kind (e.g. the
+        // response panel renderer) filter on their own side. Only parse failures
+        // (null) are dropped.
         const debugDataAll = rows
             .map(row => {
                 try { return JSON.parse(row.debug_data); }
                 catch (_) { return null; }
             })
-            .filter(d => d && (d.response || d.error));
+            .filter(d => d);
         res.json(debugDataAll);
     } catch (err) {
         res.status(500).json({ error: err.message });
