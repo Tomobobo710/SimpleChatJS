@@ -17,12 +17,16 @@ const UnifiedResponse = require("../adapters/UnifiedResponse");
 // In-flight chat requests, keyed by requestId.
 const inFlightRequests = new Map();
 
-// Minimal debug_data structure stored on message rows:
+// Debug data structure stored in turn_debug table (keyed by chat_id + turn_id):
 // {
-//   turnId, parentTurnId, currentTurnNumber,
-//   request: { url, body },
-//   response: { content, toolCalls, status },
-//   error: { type, message, status_code }  // only on error messages
+//   sequence: [ ... ],           // Request debug sequence
+//   responses: [                 // Response debug entries (each may have both response + error)
+//     {
+//       response: { content, toolCalls, status, rawBody },
+//       error: { type, message, status_code }  // Optional: only if error occurred
+//     },
+//     ...
+//   ]
 // }
 
 // Cancel an in-flight chat request by requestId.
@@ -86,7 +90,8 @@ function cancelInFlightRequest(requestId) {
     return { found: true, reason: "cancelled" };
 }
 
-  // Build the minimal debug_data to store on a message row.
+  // Build response debug entry for the turn_debug table.
+  // This creates the structure that gets appended to the responses array.
 function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, currentTurn, targetUrl, requestData, apiRes, unifiedResponse, rawResponseBody }) {
     const data = {
         requestId,

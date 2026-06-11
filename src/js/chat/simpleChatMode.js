@@ -108,8 +108,8 @@ function updateChatTitleFromMessage(message) {
 //   requestTurnNumber  - turn number of the request turn.
 //   message            - the original request message (for chat preview/title
 //                        updates).
-//   errorText          - the actual error text. Stored in debug_data and
-//                        shown in the dropdown.
+//   errorText          - the actual error text. Shown in the debug panel.
+//   responseDebugData  - accumulated debug data from streaming (responses + error).
 async function handleSimpleChatError({ errorType, processor, requestTurnInfo, savedResponseTurn, requestTurnNumber, message, errorText = "", responseDebugData = null }) {
     const resolvedErrorText = errorText
         || (errorType === "user_stopped" ? "Generation stopped by user." : "")

@@ -357,7 +357,7 @@ router.post("/chat/:id/turns/:turnId", async (req, res) => {
             return res.status(400).json({ error: "data is required" });
         }
 
-        await saveRequestDebugData(chatId, turnId, data);
+        await saveTurnDebugData(chatId, turnId, data);
         res.json({ success: true });
     } catch (error) {
         log("[TURN-DATA-SAVE] Error:", error);

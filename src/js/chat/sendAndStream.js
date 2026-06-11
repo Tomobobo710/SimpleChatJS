@@ -137,26 +137,17 @@ async function streamAndRenderResponse({
             // Build debug data even on error, before throwing
             let responseDebugData = null;
             try {
-                const responseEntry = {
-                    response: {
-                        content: processor.getRawContent() || "",
-                        toolCalls: [],
-                        hasToolCalls: false,
-                        status: null,
-                        rawBody: ""
+                const turnId = savedResponseTurn?.turn_id || null;
+                if (turnId) {
+                    // Fetch from backend - it has the authoritative saved data including error
+                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
+                    if (turnDebugResponse.ok) {
+                        responseDebugData = await turnDebugResponse.json();
+                        logger.info(`Fetched stream-error responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
                     }
-                };
-                
-                const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${savedResponseTurn.turn_id}`);
-                if (turnDebugResponse.ok) {
-                    const allData = await turnDebugResponse.json();
-                    const errorEntries = allData.filter(entry => entry.error);
-                    responseDebugData = [responseEntry, ...errorEntries];
-                } else {
-                    responseDebugData = [responseEntry];
                 }
             } catch (debugError) {
-                logger.warn("Failed to build error-path debug data:", debugError);
+                logger.warn("Failed to fetch stream-error debug data:", debugError);
             }
             
             // Attach debug data to error object so onError handler can access it
@@ -180,40 +171,20 @@ async function streamAndRenderResponse({
 
         processor.finalize();
 
-        // Build debug data array from live response + any errors from DB
+        // Build debug data array from DB
+        // Always fetch from backend - it has the authoritative saved data
         let responseDebugData = null;
         try {
             const turnId = savedResponseTurn?.turn_id || null;
             if (turnId) {
-                // Build response entry from what we streamed
-                const responseEntry = {
-                    response: {
-                        content: processor.getRawContent() || "",
-                        toolCalls: unifiedResponse?.toolCalls || [],
-                        hasToolCalls: unifiedResponse?.hasToolCalls() || false,
-                        status: null,
-                        rawBody: ""
-                    }
-                };
-                
-                // Fetch turn debug data to get any error entries
                 const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
                 if (turnDebugResponse.ok) {
-                    const allData = await turnDebugResponse.json();
-                    // Filter to get error entries only (skip response entries, we built our own above)
-                    const errorEntries = allData.filter(entry => entry.error);
-                    
-                    // Combine response + errors
-                    responseDebugData = [responseEntry, ...errorEntries];
-                    logger.info(`Built responseDebugData with ${responseDebugData.length} entries (response + ${errorEntries.length} errors)`);
-                } else {
-                    // If no DB data, just use what we built
-                    responseDebugData = [responseEntry];
-                    logger.info(`No DB debug data, using built response only`);
+                    responseDebugData = await turnDebugResponse.json();
+                    logger.info(`Fetched responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
                 }
             }
         } catch (error) {
-            logger.warn("Failed to build response debug data:", error);
+            logger.warn("Failed to fetch response debug data:", error);
         }
         logger.info(`Final responseDebugData:`, responseDebugData);
 
@@ -273,26 +244,15 @@ async function streamAndRenderResponse({
             let responseDebugData = null;
             if (savedResponseTurn) {
                 try {
-                    const responseEntry = {
-                        response: {
-                            content: processor.getRawContent() || "",
-                            toolCalls: [],
-                            hasToolCalls: false,
-                            status: null,
-                            rawBody: ""
-                        }
-                    };
-                    
-                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${savedResponseTurn.turn_id}`);
+                    const turnId = savedResponseTurn.turn_id;
+                    // Fetch from backend - it has the authoritative saved data
+                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
                     if (turnDebugResponse.ok) {
-                        const allData = await turnDebugResponse.json();
-                        const errorEntries = allData.filter(entry => entry.error);
-                        responseDebugData = [responseEntry, ...errorEntries];
-                    } else {
-                        responseDebugData = [responseEntry];
+                        responseDebugData = await turnDebugResponse.json();
+                        logger.info(`Fetched catch-error responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
                     }
                 } catch (debugError) {
-                    logger.warn("Failed to build error-case debug data:", debugError);
+                    logger.warn("Failed to fetch catch-error debug data:", debugError);
                 }
             }
             
