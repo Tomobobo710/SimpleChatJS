@@ -199,43 +199,7 @@ async function executeMCPTool(toolName, args) {
     };
 }
 
-// Execute tool via API
-async function executeToolViaApi(toolName, args) {
-    try {
-        if (!mcpConnected) {
-            return { success: false, error: 'MCP not connected' };
-        }
-        
-        const tool = mcpTools.find(t => t.name === toolName);
-        if (!tool) {
-            return { success: false, error: `Tool '${toolName}' not found` };
-        }
-        
-        log(`[MCP] Executing tool: ${toolName}`);
-        const result = await tool.client.callTool({
-            name: toolName,
-            arguments: args || {}
-        });
-        
-        // Return full raw MCP result as JSON - don't cherry-pick text
-        const rawContent = JSON.stringify(result, null, 2);
-        
-        return {
-            success: !result.isError,
-            content: rawContent,
-            isError: result.isError || false
-        };
-        
-    } catch (error) {
-        log('[MCP] Tool execution error:', error);
-        return {
-            success: false,
-            error: error.message,
-            isError: true,
-            content: `Error: ${error.message}`
-        };
-    }
-}
+
 
 // Load MCP config
 function loadMcpConfig() {
@@ -367,7 +331,6 @@ module.exports = {
     connectMcp,
     disconnectMcp,
     executeMCPTool,
-    executeToolViaApi,
     loadMcpConfig,
     saveMcpConfig,
     loadEnabledTools,
