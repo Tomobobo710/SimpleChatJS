@@ -8,7 +8,7 @@ const router = express.Router();
 
 // Database schema debug endpoint
 // Only expose tables that are known to be safe for inspection.
-const ALLOWED_DEBUG_TABLES = new Set(['chats', 'messages', 'projects', 'chat_branch_selections', 'mcp_servers']);
+const ALLOWED_DEBUG_TABLES = new Set(['chats', 'messages', 'projects', 'chat_branch_selections', 'mcp_servers', 'turn_debug']);
 
 router.get('/debug/schema', (req, res) => {
     try {
@@ -43,28 +43,52 @@ router.get('/debug/schema', (req, res) => {
     }
 });
 
-// Get all debug data for messages in a turn
-router.get('/debug/turn/:chatId/:turnId', (req, res) => {
+// Get request debug data for a turn (returns the sequence part)
+router.get('/debug/request/:chatId/:turnId', (req, res) => {
     const { chatId, turnId } = req.params;
     try {
         const stmt = db.prepare(`
-            SELECT id, role, content, debug_data FROM messages
-            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
+            SELECT debug_data FROM turn_debug
+            WHERE chat_id = ? AND turn_id = ?
         `);
-        const rows = stmt.all(chatId, turnId);
-        // Return every parsed debug entry for the turn's messages. Do NOT
-        // filter by shape (e.g. response/error) here: the request's debug data
-        // is a `sequence`, the response's is `response`/`error`, and this is a
-        // generic per-turn endpoint. Consumers that only want one kind (e.g. the
-        // response panel renderer) filter on their own side. Only parse failures
-        // (null) are dropped.
-        const debugDataAll = rows
-            .map(row => {
-                try { return JSON.parse(row.debug_data); }
-                catch (_) { return null; }
-            })
-            .filter(d => d);
-        res.json(debugDataAll);
+        const row = stmt.get(chatId, turnId);
+        
+        if (row && row.debug_data) {
+            try {
+                const data = JSON.parse(row.debug_data);
+                // Return just the request part (sequence for request debug)
+                return res.json(data);
+            } catch (_) {}
+        }
+        res.status(404).json({ error: 'Request debug not found' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get response debug data for a turn (returns array of responses)
+router.get('/debug/response/:chatId/:turnId', (req, res) => {
+    const { chatId, turnId } = req.params;
+    try {
+        const stmt = db.prepare(`
+            SELECT debug_data FROM turn_debug
+            WHERE chat_id = ? AND turn_id = ?
+        `);
+        const row = stmt.get(chatId, turnId);
+        
+        if (row && row.debug_data) {
+            try {
+                const data = JSON.parse(row.debug_data);
+                // Return responses array or convert single response to array
+                if (data.responses && Array.isArray(data.responses)) {
+                    return res.json(data.responses);
+                } else if (data.response) {
+                    // If there's a single response (old format), wrap it in array
+                    return res.json([data]);
+                }
+            } catch (_) {}
+        }
+        res.status(404).json({ error: 'Response debug not found' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

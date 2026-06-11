@@ -28,7 +28,6 @@ const {
     saveMessage: saveCompleteMessageToDatabase,
     getChatHistoryForAPI,
     saveTurnDebugData,
-    saveRequestDebugData,
     getTurnDebugData
 } = require('./messageRepository');
 
@@ -64,7 +63,6 @@ module.exports = {
 
     // Turn-based debug data
     saveTurnDebugData,
-    saveRequestDebugData,
     getTurnDebugData,
 
     // Branch navigation

@@ -155,7 +155,6 @@ class Turn {
     _renderResponse(liveProcessor) {
         const assistantMessages = this.assistantMessages;
         let primaryMessage = assistantMessages.find(m => !m.content.is && m.content !== '') || assistantMessages[0];
-        let turnDebugData = null;
 
         if (liveProcessor && primaryMessage) {
             return new RenderableTurnObject({
@@ -251,7 +250,7 @@ class Turn {
             turnNumber: primary.turnNumber,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
-            debugData: primary?.debugData || turnDebugData,
+            debugData: primary?.debugData || null,
             debugDataAll: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
             turnMessages: this.messages.map(m => ({ role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName })),
             editCount: primary.editCount,

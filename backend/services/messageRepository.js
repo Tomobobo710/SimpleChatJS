@@ -29,8 +29,8 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         // Insert message with turn info
         const insertStmt = db.prepare(`
             INSERT INTO messages 
-            (chat_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, original_content, file_metadata, error_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (chat_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata, error_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = insertStmt.run(
@@ -43,7 +43,6 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
             serialized.toolCalls,
             toolCallId,
             toolName,
-            serialized.debugData,
             serialized.originalContent,
             serialized.fileMetadata,
             errorState
@@ -132,7 +131,6 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
 
             // Use the base parser, then override content with the AI-processed version
             const message = parseDbRowToMessage(row, {
-                includeDebugData: false,
                 includeFileFields: false,
                 includeErrorState: false,
             });
@@ -151,88 +149,41 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
     }
 }
 
-// Save debug data on a specific message row by id or turn_id
-async function saveTurnDebugData(chatId, messageId, debugData) {
-    const { db } = require('../config/database');
-
-    try {
-        if (!messageId) {
-            log(`[RESPONSE-DEBUG] Skipping debug save: no messageId`);
-            return null;
-        }
-
-        const debugDataJson = JSON.stringify(debugData);
-
-        // Update only the specific assistant message by id
-        const updateStmt = db.prepare(`
-            UPDATE messages
-            SET debug_data = ?
-            WHERE chat_id = ? AND id = ? AND role = 'assistant'
-        `);
-        const result = updateStmt.run(debugDataJson, chatId, messageId);
-
-        if (result.changes === 0) {
-            log(`[RESPONSE-DEBUG] No assistant message found for chat=${chatId} id=${messageId}; debug data not saved`);
-        } else {
-            log(`[RESPONSE-DEBUG] Saved response debug for message id=${messageId} in chat ${chatId}`);
-        }
-        return result;
-    } catch (err) {
-        log("[RESPONSE-DEBUG] Error saving debug data:", err);
-        throw err;
-    }
-}
-
-// Save request debug data by turn_id on the user message in that turn
-async function saveRequestDebugData(chatId, turnId, debugData) {
+// Save debug data to turn_debug table (keyed by chat_id + turn_id)
+async function saveTurnDebugData(chatId, turnId, debugData) {
     const { db } = require('../config/database');
 
     try {
         if (!turnId) {
-            log(`[REQUEST-DEBUG] Skipping debug save: no turnId`);
+            log(`[TURN-DEBUG] Skipping debug save: no turnId`);
             return null;
         }
 
         const debugDataJson = JSON.stringify(debugData);
 
-        // Find the user message in this turn and update it with request debug
-        const selectStmt = db.prepare(`
-            SELECT id FROM messages
-            WHERE chat_id = ? AND turn_id = ? AND role = 'user'
-            LIMIT 1
+        const stmt = db.prepare(`
+            INSERT OR REPLACE INTO turn_debug (chat_id, turn_id, debug_data)
+            VALUES (?, ?, ?)
         `);
-        const message = selectStmt.get(chatId, turnId);
+        const result = stmt.run(chatId, turnId, debugDataJson);
 
-        if (!message) {
-            log(`[REQUEST-DEBUG] No user message found for chat=${chatId} turn_id=${turnId}; request debug not saved`);
-            return null;
-        }
-
-        const updateStmt = db.prepare(`
-            UPDATE messages
-            SET debug_data = ?
-            WHERE chat_id = ? AND id = ?
-        `);
-        const result = updateStmt.run(debugDataJson, chatId, message.id);
-
-        log(`[REQUEST-DEBUG] Saved request debug for turn_id=${turnId} on user message id=${message.id}`);
+        log(`[TURN-DEBUG] Saved debug data for turn_id=${turnId} in chat ${chatId}`);
         return result;
     } catch (err) {
-        log("[REQUEST-DEBUG] Error saving request debug data:", err);
+        log("[TURN-DEBUG] Error saving debug data:", err);
         throw err;
     }
 }
 
-// Get turn debug data keyed on turn_id
+// Get turn debug data (request and/or response)
 function getTurnDebugData(chatId, turnId) {
     const { db } = require('../config/database');
 
     try {
         const stmt = db.prepare(`
             SELECT debug_data
-            FROM messages
-            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
-            LIMIT 1
+            FROM turn_debug
+            WHERE chat_id = ? AND turn_id = ?
         `);
         const result = stmt.get(chatId, turnId);
 
@@ -254,6 +205,5 @@ module.exports = {
     saveMessage,
     getChatHistoryForAPI,
     saveTurnDebugData,
-    saveRequestDebugData,
     getTurnDebugData
 };

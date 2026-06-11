@@ -587,8 +587,47 @@ async function loadChatHistory(chatId) {
         const renderedTurns = buildRenderedTurns(allTurns, chatId);
         const branchMap = buildBranchMap(allTurns, chatId);
 
+        // Fetch debug data for all turns
+        const turnDebugMap = new Map();
+        for (const turn of renderedTurns) {
+            if (turn.turnId) {
+                try {
+                    // Request turns have request debug, response turns have response debug
+                    if (turn.hasRequestMessages()) {
+                        const requestResponse = await fetch(`${window.location.origin}/api/debug/request/${chatId}/${turn.turnId}`);
+                        if (requestResponse.ok) {
+                            const requestData = await requestResponse.json();
+                            turnDebugMap.set(turn.turnId, { request: requestData, response: null });
+                        }
+                    }
+                    if (turn.hasResponseMessages()) {
+                        const responseResponse = await fetch(`${window.location.origin}/api/debug/response/${chatId}/${turn.turnId}`);
+                        if (responseResponse.ok) {
+                            const responseData = await responseResponse.json();
+                            const existing = turnDebugMap.get(turn.turnId) || {};
+                            turnDebugMap.set(turn.turnId, { ...existing, response: responseData });
+                        }
+                    }
+                } catch (error) {
+                    logger.warn(`[LOAD-HISTORY] Failed to fetch debug data for turn ${turn.turnId}:`, error);
+                }
+            }
+        }
+
         renderedTurns.forEach((turn) => {
             const rto = turn.renderable();
+            
+            // Inject debug data if available
+            const debugInfo = turnDebugMap.get(turn.turnId);
+            if (debugInfo) {
+                if (debugInfo.request) {
+                    rto.debugData = debugInfo.request;
+                }
+                if (debugInfo.response) {
+                    rto.debugDataAll = Array.isArray(debugInfo.response) ? debugInfo.response : [debugInfo.response];
+                }
+            }
+            
             chatRenderer.renderTurn(rto, false, branchMap);
         });
 

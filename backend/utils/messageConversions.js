@@ -28,12 +28,10 @@ function parseContent(content) {
 
 // Parse a DB row into a plain JS object representing a message.
 // Options control which optional fields to include:
-//   includeDebugData  — add debug_data (default: false)
 //   includeFileFields — add original_content, file_metadata (default: false)
 //   includeErrorState — add error_state (default: false)
 function parseDbRowToMessage(row, options = {}) {
     const {
-        includeDebugData = false,
         includeFileFields = false,
         includeErrorState = false,
     } = options;
@@ -58,9 +56,6 @@ function parseDbRowToMessage(row, options = {}) {
     if (row.tool_name) msg.tool_name = row.tool_name;
 
     // Conditional fields
-    if (includeDebugData && row.debug_data) {
-        msg.debug_data = safeJsonParse(row.debug_data, "debug_data");
-    }
     if (includeFileFields) {
         if (row.original_content) {
             msg.original_content = parseContent(row.original_content);
@@ -84,8 +79,6 @@ function serializeMessageForDb(messageData) {
         : messageData.content;
 
     const toolCalls = messageData.tool_calls ? JSON.stringify(messageData.tool_calls) : null;
-    const debugDataVal = messageData.debugData ?? messageData.debug_data;
-    const debugData = debugDataVal ? JSON.stringify(debugDataVal) : null;
 
     // Handle original content — may come as originalContent (camelCase) or original_content
     const originalContentVal = messageData.originalContent ?? messageData.original_content;
@@ -102,7 +95,6 @@ function serializeMessageForDb(messageData) {
     return {
         content,
         toolCalls,
-        debugData,
         originalContent,
         fileMetadata,
     };
