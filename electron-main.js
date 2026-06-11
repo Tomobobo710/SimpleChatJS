@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron");
 const path = require("path");
+const setFindBar = require("find-bar");
 
 // Set Chromium user-data-dir BEFORE app initialization
 const isPackaged = app.isPackaged;
@@ -99,6 +100,8 @@ function createWindow() {
         if (!app.isPackaged) {
             mainWindow.webContents.openDevTools();
         }
+        // Add find bar to this window
+        setFindBar(mainWindow, { darkMode: true });
     }, 2000);
 
     // Handle window closed

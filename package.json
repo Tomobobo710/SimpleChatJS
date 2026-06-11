@@ -13,6 +13,7 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "better-sqlite3": "^9.3.0",
     "express": "^4.18.2",
+    "find-bar": "^0.1.3",
     "multer": "^2.0.1",
     "officeparser": "^4.0.4",
     "pdf-parse": "^1.1.1"
@@ -40,15 +41,30 @@
       "!package-build.json"
     ],
     "win": {
-      "target": { "target": "zip", "arch": ["x64"] },
+      "target": {
+        "target": "zip",
+        "arch": [
+          "x64"
+        ]
+      },
       "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "linux": {
-      "target": { "target": "AppImage", "arch": ["x64"] },
+      "target": {
+        "target": "AppImage",
+        "arch": [
+          "x64"
+        ]
+      },
       "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "mac": {
-      "target": { "target": "dmg", "arch": ["arm64"] },
+      "target": {
+        "target": "dmg",
+        "arch": [
+          "arm64"
+        ]
+      },
       "icon": "assets/images/icon/simplechaticon512.ico"
     },
     "forceCodeSigning": false
