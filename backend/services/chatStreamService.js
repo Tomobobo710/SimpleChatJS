@@ -62,7 +62,7 @@ function cancelInFlightRequest(requestId) {
                             toolCalls: [],
                             hasToolCalls: false,
                             status: null,
-                            rawBody: ""
+                            rawBody: state.rawResponseBody || ""
                         },
                         error: { type: "user_stopped", message: "Generation stopped by user." }
                     });
@@ -295,7 +295,8 @@ async function handleChatWithTools(
         cancelledByUser: false,
         saved: false,
         destroyWhenCreated: false,
-        streamedContent: ""
+        streamedContent: "",
+        rawResponseBody: ""
     };
     if (requestId) {
         inFlightRequests.set(requestId, inFlightState);
@@ -324,6 +325,13 @@ async function handleChatWithTools(
                             existingDebug.responses = [];
                         }
                         existingDebug.responses.push({
+                            response: {
+                                content: streamedSoFar,
+                                toolCalls: [],
+                                hasToolCalls: false,
+                                status: null,
+                                rawBody: inFlightState.rawResponseBody || ""
+                            },
                             error: { type: "connection_error", message: "Client disconnected" }
                         });
                         await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
@@ -390,6 +398,13 @@ async function handleChatWithTools(
                                         existingDebug.responses = [];
                                     }
                                     existingDebug.responses.push({
+                                        response: {
+                                            content: "",
+                                            toolCalls: [],
+                                            hasToolCalls: false,
+                                            status: apiRes.statusCode,
+                                            rawBody: errorData
+                                        },
                                         error: {
                                             type: "api_error",
                                             status_code: apiRes.statusCode,
@@ -452,6 +467,7 @@ async function handleChatWithTools(
                 }
             // Accumulate raw response body for debug
             rawResponseBody += chunk.toString();
+            inFlightState.rawResponseBody = rawResponseBody;
             } catch (error) {
                 console.error(`[${adapter.providerName.toUpperCase()}-ADAPTER] Error processing chunk:`, error);
             }
@@ -583,7 +599,15 @@ async function handleChatWithTools(
                             if (!existingDebug.responses) {
                                 existingDebug.responses = [];
                             }
+                            const streamedSoFar = inFlightState.streamedContent || "";
                             existingDebug.responses.push({
+                                response: {
+                                    content: streamedSoFar,
+                                    toolCalls: [],
+                                    hasToolCalls: false,
+                                    status: null,
+                                    rawBody: inFlightState.rawResponseBody || ""
+                                },
                                 error: { type: "connection_error", message: error.message }
                             });
                             await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
@@ -871,6 +895,13 @@ async function processChatRequest(req, res) {
                                 existingDebug.responses = [];
                             }
                             existingDebug.responses.push({
+                                response: {
+                                    content: "",
+                                    toolCalls: [],
+                                    hasToolCalls: false,
+                                    status: null,
+                                    rawBody: ""
+                                },
                                 error: {
                                     type: "processing_error",
                                     message: error.message
