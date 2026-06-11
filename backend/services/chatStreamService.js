@@ -8,7 +8,7 @@ const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
 const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
 const { addToolEvent, storeDebugData, storeHttpRequest, storeHttpChunk } = require("./toolEventService");
-const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
+const { saveMessage, saveTurnDebugData, saveRequestDebugData, getTurnDebugData } = require("./messageRepository");
 const { incrementTurnNumber, getTurnInfo, getCurrentTurnNumber } = require("./turnService");
 const { buildSystemMessageIfEnabled } = require("./systemPromptService");
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
@@ -214,7 +214,7 @@ async function handleChatWithTools(
                 userDebugData = {};
             }
             userDebugData.sequence = requestSequence;
-            saveTurnDebugData(chatId, requestTurnId, userDebugData);
+            saveRequestDebugData(chatId, requestTurnId, userDebugData);
         } catch (error) {
             log("[DEBUG-STORE] ERROR:", error.message);
         }

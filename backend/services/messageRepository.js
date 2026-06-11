@@ -152,33 +152,73 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
 }
 
 // Save debug data on a specific message row by id or turn_id
-async function saveTurnDebugData(chatId, identifier, debugData) {
+async function saveTurnDebugData(chatId, messageId, debugData) {
     const { db } = require('../config/database');
 
     try {
-        if (!identifier) {
-            log(`[TURN-DEBUG] Skipping debug save: no identifier`);
+        if (!messageId) {
+            log(`[RESPONSE-DEBUG] Skipping debug save: no messageId`);
             return null;
         }
 
         const debugDataJson = JSON.stringify(debugData);
 
-        // Try message id first, fall back to turn_id
+        // Update only the specific assistant message by id
         const updateStmt = db.prepare(`
             UPDATE messages
             SET debug_data = ?
-            WHERE chat_id = ? AND (id = ? OR turn_id = ?)
+            WHERE chat_id = ? AND id = ? AND role = 'assistant'
         `);
-        const result = updateStmt.run(debugDataJson, chatId, identifier, identifier);
+        const result = updateStmt.run(debugDataJson, chatId, messageId);
 
         if (result.changes === 0) {
-            log(`[TURN-DEBUG] No message found for chat=${chatId} id/turn_id=${identifier}; debug data not saved`);
+            log(`[RESPONSE-DEBUG] No assistant message found for chat=${chatId} id=${messageId}; debug data not saved`);
         } else {
-            log(`[TURN-DEBUG] Saved debug data for identifier=${identifier} in chat ${chatId}`);
+            log(`[RESPONSE-DEBUG] Saved response debug for message id=${messageId} in chat ${chatId}`);
         }
         return result;
     } catch (err) {
-        log("[TURN-DEBUG] Error saving debug data:", err);
+        log("[RESPONSE-DEBUG] Error saving debug data:", err);
+        throw err;
+    }
+}
+
+// Save request debug data by turn_id on the user message in that turn
+async function saveRequestDebugData(chatId, turnId, debugData) {
+    const { db } = require('../config/database');
+
+    try {
+        if (!turnId) {
+            log(`[REQUEST-DEBUG] Skipping debug save: no turnId`);
+            return null;
+        }
+
+        const debugDataJson = JSON.stringify(debugData);
+
+        // Find the user message in this turn and update it with request debug
+        const selectStmt = db.prepare(`
+            SELECT id FROM messages
+            WHERE chat_id = ? AND turn_id = ? AND role = 'user'
+            LIMIT 1
+        `);
+        const message = selectStmt.get(chatId, turnId);
+
+        if (!message) {
+            log(`[REQUEST-DEBUG] No user message found for chat=${chatId} turn_id=${turnId}; request debug not saved`);
+            return null;
+        }
+
+        const updateStmt = db.prepare(`
+            UPDATE messages
+            SET debug_data = ?
+            WHERE chat_id = ? AND id = ?
+        `);
+        const result = updateStmt.run(debugDataJson, chatId, message.id);
+
+        log(`[REQUEST-DEBUG] Saved request debug for turn_id=${turnId} on user message id=${message.id}`);
+        return result;
+    } catch (err) {
+        log("[REQUEST-DEBUG] Error saving request debug data:", err);
         throw err;
     }
 }
@@ -214,5 +254,6 @@ module.exports = {
     saveMessage,
     getChatHistoryForAPI,
     saveTurnDebugData,
+    saveRequestDebugData,
     getTurnDebugData
 };
