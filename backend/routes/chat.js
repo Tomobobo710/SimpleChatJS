@@ -191,7 +191,7 @@ router.get("/chat/:id/history-complete", (req, res) => {
 
         // Get ALL messages for the chat including errored ones
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
             WHERE chat_id = ?
             ORDER BY timestamp ASC
@@ -202,7 +202,6 @@ router.get("/chat/:id/history-complete", (req, res) => {
 
         const messages = chatMessages.map((row) =>
             parseDbRowToMessage(row, {
-                includeDebugData: true,
                 includeFileFields: true,
                 includeErrorState: true,
             })
@@ -225,7 +224,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Get all messages for the chat (errors filtered out for AI)
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, edit_count, edited_at, timestamp, original_content, file_metadata
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata
             FROM messages
             WHERE chat_id = ? AND error_state IS NULL
             ORDER BY timestamp ASC
@@ -236,7 +235,6 @@ router.get("/chat/:id/history", (req, res) => {
 
         const messages = chatMessages.map((row) =>
             parseDbRowToMessage(row, {
-                includeDebugData: true,
                 includeFileFields: true,
                 includeErrorState: false,
             })
@@ -291,8 +289,7 @@ router.post("/message", async (req, res) => {
         file_metadata,
         turn_id,
         parent_turn_id,
-        error_state,
-        debug_data
+        error_state
     } = req.body;
 
         if (!chat_id || !role || content === null || content === undefined) {
@@ -313,7 +310,6 @@ router.post("/message", async (req, res) => {
         // Add new file handling fields if present
         if (original_content !== undefined) completeMessage.originalContent = original_content;
         if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
-        if (debug_data !== undefined) completeMessage.debugData = debug_data;
 
         // Use the unified save function
         const { saveCompleteMessageToDatabase, incrementTurnNumber, getTurnInfo, buildSystemMessageIfEnabled } = require("../services/chatService");

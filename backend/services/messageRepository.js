@@ -29,8 +29,8 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         // Insert message with turn info
         const insertStmt = db.prepare(`
             INSERT INTO messages 
-            (chat_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, debug_data, original_content, file_metadata, error_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (chat_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata, error_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = insertStmt.run(
@@ -43,7 +43,6 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
             serialized.toolCalls,
             toolCallId,
             toolName,
-            serialized.debugData,
             serialized.originalContent,
             serialized.fileMetadata,
             errorState
@@ -53,10 +52,11 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         const updateChatStmt = db.prepare("UPDATE chats SET updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         updateChatStmt.run(chatId);
 
+        const msgId = result.lastInsertRowid;
         log(
-            `[SAVE] Saved ${role} message to chat ${chatId} (turn ${finalTurnNumber}, turn_id=${turnId}, parent_turn_id=${parentTurnId})`
+            `[SAVE] Saved ${role} message to chat ${chatId} (id=${msgId}, turn ${finalTurnNumber}, turn_id=${turnId}, parent_turn_id=${parentTurnId})`
         );
-        return result.lastInsertRowid;
+        return msgId;
     } catch (error) {
         log("[SAVE] Error saving message:", error);
         throw error;
@@ -131,7 +131,6 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
 
             // Use the base parser, then override content with the AI-processed version
             const message = parseDbRowToMessage(row, {
-                includeDebugData: false,
                 includeFileFields: false,
                 includeErrorState: false,
             });
@@ -150,72 +149,41 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
     }
 }
 
-// Save turn debug data keyed on turn_id, merging with existing data
+// Save debug data to turn_debug table (keyed by chat_id + turn_id)
 async function saveTurnDebugData(chatId, turnId, debugData) {
     const { db } = require('../config/database');
 
     try {
         if (!turnId) {
-            log(`[TURN-DEBUG] Skipping debug save for chat ${chatId}: no turn_id yet (aborted stream?)`);
+            log(`[TURN-DEBUG] Skipping debug save: no turnId`);
             return null;
         }
 
-        // Check if debug data already exists for this turn (e.g. from a tool-call response)
-        const existingStmt = db.prepare(`
-            SELECT debug_data FROM messages
-            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
-            LIMIT 1
+        const debugDataJson = JSON.stringify(debugData);
+
+        const stmt = db.prepare(`
+            INSERT OR REPLACE INTO turn_debug (chat_id, turn_id, debug_data)
+            VALUES (?, ?, ?)
         `);
-        const existing = existingStmt.get(chatId, turnId);
+        const result = stmt.run(chatId, turnId, debugDataJson);
 
-        let mergedData;
-        if (existing && existing.debug_data) {
-            try {
-                const existingParsed = JSON.parse(existing.debug_data);
-                // Merge: existing data takes priority for response/toolCalls (first response had the tool calls)
-                mergedData = {
-                    ...existingParsed,
-                    ...debugData,
-                    response: existingParsed.response || debugData.response
-                };
-            } catch (e) {
-                mergedData = debugData;
-            }
-        } else {
-            mergedData = debugData;
-        }
-
-        const debugDataJson = JSON.stringify(mergedData);
-
-        const updateStmt = db.prepare(`
-            UPDATE messages
-            SET debug_data = ?
-            WHERE chat_id = ? AND turn_id = ?
-        `);
-        const result = updateStmt.run(debugDataJson, chatId, turnId);
-
-        if (result.changes === 0) {
-            log(`[TURN-DEBUG] No message found for chat=${chatId} turn_id=${turnId}; debug data not saved`);
-        } else {
-            log(`[TURN-DEBUG] Saved debug data for turn_id=${turnId} in chat ${chatId}`);
-        }
+        log(`[TURN-DEBUG] Saved debug data for turn_id=${turnId} in chat ${chatId}`);
         return result;
     } catch (err) {
-        log("[TURN-DEBUG] Error saving turn debug data:", err);
+        log("[TURN-DEBUG] Error saving debug data:", err);
         throw err;
     }
 }
 
-// Get turn debug data keyed on turn_id
+// Get turn debug data (request and/or response)
 function getTurnDebugData(chatId, turnId) {
     const { db } = require('../config/database');
 
     try {
         const stmt = db.prepare(`
             SELECT debug_data
-            FROM messages
-            WHERE chat_id = ? AND turn_id = ? AND debug_data IS NOT NULL
-            LIMIT 1
+            FROM turn_debug
+            WHERE chat_id = ? AND turn_id = ?
         `);
         const result = stmt.get(chatId, turnId);
 

@@ -21,11 +21,12 @@ function resolveErrorBlockContent(errorMsg) {
 }
 
 class Turn {
-    constructor(turnNumber, messages = [], turnId = null, parentTurnId = null) {
+    constructor(turnNumber, messages = [], turnId = null, parentTurnId = null, responseDebugData = null) {
         this.turnNumber = turnNumber;
         this.messages = messages;
         this.turnId = turnId;
         this.parentTurnId = parentTurnId;
+        this.responseDebugData = responseDebugData;
     }
 
     get errorMessages() {
@@ -44,11 +45,11 @@ class Turn {
         return this.errorMessages.length > 0;
     }
 
-    hasUserMessages() {
+    hasRequestMessages() {
         return this.userMessages.length > 0;
     }
 
-    hasAssistantMessages() {
+    hasResponseMessages() {
         return this.assistantMessages.length > 0;
     }
 
@@ -56,7 +57,7 @@ class Turn {
     // there is real streamed text to render). Used to gate the
     // "content + error" render branch so error-only messages don't
     // accidentally fall through and render an empty chat block.
-    hasRenderableAssistantContent() {
+    hasRenderableResponseContent() {
         return this.assistantMessages.some(
             (m) => m.content && (typeof m.content === 'string' ? m.content !== '' : true)
         );
@@ -74,10 +75,10 @@ class Turn {
         // etc. show what was streamed and what interrupted it).
         if (
             this.hasErrors() &&
-            this.hasAssistantMessages() &&
-            this.hasRenderableAssistantContent()
+            this.hasResponseMessages() &&
+            this.hasRenderableResponseContent()
         ) {
-            const assistantRto = this._renderableAssistant(liveProcessor);
+            const responseRto = this._renderResponse(liveProcessor);
             const errorMsg = this.errorMessages[0];
             const errorBlock = new Block({
                 type: 'error',
@@ -88,15 +89,16 @@ class Turn {
                 }
             });
             return new RenderableTurnObject({
-                role: assistantRto.role,
-                content: assistantRto.content,
-                blocks: [...(assistantRto.blocks || []), errorBlock],
-                turnNumber: assistantRto.turnNumber,
-                turnId: assistantRto.turnId,
-                parentTurnId: assistantRto.parentTurnId,
-                debugData: assistantRto.debugData,
-                editCount: assistantRto.editCount,
-                dropdownStates: assistantRto.dropdownStates,
+                role: responseRto.role,
+                content: responseRto.content,
+                blocks: [...(responseRto.blocks || []), errorBlock],
+                turnNumber: responseRto.turnNumber,
+                turnId: responseRto.turnId,
+                parentTurnId: responseRto.parentTurnId,
+                debugData: responseRto.debugData,
+                responseDebugData: this.responseDebugData,
+                editCount: responseRto.editCount,
+                dropdownStates: responseRto.dropdownStates,
             });
         }
 
@@ -121,18 +123,19 @@ class Turn {
                 turnId: this.turnId,
                 parentTurnId: this.parentTurnId,
                 debugData: errorMsg.debugData,
+                responseDebugData: this.responseDebugData,
                 editCount: errorMsg.editCount,
             });
         }
 
         // User messages render directly
-        if (this.hasUserMessages()) {
-            return RenderableTurnObject.fromUserMessage(this.userMessages[0]);
+        if (this.hasRequestMessages()) {
+            return RenderableTurnObject.fromRequestMessage(this.userMessages[0]);
         }
 
         // Assistant messages: pure content path (no error attached).
-        if (this.hasAssistantMessages()) {
-            return this._renderableAssistant(liveProcessor);
+        if (this.hasResponseMessages()) {
+            return this._renderResponse(liveProcessor);
         }
 
         // Fallback: empty turn
@@ -144,6 +147,7 @@ class Turn {
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
             debugData: null,
+            responseDebugData: this.responseDebugData,
             editCount: 0,
         });
     }
@@ -152,10 +156,9 @@ class Turn {
     // liveProcessor if provided (live render) or rebuilding blocks
     // from content (reload path). Shared by the pure-assistant and
     // "content + error" branches in renderable().
-    _renderableAssistant(liveProcessor) {
+    _renderResponse(liveProcessor) {
         const assistantMessages = this.assistantMessages;
         let primaryMessage = assistantMessages.find(m => !m.content.is && m.content !== '') || assistantMessages[0];
-        let turnDebugData = null;
 
         if (liveProcessor && primaryMessage) {
             return new RenderableTurnObject({
@@ -251,8 +254,9 @@ class Turn {
             turnNumber: primary.turnNumber,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
-            debugData: primary?.debugData || turnDebugData,
-            debugDataAll: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
+            debugData: primary?.debugData || null,
+            responseDebugData: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
+            turnMessages: this.messages.map(m => ({ role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName })),
             editCount: primary.editCount,
         });
     }

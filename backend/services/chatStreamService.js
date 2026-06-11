@@ -7,7 +7,7 @@ const crypto = require("crypto");
 const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
 const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
-const { addToolEvent, storeDebugData, storeHttpRequest, storeHttpChunk } = require("./toolEventService");
+const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
 const { incrementTurnNumber, getTurnInfo, getCurrentTurnNumber } = require("./turnService");
 const { buildSystemMessageIfEnabled } = require("./systemPromptService");
@@ -17,12 +17,16 @@ const UnifiedResponse = require("../adapters/UnifiedResponse");
 // In-flight chat requests, keyed by requestId.
 const inFlightRequests = new Map();
 
-// Minimal debug_data structure stored on message rows:
+// Debug data structure stored in turn_debug table (keyed by chat_id + turn_id):
 // {
-//   turnId, parentTurnId, currentTurnNumber,
-//   request: { url, body },
-//   response: { content, toolCalls, status },
-//   error: { type, message, status_code }  // only on error messages
+//   sequence: [ ... ],           // Request debug sequence
+//   responses: [                 // Response debug entries (each may have both response + error)
+//     {
+//       response: { content, toolCalls, status, rawBody },
+//       error: { type, message, status_code }  // Optional: only if error occurred
+//     },
+//     ...
+//   ]
 // }
 
 // Cancel an in-flight chat request by requestId.
@@ -41,13 +45,32 @@ function cancelInFlightRequest(requestId) {
     const streamedSoFar = state.streamedContent || "";
     const errorMessage = {
         role: "assistant",
-        content: streamedSoFar,
-        debug_data: {
-            error: { type: "user_stopped", message: "Generation stopped by user." }
-        }
+        content: streamedSoFar
     };
     saveMessage(state.chatId, errorMessage, state.currentTurn, "user_stopped", state.turnInfo)
         .then(async () => {
+            // Append error to responses array in turn_debug (with any streamed content)
+            if (state.turnInfo) {
+                try {
+                    let existingDebug = getTurnDebugData(state.chatId, state.turnInfo.turn_id) || {};
+                    if (!existingDebug.responses) {
+                        existingDebug.responses = [];
+                    }
+                    existingDebug.responses.push({
+                        response: {
+                            content: streamedSoFar,
+                            toolCalls: [],
+                            hasToolCalls: false,
+                            status: null,
+                            rawBody: state.rawResponseBody || ""
+                        },
+                        error: { type: "user_stopped", message: "Generation stopped by user." }
+                    });
+                    await saveTurnDebugData(state.chatId, state.turnInfo.turn_id, existingDebug);
+                } catch (debugError) {
+                    log(`[CANCEL] Failed to save user_stopped debug data: ${debugError.message}`);
+                }
+            }
             if (streamedSoFar && streamedSoFar.trim() !== "") {
                 await saveMessage(state.chatId, { role: "system", content: "Generation stopped by user." }, state.currentTurn, null, state.turnInfo);
             }
@@ -67,7 +90,8 @@ function cancelInFlightRequest(requestId) {
     return { found: true, reason: "cancelled" };
 }
 
-  // Build the minimal debug_data to store on a message row.
+  // Build response debug entry for the turn_debug table.
+  // This creates the structure that gets appended to the responses array.
 function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, currentTurn, targetUrl, requestData, apiRes, unifiedResponse, rawResponseBody }) {
     const data = {
         requestId,
@@ -141,6 +165,34 @@ async function handleChatWithTools(
     // Convert to provider-specific format (settings injected for thinking, etc.)
     const requestData = adapter.convertRequest(unifiedRequest, currentSettings);
 
+    // Build the 3-step request sequence for the request debug panel
+    const requestSequence = [
+        {
+            type: 'user_http_request',
+            step: 1,
+            timestamp: new Date().toISOString(),
+            data: {
+                requestBody: req.body || {}
+            }
+        },
+        {
+            type: 'unified_request',
+            step: 2,
+            timestamp: new Date().toISOString(),
+            data: {
+                requestBody: unifiedRequest
+            }
+        },
+        {
+            type: 'ai_http_request',
+            step: 3,
+            timestamp: new Date().toISOString(),
+            data: {
+                requestBody: requestData
+            }
+        }
+    ];
+
     // Set up streaming response headers FIRST.
     if (!res.headersSent) {
         res.setHeader("Content-Type", "text/plain");
@@ -178,22 +230,31 @@ async function handleChatWithTools(
         log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
     }
 
-    // Store the real request data in the user's debug data (enrich the frontend's request debug)
-    if (chatId && currentTurn) {
+    // Store the request sequence in the turn's debug data
+    if (chatId && requestTurnId) {
         try {
-            const userDebugData = getTurnDebugData(chatId, currentTurn);
-            if (userDebugData) {
-                userDebugData.actualHttpRequest = {
-                    url: targetUrl,
-                    method: "POST",
-                    headers: { ...headers },
-                    body: requestData
-                };
-                saveTurnDebugData(chatId, currentTurn, userDebugData);
+            let userDebugData = getTurnDebugData(chatId, requestTurnId);
+            if (!userDebugData) {
+                userDebugData = {};
             }
+            userDebugData.sequence = requestSequence;
+            saveTurnDebugData(chatId, requestTurnId, userDebugData);
         } catch (error) {
             log("[DEBUG-STORE] ERROR:", error.message);
         }
+    }
+
+    // The request is fully built and persisted, but we have not yet contacted
+    // the AI provider — this is the "request is complete, response has not
+    // begun" point. Push the request's debug data on the request-scoped event
+    // channel so the frontend can render the request's debug panel immediately,
+    // decoupled from the response. Events are buffered, so this is safe whether
+    // or not the frontend's listener has connected yet.
+    if (requestId) {
+        addToolEvent(requestId, {
+            type: "request_debug",
+            data: { sequence: requestSequence }
+        });
     }
 
     log("[ACTUAL-REQUEST] Sending to API:", JSON.stringify(requestData, null, 2));
@@ -234,7 +295,8 @@ async function handleChatWithTools(
         cancelledByUser: false,
         saved: false,
         destroyWhenCreated: false,
-        streamedContent: ""
+        streamedContent: "",
+        rawResponseBody: ""
     };
     if (requestId) {
         inFlightRequests.set(requestId, inFlightState);
@@ -251,13 +313,32 @@ async function handleChatWithTools(
         const streamedSoFar = inFlightState.streamedContent || "";
         const errorMessage = {
             role: "assistant",
-            content: streamedSoFar,
-            debug_data: {
-                error: { type: "connection_error", message: "Client disconnected" }
-            }
+            content: streamedSoFar
         };
         saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
             .then(async () => {
+                // Append error to responses array in turn_debug
+                if (turnInfo) {
+                    try {
+                        let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
+                        if (!existingDebug.responses) {
+                            existingDebug.responses = [];
+                        }
+                        existingDebug.responses.push({
+                            response: {
+                                content: streamedSoFar,
+                                toolCalls: [],
+                                hasToolCalls: false,
+                                status: null,
+                                rawBody: inFlightState.rawResponseBody || ""
+                            },
+                            error: { type: "connection_error", message: "Client disconnected" }
+                        });
+                        await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
+                    } catch (debugError) {
+                        log(`[ERROR-HANDLING] Failed to save connection error debug data: ${debugError.message}`);
+                    }
+                }
                 if (streamedSoFar && streamedSoFar.trim() !== "") {
                     await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
                 }
@@ -305,18 +386,37 @@ async function handleChatWithTools(
                 if (chatId && currentTurn) {
                     const errorMessage = {
                         role: "assistant",
-                        content: "",
-                        debug_data: {
-                            error: {
-                                type: "api_error",
-                                status_code: apiRes.statusCode,
-                                status_message: apiRes.statusMessage,
-                                message: userErrorMessage
-                            }
-                        }
+                        content: ""
                     };
                     saveMessage(chatId, errorMessage, currentTurn, "api_error", turnInfo)
-                        .then(() => {
+                        .then(async () => {
+                            // Append error to responses array in turn_debug
+                            if (turnInfo) {
+                                try {
+                                    let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
+                                    if (!existingDebug.responses) {
+                                        existingDebug.responses = [];
+                                    }
+                                    existingDebug.responses.push({
+                                        response: {
+                                            content: "",
+                                            toolCalls: [],
+                                            hasToolCalls: false,
+                                            status: apiRes.statusCode,
+                                            rawBody: errorData
+                                        },
+                                        error: {
+                                            type: "api_error",
+                                            status_code: apiRes.statusCode,
+                                            status_message: apiRes.statusMessage,
+                                            message: userErrorMessage
+                                        }
+                                    });
+                                    await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
+                                } catch (debugError) {
+                                    log(`[ERROR-HANDLING] Failed to save error debug data: ${debugError.message}`);
+                                }
+                            }
                             incrementTurnNumber(chatId);
                             log(`[ERROR-HANDLING] Saved API error message and burned turn ${currentTurn}`);
                         })
@@ -365,14 +465,9 @@ async function handleChatWithTools(
                         inFlightState.streamedContent = streamedContent;
                     }
                 }
-
-                // Accumulate raw response body for debug
-                rawResponseBody += chunk.toString();
-
-                // Store raw chunks in transient debug store (not on message row)
-                if (requestId) {
-                    storeHttpChunk(requestId, chunk.toString());
-                }
+            // Accumulate raw response body for debug
+            rawResponseBody += chunk.toString();
+            inFlightState.rawResponseBody = rawResponseBody;
             } catch (error) {
                 console.error(`[${adapter.providerName.toUpperCase()}-ADAPTER] Error processing chunk:`, error);
             }
@@ -387,19 +482,6 @@ async function handleChatWithTools(
             }
             inFlightState.saved = true;
             if (requestId) inFlightRequests.delete(requestId);
-
-            // Capture HTTP response in transient debug store
-            if (requestId) {
-                storeHttpRequest(requestId, {
-                    type: "http_response",
-                    timestamp: new Date().toISOString(),
-                    content: unifiedResponse.content || "",
-                    toolCalls: unifiedResponse.toolCalls || [],
-                    hasToolCalls: unifiedResponse.hasToolCalls(),
-                    statusCode: apiRes.statusCode,
-                    statusMessage: apiRes.statusMessage
-                });
-            }
 
              // Handle tool calls if any
             if (unifiedResponse.hasToolCalls()) {
@@ -439,8 +521,45 @@ async function handleChatWithTools(
                         content: unifiedResponse.content
                     };
                     try {
-                        await saveMessage(chatId, finalResponseMessage, currentTurn, null, turnInfo);
+                        const finalMsgId = await saveMessage(chatId, finalResponseMessage, currentTurn, null, turnInfo);
                         log(`[CHAT-SAVE] Successfully saved final response to history`);
+
+                        // Build and store debug data for the final response
+                        const debugPayload = buildMessageDebugData({
+                            requestId,
+                            chatId,
+                            turnId: turnInfo?.turn_id,
+                            parentTurnId: turnInfo?.parent_turn_id,
+                            currentTurn,
+                            targetUrl,
+                            requestData,
+                            apiRes,
+                            unifiedResponse,
+                            rawResponseBody
+                        });
+
+                        if (turnInfo) {
+                            try {
+                                // Get existing turn debug data
+                                let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
+                                
+                                // Append response to array (wrap in object for consistency)
+                                if (!existingDebug.responses) {
+                                    existingDebug.responses = [];
+                                }
+                                existingDebug.responses.push({
+                                    response: debugPayload.response,
+                                    turnId: debugPayload.turnId,
+                                    parentTurnId: debugPayload.parentTurnId,
+                                    currentTurnNumber: debugPayload.currentTurnNumber
+                                });
+                                
+                                await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
+                                log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
+                            } catch (error) {
+                                log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
+                            }
+                        }
                     } catch (error) {
                         log(`[CHAT-SAVE] Error saving final response: ${error.message}`);
                     }
@@ -469,13 +588,33 @@ async function handleChatWithTools(
             const streamedSoFar = inFlightState.streamedContent || "";
             const errorMessage = {
                 role: "assistant",
-                content: streamedSoFar,
-                debug_data: {
-                    error: { type: "connection_error", message: error.message }
-                }
+                content: streamedSoFar
             };
             saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
                 .then(async () => {
+                    // Append error to responses array in turn_debug
+                    if (turnInfo) {
+                        try {
+                            let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
+                            if (!existingDebug.responses) {
+                                existingDebug.responses = [];
+                            }
+                            const streamedSoFar = inFlightState.streamedContent || "";
+                            existingDebug.responses.push({
+                                response: {
+                                    content: streamedSoFar,
+                                    toolCalls: [],
+                                    hasToolCalls: false,
+                                    status: null,
+                                    rawBody: inFlightState.rawResponseBody || ""
+                                },
+                                error: { type: "connection_error", message: error.message }
+                            });
+                            await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
+                        } catch (debugError) {
+                            log(`[ERROR-HANDLING] Failed to save connection error debug data: ${debugError.message}`);
+                        }
+                    }
                     if (streamedSoFar && streamedSoFar.trim() !== "") {
                         await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
                     }
@@ -494,17 +633,7 @@ async function handleChatWithTools(
         res.end();
     });
 
-    // Capture ACTUAL HTTP request payload in transient debug store
     const actualRequestPayload = JSON.stringify(requestData);
-    if (requestId) {
-        storeHttpRequest(requestId, {
-            type: "http_request",
-            timestamp: new Date().toISOString(),
-            payload: requestData,
-            rawPayload: actualRequestPayload
-        });
-    }
-
     apiReq.write(actualRequestPayload);
     apiReq.end();
 }
@@ -534,43 +663,8 @@ async function executeToolCallsAndContinue(
     };
     messages.push(assistantMessageWithTools);
 
-    // Save assistant message with tool calls to database
-    if (chatId) {
-        await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
-        log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
-
-        // Store debug data for the tool-call response (now that the message row exists)
-        if (targetUrl) {
-            const debugPayload = buildMessageDebugData({
-                requestId,
-                chatId,
-                turnId: turnInfo?.turn_id,
-                parentTurnId: turnInfo?.parent_turn_id,
-                currentTurn,
-                targetUrl,
-                requestData,
-                apiRes,
-                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, toolCalls: toolCalls || [] },
-                rawResponseBody
-            });
-
-            if (requestId) {
-                storeDebugData(requestId, debugPayload);
-                log(`[ADAPTER-DEBUG] Transient debug data stored for request:`, requestId);
-            }
-
-            if (turnInfo) {
-                try {
-                    await saveTurnDebugData(chatId, turnInfo.turn_id, debugPayload);
-                    log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
-                } catch (error) {
-                    log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
-                }
-            }
-        }
-    }
-
-    // Execute each tool call
+    // Execute each tool call and collect results
+    const toolResults = [];
     for (const toolCall of toolCalls) {
         log(`[TOOL-EXECUTION] Executing tool: ${toolCall.function.name}`);
 
@@ -603,6 +697,13 @@ async function executeToolCallsAndContinue(
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
 
+            toolResults.push({
+                toolId: toolCall.id,
+                toolName: toolCall.function.name,
+                status: "success",
+                result: toolResult
+            });
+
             if (requestId) {
                 addToolEvent(requestId, {
                     type: "tool_execution_complete",
@@ -631,6 +732,13 @@ async function executeToolCallsAndContinue(
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
 
+            toolResults.push({
+                toolId: toolCall.id,
+                toolName: toolCall.function.name,
+                status: "error",
+                error: error.message
+            });
+
             if (requestId) {
                 addToolEvent(requestId, {
                     type: "tool_execution_complete",
@@ -641,6 +749,58 @@ async function executeToolCallsAndContinue(
                         error: error.message
                     }
                 });
+            }
+        }
+    }
+
+    // Now save assistant message with tool calls and debug data (after results are known)
+    if (chatId) {
+        const msgId = await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
+        log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
+
+        if (targetUrl) {
+            const debugPayload = buildMessageDebugData({
+                requestId,
+                chatId,
+                turnId: turnInfo?.turn_id,
+                parentTurnId: turnInfo?.parent_turn_id,
+                currentTurn,
+                targetUrl,
+                requestData,
+                apiRes,
+                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, toolCalls: toolCalls || [] },
+                rawResponseBody
+            });
+
+            // Attach tool results to debug data
+            if (toolResults.length > 0) {
+                debugPayload.toolResults = toolResults;
+            }
+
+            if (turnInfo) {
+                try {
+                    // Get existing turn debug data
+                    let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
+                    
+                    // Append response to array (wrap in object for consistency)
+                    if (!existingDebug.responses) {
+                        existingDebug.responses = [];
+                    }
+                    existingDebug.responses.push({
+                        response: debugPayload.response,
+                        turnId: debugPayload.turnId,
+                        parentTurnId: debugPayload.parentTurnId,
+                        currentTurnNumber: debugPayload.currentTurnNumber
+                    });
+                    if (debugPayload.toolResults) {
+                        existingDebug.toolResults = debugPayload.toolResults;
+                    }
+                    
+                    await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
+                    log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
+                } catch (error) {
+                    log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
+                }
             }
         }
     }
@@ -723,16 +883,35 @@ async function processChatRequest(req, res) {
             const currentTurn = getCurrentTurnNumber(chat_id) + 1;
             const errorMessage = {
                 role: "assistant",
-                content: "",
-                debug_data: {
-                    error: {
-                        type: "processing_error",
-                        message: error.message
-                    }
-                }
+                content: ""
             };
             saveMessage(chat_id, errorMessage, currentTurn, "processing_error", turnInfo)
-                .then(() => {
+                .then(async () => {
+                    // Append error to responses array in turn_debug
+                    if (turnInfo) {
+                        try {
+                            let existingDebug = getTurnDebugData(chat_id, turnInfo.turn_id) || {};
+                            if (!existingDebug.responses) {
+                                existingDebug.responses = [];
+                            }
+                            existingDebug.responses.push({
+                                response: {
+                                    content: "",
+                                    toolCalls: [],
+                                    hasToolCalls: false,
+                                    status: null,
+                                    rawBody: ""
+                                },
+                                error: {
+                                    type: "processing_error",
+                                    message: error.message
+                                }
+                            });
+                            await saveTurnDebugData(chat_id, turnInfo.turn_id, existingDebug);
+                        } catch (debugError) {
+                            log(`[ERROR-HANDLING] Failed to save processing error debug data: ${debugError.message}`);
+                        }
+                    }
                     incrementTurnNumber(chat_id);
                     log(`[ERROR-HANDLING] Saved processing error and burned turn ${currentTurn}`);
                 })

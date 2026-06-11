@@ -4,7 +4,6 @@ const {
     getMcpStatus, 
     connectMcp, 
     disconnectMcp, 
-    executeToolViaApi, 
     loadMcpConfig, 
     saveMcpConfig, 
     loadEnabledTools, 
@@ -39,17 +38,6 @@ router.post('/mcp/disconnect', async (req, res) => {
     }
 });
 
-// Execute MCP tool
-router.post('/mcp/execute', async (req, res) => {
-    const { toolName, args } = req.body;
-    const result = await executeToolViaApi(toolName, args);
-    
-    if (result.success) {
-        res.json(result);
-    } else {
-        res.status(result.error ? 400 : 500).json(result);
-    }
-});
 
 // Get MCP config
 router.get('/mcp/config', (req, res) => {

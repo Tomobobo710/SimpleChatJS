@@ -1,7 +1,40 @@
 // Simple Chat Mode - Direct streaming chat
 
+// Listen on the request-scoped event channel for the request's debug data and
+// render the request's debug panel as soon as it arrives. The backend emits a
+// `request_debug` event the moment the request is built (before the AI provider
+// is contacted), so this resolves before the response begins. Events are
+// buffered server-side, so connecting here (in the request flow) is safe
+// regardless of ordering. The listener closes itself once the panel is attached.
+function listenForRequestDebug(requestId, requestTurnNumber, turnMessages) {
+    if (!requestId) return;
+    let source;
+    try {
+        source = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
+    } catch (error) {
+        logger.warn('Failed to open request-debug event stream:', error);
+        return;
+    }
+    source.onmessage = (event) => {
+        let evt;
+        try {
+            evt = JSON.parse(event.data);
+        } catch (_) {
+            return;
+        }
+        if (evt.type !== 'request_debug') return;
+        const requestDebugData = evt.data || {};
+        requestDebugData.turnMessages = turnMessages;
+        attachRequestDebugPanel(requestTurnNumber, requestDebugData);
+        source.close();
+    };
+    source.onerror = () => {
+        // The stream closes normally at request end; nothing to do.
+    };
+}
+
 async function attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
-    const requestMessages = turnsContainer.querySelectorAll('.turn.user-turn, .message.user');
+    const requestMessages = turnsContainer.querySelectorAll('.turn.request-turn, .message.user');
     const lastRequestMessage = requestMessages[requestMessages.length - 1];
     if (!lastRequestMessage) return;
 
@@ -42,63 +75,7 @@ async function attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
     lastRequestMessage.appendChild(debugPanel);
 }
 
-function buildRequestDebugData({ message, requestTurnNumber, requestId, conversationHistory, inputMethod, enabledToolsFlags }) {
-    return {
-        sequence: [
-            {
-                type: 'user_input',
-                step: 1,
-                data: {
-                    userQuery: {
-                        message: message,
-                        chat_id: currentChatId,
-                        timestamp: new Date().toISOString(),
-                        message_length: message.length,
-                        turn_number: requestTurnNumber,
-                    },
-                    tools: {
-                        total: Object.keys(enabledToolsFlags).length,
-                        flags: enabledToolsFlags,
-                    },
-                    context: {
-                        input_method: inputMethod,
-                        current_chat: currentChatId,
-                    },
-                },
-                timestamp: new Date().toISOString(),
-            },
-        ],
-        metadata: {
-            endpoint: 'user_input',
-            timestamp: new Date().toISOString(),
-            tools: Object.keys(enabledToolsFlags).length,
-        },
-        currentTurnNumber: requestTurnNumber,
-        completeMessageHistory: conversationHistory || [],
-        conversationHistory: conversationHistory || [],
-    };
-}
 
-function addApiRequestToDebugData(requestDebugData, { requestId, message, requestTurnNumber, enabledToolsFlags }) {
-    requestDebugData.sequence.push({
-        type: 'ai_http_request',
-        step: requestDebugData.sequence.length + 1,
-        timestamp: new Date().toISOString(),
-        data: {
-            requestId: requestId,
-            endpoint: 'chat',
-            message: message,
-            tools_enabled: Object.keys(enabledToolsFlags).length,
-            turn_number: requestTurnNumber,
-        },
-    });
-    requestDebugData.apiRequest = {
-        url: `${window.location.origin}/api/chat`,
-        method: 'POST',
-        requestId: requestId,
-        timestamp: new Date().toISOString(),
-    };
-}
 
 function updateChatTitleFromMessage(message) {
     const currentTitle = document.getElementById('chatTitle').textContent;
@@ -131,9 +108,9 @@ function updateChatTitleFromMessage(message) {
 //   requestTurnNumber  - turn number of the request turn.
 //   message            - the original request message (for chat preview/title
 //                        updates).
-//   errorText          - the actual error text. Stored in debug_data and
-//                        shown in the dropdown.
-async function handleSimpleChatError({ errorType, processor, requestTurnInfo, savedResponseTurn, requestTurnNumber, message, errorText = "" }) {
+//   errorText          - the actual error text. Shown in the debug panel.
+//   responseDebugData  - accumulated debug data from streaming (responses + error).
+async function handleSimpleChatError({ errorType, processor, requestTurnInfo, savedResponseTurn, requestTurnNumber, message, errorText = "", responseDebugData = null }) {
     const resolvedErrorText = errorText
         || (errorType === "user_stopped" ? "Generation stopped by user." : "")
         || `Error: ${errorType}`;
@@ -183,7 +160,8 @@ async function handleSimpleChatError({ errorType, processor, requestTurnInfo, sa
         responseTurnNumber,
         turnMessages,
         savedResponseTurn?.turn_id || null,
-        savedResponseTurn?.parent_turn_id || null
+        savedResponseTurn?.parent_turn_id || null,
+        responseDebugData
     );
     chatRenderer.renderTurn(errorTurn.renderable(), true);
 
@@ -196,7 +174,6 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
 
     const requestTurnNumber = getNextTurnNumber();
     const inputMethod = 'manual';
-    let savedRequestDebugData = null;
 
     try {
         await sendAndStream({
@@ -247,28 +224,19 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                 });
 
                 const requestTurn = new Turn(requestTurnNumber, [requestMessage], requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
-                chatRenderer.renderTurn(requestTurn.renderable(), true);
+                const rto = requestTurn.renderable();
+                chatRenderer.renderTurn(rto, true);
 
-                const enabledToolsFlags = loadEnabledTools();
-                const requestDebugData = buildRequestDebugData({
-                    message,
-                    requestTurnNumber,
-                    requestId,
-                    conversationHistory,
-                    inputMethod,
-                    enabledToolsFlags,
-                });
-                addApiRequestToDebugData(requestDebugData, { requestId, message, requestTurnNumber, enabledToolsFlags });
-                savedRequestDebugData = requestDebugData;
+                // Extract turnMessages from RTO for the debug panel
+                const turnMessages = rto.turnMessages || [{ role: 'user', content: message }];
 
-                try {
-                    await saveTurnData(currentChatId, requestTurnInfo.turn_id, requestDebugData);
-                    logger.info(`[TURN-DEBUG] Saved request debug data for turn_id=${requestTurnInfo.turn_id}`);
-                } catch (error) {
-                    logger.warn('Failed to save request turn debug data:', error);
-                }
-
-                attachRequestDebugPanel(requestTurnNumber, requestDebugData);
+                // The request's debug panel belongs to the request, not the
+                // response. The backend pushes the request's debug data on the
+                // request-scoped event channel the moment the request is built
+                // (before the AI provider is contacted), so listen for it here,
+                // in the request flow, and render the panel as soon as it
+                // arrives — independent of whether/when the response completes.
+                listenForRequestDebug(requestId, requestTurnNumber, turnMessages);
             },
 
             onResponseRendered: async ({ processor }) => {
@@ -292,7 +260,8 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                     savedResponseTurn,
                     requestTurnNumber,
                     message,
-                    errorText
+                    errorText,
+                    responseDebugData: error.responseDebugData
                 });
             },
         });

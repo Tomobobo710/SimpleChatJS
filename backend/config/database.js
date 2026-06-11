@@ -55,7 +55,6 @@ function initializeDatabase() {
                 tool_calls TEXT,
                 tool_call_id TEXT,
                 tool_name TEXT,
-                debug_data TEXT,
                 edit_count INTEGER DEFAULT 0,
                 edited_at DATETIME,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -79,6 +78,15 @@ function initializeDatabase() {
                 parent_key TEXT NOT NULL,
                 selected_turn_id TEXT NOT NULL,
                 PRIMARY KEY (chat_id, parent_key)
+            )`);
+
+            db.exec(`CREATE TABLE IF NOT EXISTS turn_debug (
+                id INTEGER PRIMARY KEY,
+                chat_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL,
+                debug_data TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(chat_id, turn_id)
             )`);
 
             log("[DB] Database initialized successfully");

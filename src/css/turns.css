@@ -14,14 +14,14 @@
 }
 
 /* User turn styling */
-.turn.user-turn, .message.user {
+.turn.request-turn, .message.user {
     align-self: flex-end;
     background: #2a4a7a;
     color: #ffffff;
 }
 
 /* Assistant turn styling */
-.turn.assistant-turn, .message.assistant {
+.turn.response-turn, .message.assistant {
     align-self: flex-start;
     background: #4a4a4a;
     color: #e0e0e0;
@@ -272,7 +272,7 @@ details div {
 }
 
 /* Error Message Styling */
-.turn.assistant-turn.error, .message.assistant.error {
+.turn.response-turn.error, .message.assistant.error {
     background: #4a2a2a;
     border-left: 4px solid #ff4444;
     color: #ffcccc;
@@ -300,8 +300,9 @@ details div {
 
 /* Error debug information styling */
 .error-debug {
-    background: rgba(255, 68, 68, 0.1);
+    background: #4a2a2a;
     border: 1px solid #ff4444;
+    border-left: 4px solid #ff4444;
     border-radius: 4px;
     padding: 12px;
     margin: 8px 0;

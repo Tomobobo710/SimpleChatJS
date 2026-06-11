@@ -42,7 +42,7 @@ async function streamAndRenderResponse({
     const liveRenderer = new ChatRenderer(tempContainer);
 
     const responseTurnDiv = document.createElement("div");
-    responseTurnDiv.className = "turn assistant-turn";
+    responseTurnDiv.className = "turn response-turn";
     responseTurnDiv.innerHTML = "";
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
@@ -133,6 +133,26 @@ async function streamAndRenderResponse({
             const streamError = new Error(errorText || `Backend stream error: ${streamErrorType}`);
             streamError.streamErrorType = streamErrorType;
             streamError.errorText = errorText;
+            
+            // Build debug data even on error, before throwing
+            let responseDebugData = null;
+            try {
+                const turnId = savedResponseTurn?.turn_id || null;
+                if (turnId) {
+                    // Fetch from backend - it has the authoritative saved data including error
+                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
+                    if (turnDebugResponse.ok) {
+                        responseDebugData = await turnDebugResponse.json();
+                        logger.info(`Fetched stream-error responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
+                    }
+                }
+            } catch (debugError) {
+                logger.warn("Failed to fetch stream-error debug data:", debugError);
+            }
+            
+            // Attach debug data to error object so onError handler can access it
+            streamError.responseDebugData = responseDebugData;
+            
             fireError(streamError);
             throw streamError;
         }
@@ -151,29 +171,22 @@ async function streamAndRenderResponse({
 
         processor.finalize();
 
-        let debugData = null;
-        try {
-            const debugResponse = await fetch(`${window.location.origin}/api/debug/${requestId}`);
-            if (debugResponse.ok) {
-                debugData = await debugResponse.json();
-            }
-        } catch (error) {
-            logger.warn("Failed to fetch debug data:", error);
-        }
-
-        // Fetch all debug data for messages in this turn from the DB
-        let debugDataAll = null;
+        // Build debug data array from DB
+        // Always fetch from backend - it has the authoritative saved data
+        let responseDebugData = null;
         try {
             const turnId = savedResponseTurn?.turn_id || null;
             if (turnId) {
-                const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/turn/${currentChatId}/${turnId}`);
+                const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
                 if (turnDebugResponse.ok) {
-                    debugDataAll = await turnDebugResponse.json();
+                    responseDebugData = await turnDebugResponse.json();
+                    logger.info(`Fetched responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
                 }
             }
         } catch (error) {
-            logger.warn("Failed to fetch turn debug data:", error);
+            logger.warn("Failed to fetch response debug data:", error);
         }
+        logger.info(`Final responseDebugData:`, responseDebugData);
 
         const dropdownStates = {};
         const streamingDropdowns = tempContainer.querySelectorAll(".streaming-dropdown");
@@ -200,8 +213,11 @@ async function streamAndRenderResponse({
         responseTurnDiv.remove();
 
         const responseTurnNumber = requestTurnNumber + 1;
-        if (debugData) {
-            debugData.currentTurnNumber = responseTurnNumber;
+        // Set currentTurnNumber on all entries
+        if (responseDebugData && Array.isArray(responseDebugData)) {
+            for (const d of responseDebugData) {
+                d.currentTurnNumber = responseTurnNumber;
+            }
         }
 
         const rto = RenderableTurnObject.fromStreamingProcessor({
@@ -209,27 +225,13 @@ async function streamAndRenderResponse({
             turnNumber: responseTurnNumber,
             turnId: savedResponseTurn?.turn_id || null,
             parentTurnId: savedResponseTurn?.parent_turn_id || null,
-            debugData,
-            debugDataAll,
+            responseDebugData,
             dropdownStates
         });
 
         chatRenderer.renderTurn(rto, true);
 
-        if (debugData) {
-            try {
-                debugData.turn_id = savedResponseTurn?.turn_id || null;
-                debugData.parent_turn_id = savedResponseTurn?.parent_turn_id || null;
-                await saveTurnData(currentChatId, savedResponseTurn?.turn_id, debugData);
-                logger.info(
-                    `[${inputMethod.toUpperCase()}] Saved response debug data for turn_id=${savedResponseTurn?.turn_id}`
-                );
-            } catch (error) {
-                logger.warn(`[${inputMethod.toUpperCase()}] Failed to save response debug data:`, error);
-            }
-        }
-
-        return { savedResponseTurn, debugData, processor };
+        return { savedResponseTurn, responseDebugData, processor };
     } catch (error) {
         if (!errorAlreadyHandled) {
             if (toolEventSource) {
@@ -237,6 +239,26 @@ async function streamAndRenderResponse({
             }
             tempContainer.remove();
             responseTurnDiv.remove();
+            
+            // Build debug data for error turns too
+            let responseDebugData = null;
+            if (savedResponseTurn) {
+                try {
+                    const turnId = savedResponseTurn.turn_id;
+                    // Fetch from backend - it has the authoritative saved data
+                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
+                    if (turnDebugResponse.ok) {
+                        responseDebugData = await turnDebugResponse.json();
+                        logger.info(`Fetched catch-error responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
+                    }
+                } catch (debugError) {
+                    logger.warn("Failed to fetch catch-error debug data:", debugError);
+                }
+            }
+            
+            // Attach debug data to error for onError handler
+            error.responseDebugData = responseDebugData;
+            
             if (onError) {
                 try {
                     onError(error, processor, requestTurnInfo, savedResponseTurn);
@@ -328,7 +350,7 @@ async function sendAndStream({
         requestTurnInfo || (inputMethod === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
 
     const container = truncateContainer || turnsContainer;
-    const { savedResponseTurn, debugData, processor } = await streamAndRenderResponse({
+   const { savedResponseTurn, responseDebugData, processor } = await streamAndRenderResponse({
         fetchPromise: requestInfo.fetchPromise,
         requestId,
         requestTurnInfo: effectiveRequestTurnInfo,
@@ -348,7 +370,7 @@ async function sendAndStream({
                 requestTurnInfo,
                 responseTurnInfo,
                 requestId,
-                debugData,
+                responseDebugData,
                 processor
             });
         } catch (error) {
