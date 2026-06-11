@@ -18,8 +18,8 @@ class DebugPanel {
             return this.renderRequestDebugData(debugData);
         }
 
-        // Handle response debug data — from DB (debugDataAll) or transient store (request/response)
-        if (debugData.debugDataAll && Array.isArray(debugData.debugDataAll)) {
+        // Handle response debug data — from DB (responseDebugData) or transient store (request/response)
+        if (debugData.responseDebugData && Array.isArray(debugData.responseDebugData)) {
             return this.renderResponseDebugData(debugData);
         }
         if (debugData.request || debugData.response || debugData.error) {
@@ -115,32 +115,18 @@ class DebugPanel {
             content += `<div class="debug-note">Parent Turn: ${debugData.parentTurnId}</div>`;
         }
 
-        // Show errors
-        if (debugData.error) {
-            content += `<div class="debug-section timeline-item error-section">`;
-            content += `<div class="debug-section-title">ERROR: ${debugData.error.type}</div>`;
-            content += `<div class="debug-timestamp">${new Date().toISOString()}</div>`;
-            content += `<div class="tool-info">Message: ${debugData.error.message || 'No message'}</div>`;
-            if (debugData.error.status_code) {
-                content += `<div class="tool-info">Status: ${debugData.error.status_code}</div>`;
-            }
-            content += `</div>`;
-            content += '</div>';
-            return content;
-        }
-
-        // Collect all debug entries for this turn from debugDataAll (DB query returns all messages)
-        // debugData from transient store is just the last response &mdash; skip it to avoid duplication
+        // Collect all debug entries for this turn from responseDebugData (DB query returns all messages)
+        // debugData from transient store is just the last response — skip it to avoid duplication
         const allEntries = [];
-        if (debugData.debugDataAll && Array.isArray(debugData.debugDataAll)) {
-            for (const d of debugData.debugDataAll) {
+        if (debugData.responseDebugData && Array.isArray(debugData.responseDebugData)) {
+            for (const d of debugData.responseDebugData) {
                 if (d.response || d.error) {
                     allEntries.push(d);
                 }
             }
         }
 
-        // If no debugDataAll, fall back to debugData alone (edge case)
+        // If no responseDebugData, fall back to debugData alone (edge case)
         if (allEntries.length === 0 && debugData.response) {
             allEntries.push(debugData);
         }
@@ -155,65 +141,69 @@ class DebugPanel {
 
             content += `<div class="debug-section timeline-item">`;
             
-            // Handle error entries
+            // If entry has BOTH response and error, render them together
+            // If entry has ONLY error, render just the error
+            if (resp) {
+                // Render response content
+                content += `<div class="debug-section-title">Response ${i + 1}</div>`;
+
+                if (resp && resp.status) {
+                    content += `<div class="tool-info">Status: ${resp.status}</div>`;
+                }
+
+                // SSE stream
+                if (resp && resp.rawBody) {
+                    const lines = resp.rawBody.split('\n');
+                    const prettyLines = lines.map(line => {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
+                            try {
+                                return 'data: ' + JSON.stringify(JSON.parse(trimmed.slice(6)), null, 2);
+                            } catch (_) {
+                                return trimmed;
+                            }
+                        }
+                        if (trimmed === 'data: [DONE]') {
+                            return '[DONE]';
+                        }
+                        return trimmed;
+                    }).join('\n');
+                    content += this.createDropdown('SSE Stream', prettyLines, false, 'json');
+                }
+
+                // Content
+                if (resp.content) {
+                    const preview = resp.content.length > 500
+                        ? resp.content.substring(0, 500) + '...'
+                        : resp.content;
+                    content += this.createDropdown('Content', preview, false, 'json');
+                }
+
+                // Tool calls with results
+                if (resp.toolCalls && resp.toolCalls.length > 0) {
+                    const toolCallHtml = this.renderToolCallsWithResults(resp.toolCalls, entry.toolResults || null);
+                    content += toolCallHtml;
+                }
+
+                // Recursive request body (next response's request)
+                if (nextEntry && nextEntry.request && nextEntry.request.body) {
+                    content += this.createDropdown('Recursive Request', JSON.stringify(nextEntry.request.body, null, 2), false, 'json');
+                }
+            }
+
+            // Show error if this entry has one (rendered AFTER response if both exist)
             if (err) {
-                content += `<div class="debug-section-title error-section">ERROR: ${err.type}</div>`;
-                content += `<div class="tool-info">Message: ${err.message || 'No message'}</div>`;
+                content += `<div class="debug-section error-debug">`;
+                content += `<div class="debug-section-title" style="color: #ff9999;">ERROR: ${err.type}</div>`;
+                content += `<div class="tool-info" style="color: #ffcccc;">Message: ${err.message || 'No message'}</div>`;
                 if (err.status_code) {
-                    content += `<div class="tool-info">Status: ${err.status_code}</div>`;
+                    content += `<div class="tool-info" style="color: #ffcccc;">Status: ${err.status_code}</div>`;
                 }
                 content += `</div>`;
-                continue;
-            }
-
-            // Handle response entries
-            content += `<div class="debug-section-title">Response ${i + 1}</div>`;
-
-            if (resp && resp.status) {
-                content += `<div class="tool-info">Status: ${resp.status}</div>`;
-            }
-
-            // SSE stream
-            if (resp.rawBody) {
-                const lines = resp.rawBody.split('\n');
-                const prettyLines = lines.map(line => {
-                    const trimmed = line.trim();
-                    if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
-                        try {
-                            return 'data: ' + JSON.stringify(JSON.parse(trimmed.slice(6)), null, 2);
-                        } catch (_) {
-                            return trimmed;
-                        }
-                    }
-                    if (trimmed === 'data: [DONE]') {
-                        return '[DONE]';
-                    }
-                    return trimmed;
-                }).join('\n');
-                content += this.createDropdown('SSE Stream', prettyLines, false, 'json');
-            }
-
-            // Content
-            if (resp.content) {
-                const preview = resp.content.length > 500
-                    ? resp.content.substring(0, 500) + '...'
-                    : resp.content;
-                content += this.createDropdown('Content', preview, false, 'json');
-            }
-
-            // Tool calls with results
-            if (resp.toolCalls && resp.toolCalls.length > 0) {
-                const toolCallHtml = this.renderToolCallsWithResults(resp.toolCalls, entry.toolResults || null);
-                content += toolCallHtml;
-            }
-
-            // Recursive request body (next response's request)
-            if (nextEntry && nextEntry.request && nextEntry.request.body) {
-                content += this.createDropdown('Recursive Request', JSON.stringify(nextEntry.request.body, null, 2), false, 'json');
             }
 
             // Done marker for last response
-            if (isLast) {
+            if (isLast && !err) {
                 content += `<div class="debug-note" style="margin-top:8px;">&#10003; Done</div>`;
             }
 

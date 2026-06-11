@@ -21,11 +21,12 @@ function resolveErrorBlockContent(errorMsg) {
 }
 
 class Turn {
-    constructor(turnNumber, messages = [], turnId = null, parentTurnId = null) {
+    constructor(turnNumber, messages = [], turnId = null, parentTurnId = null, responseDebugData = null) {
         this.turnNumber = turnNumber;
         this.messages = messages;
         this.turnId = turnId;
         this.parentTurnId = parentTurnId;
+        this.responseDebugData = responseDebugData;
     }
 
     get errorMessages() {
@@ -95,6 +96,7 @@ class Turn {
                 turnId: responseRto.turnId,
                 parentTurnId: responseRto.parentTurnId,
                 debugData: responseRto.debugData,
+                responseDebugData: this.responseDebugData,
                 editCount: responseRto.editCount,
                 dropdownStates: responseRto.dropdownStates,
             });
@@ -121,6 +123,7 @@ class Turn {
                 turnId: this.turnId,
                 parentTurnId: this.parentTurnId,
                 debugData: errorMsg.debugData,
+                responseDebugData: this.responseDebugData,
                 editCount: errorMsg.editCount,
             });
         }
@@ -144,6 +147,7 @@ class Turn {
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
             debugData: null,
+            responseDebugData: this.responseDebugData,
             editCount: 0,
         });
     }
@@ -251,7 +255,7 @@ class Turn {
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
             debugData: primary?.debugData || null,
-            debugDataAll: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
+            responseDebugData: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
             turnMessages: this.messages.map(m => ({ role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName })),
             editCount: primary.editCount,
         });

@@ -624,7 +624,7 @@ async function loadChatHistory(chatId) {
                     rto.debugData = debugInfo.request;
                 }
                 if (debugInfo.response) {
-                    rto.debugDataAll = Array.isArray(debugInfo.response) ? debugInfo.response : [debugInfo.response];
+                    rto.responseDebugData = Array.isArray(debugInfo.response) ? debugInfo.response : [debugInfo.response];
                 }
             }
             

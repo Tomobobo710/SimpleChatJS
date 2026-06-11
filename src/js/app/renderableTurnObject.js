@@ -3,7 +3,7 @@
 // The UI renders directly from this object.
 
 class RenderableTurnObject {
-    constructor({ role = 'other', content = '', blocks = null, turnNumber = 0, turnId = null, parentTurnId = null, debugData = null, debugDataAll = null, turnMessages = null, editCount = 0, dropdownStates = {} } = {}) {
+    constructor({ role = 'other', content = '', blocks = null, turnNumber = 0, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, editCount = 0, dropdownStates = {} } = {}) {
         this.role = role;
         this.content = content;
         this.blocks = blocks;
@@ -11,7 +11,7 @@ class RenderableTurnObject {
         this.turnId = turnId;
         this.parentTurnId = parentTurnId;
         this.debugData = debugData;
-        this.debugDataAll = debugDataAll;
+        this.responseDebugData = responseDebugData;
         this.turnMessages = turnMessages;
         this.editCount = editCount;
         this.dropdownStates = dropdownStates;
@@ -43,7 +43,7 @@ class RenderableTurnObject {
         });
     }
 
-    static fromStreamingProcessor({ processor, turnNumber, turnId = null, parentTurnId = null, debugData = null, debugDataAll = null, turnMessages = null, dropdownStates = {} }) {
+    static fromStreamingProcessor({ processor, turnNumber, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, dropdownStates = {} }) {
         return new RenderableTurnObject({
             role: 'assistant',
             content: processor.getRawContent() || '',
@@ -52,7 +52,7 @@ class RenderableTurnObject {
             turnId,
             parentTurnId,
             debugData,
-            debugDataAll,
+            responseDebugData,
             turnMessages,
             dropdownStates,
         });

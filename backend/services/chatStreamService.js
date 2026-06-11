@@ -45,11 +45,23 @@ function cancelInFlightRequest(requestId) {
     };
     saveMessage(state.chatId, errorMessage, state.currentTurn, "user_stopped", state.turnInfo)
         .then(async () => {
-            // Save error to turn_debug
+            // Append error to responses array in turn_debug (with any streamed content)
             if (state.turnInfo) {
                 try {
                     let existingDebug = getTurnDebugData(state.chatId, state.turnInfo.turn_id) || {};
-                    existingDebug.error = { type: "user_stopped", message: "Generation stopped by user." };
+                    if (!existingDebug.responses) {
+                        existingDebug.responses = [];
+                    }
+                    existingDebug.responses.push({
+                        response: {
+                            content: streamedSoFar,
+                            toolCalls: [],
+                            hasToolCalls: false,
+                            status: null,
+                            rawBody: ""
+                        },
+                        error: { type: "user_stopped", message: "Generation stopped by user." }
+                    });
                     await saveTurnDebugData(state.chatId, state.turnInfo.turn_id, existingDebug);
                 } catch (debugError) {
                     log(`[CANCEL] Failed to save user_stopped debug data: ${debugError.message}`);
@@ -299,11 +311,16 @@ async function handleChatWithTools(
         };
         saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
             .then(async () => {
-                // Save error to turn_debug
+                // Append error to responses array in turn_debug
                 if (turnInfo) {
                     try {
                         let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
-                        existingDebug.error = { type: "connection_error", message: "Client disconnected" };
+                        if (!existingDebug.responses) {
+                            existingDebug.responses = [];
+                        }
+                        existingDebug.responses.push({
+                            error: { type: "connection_error", message: "Client disconnected" }
+                        });
                         await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
                     } catch (debugError) {
                         log(`[ERROR-HANDLING] Failed to save connection error debug data: ${debugError.message}`);
@@ -360,16 +377,21 @@ async function handleChatWithTools(
                     };
                     saveMessage(chatId, errorMessage, currentTurn, "api_error", turnInfo)
                         .then(async () => {
-                            // Save error to turn_debug
+                            // Append error to responses array in turn_debug
                             if (turnInfo) {
                                 try {
                                     let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
-                                    existingDebug.error = {
-                                        type: "api_error",
-                                        status_code: apiRes.statusCode,
-                                        status_message: apiRes.statusMessage,
-                                        message: userErrorMessage
-                                    };
+                                    if (!existingDebug.responses) {
+                                        existingDebug.responses = [];
+                                    }
+                                    existingDebug.responses.push({
+                                        error: {
+                                            type: "api_error",
+                                            status_code: apiRes.statusCode,
+                                            status_message: apiRes.statusMessage,
+                                            message: userErrorMessage
+                                        }
+                                    });
                                     await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
                                 } catch (debugError) {
                                     log(`[ERROR-HANDLING] Failed to save error debug data: ${debugError.message}`);
@@ -549,11 +571,16 @@ async function handleChatWithTools(
             };
             saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
                 .then(async () => {
-                    // Save error to turn_debug
+                    // Append error to responses array in turn_debug
                     if (turnInfo) {
                         try {
                             let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
-                            existingDebug.error = { type: "connection_error", message: error.message };
+                            if (!existingDebug.responses) {
+                                existingDebug.responses = [];
+                            }
+                            existingDebug.responses.push({
+                                error: { type: "connection_error", message: error.message }
+                            });
                             await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
                         } catch (debugError) {
                             log(`[ERROR-HANDLING] Failed to save connection error debug data: ${debugError.message}`);
@@ -831,14 +858,19 @@ async function processChatRequest(req, res) {
             };
             saveMessage(chat_id, errorMessage, currentTurn, "processing_error", turnInfo)
                 .then(async () => {
-                    // Save error to turn_debug
+                    // Append error to responses array in turn_debug
                     if (turnInfo) {
                         try {
                             let existingDebug = getTurnDebugData(chat_id, turnInfo.turn_id) || {};
-                            existingDebug.error = {
-                                type: "processing_error",
-                                message: error.message
-                            };
+                            if (!existingDebug.responses) {
+                                existingDebug.responses = [];
+                            }
+                            existingDebug.responses.push({
+                                error: {
+                                    type: "processing_error",
+                                    message: error.message
+                                }
+                            });
                             await saveTurnDebugData(chat_id, turnInfo.turn_id, existingDebug);
                         } catch (debugError) {
                             log(`[ERROR-HANDLING] Failed to save processing error debug data: ${debugError.message}`);

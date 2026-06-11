@@ -110,7 +110,7 @@ function updateChatTitleFromMessage(message) {
 //                        updates).
 //   errorText          - the actual error text. Stored in debug_data and
 //                        shown in the dropdown.
-async function handleSimpleChatError({ errorType, processor, requestTurnInfo, savedResponseTurn, requestTurnNumber, message, errorText = "" }) {
+async function handleSimpleChatError({ errorType, processor, requestTurnInfo, savedResponseTurn, requestTurnNumber, message, errorText = "", responseDebugData = null }) {
     const resolvedErrorText = errorText
         || (errorType === "user_stopped" ? "Generation stopped by user." : "")
         || `Error: ${errorType}`;
@@ -160,7 +160,8 @@ async function handleSimpleChatError({ errorType, processor, requestTurnInfo, sa
         responseTurnNumber,
         turnMessages,
         savedResponseTurn?.turn_id || null,
-        savedResponseTurn?.parent_turn_id || null
+        savedResponseTurn?.parent_turn_id || null,
+        responseDebugData
     );
     chatRenderer.renderTurn(errorTurn.renderable(), true);
 
@@ -259,7 +260,8 @@ async function handleSimpleChat(message, conversationHistory, parentTurnId = nul
                     savedResponseTurn,
                     requestTurnNumber,
                     message,
-                    errorText
+                    errorText,
+                    responseDebugData: error.responseDebugData
                 });
             },
         });

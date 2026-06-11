@@ -66,7 +66,7 @@ router.get('/debug/request/:chatId/:turnId', (req, res) => {
     }
 });
 
-// Get response debug data for a turn (returns array of responses and/or errors)
+// Get response debug data for a turn (returns array of responses and errors in sequence)
 router.get('/debug/response/:chatId/:turnId', (req, res) => {
     const { chatId, turnId } = req.params;
     try {
@@ -79,20 +79,9 @@ router.get('/debug/response/:chatId/:turnId', (req, res) => {
         if (row && row.debug_data) {
             try {
                 const data = JSON.parse(row.debug_data);
-                const result = [];
-                
-                // Add responses if they exist
+                // Return responses array - it already contains both responses and error entries in sequence
                 if (data.responses && Array.isArray(data.responses)) {
-                    result.push(...data.responses);
-                }
-                
-                // Add error as final entry if it exists
-                if (data.error) {
-                    result.push({ error: data.error });
-                }
-                
-                if (result.length > 0) {
-                    return res.json(result);
+                    return res.json(data.responses);
                 }
             } catch (_) {}
         }
