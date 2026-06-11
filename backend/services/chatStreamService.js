@@ -7,7 +7,7 @@ const crypto = require("crypto");
 const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
 const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
-const { addToolEvent, storeDebugData, storeHttpRequest, storeHttpChunk } = require("./toolEventService");
+const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 const { saveMessage, saveTurnDebugData, saveRequestDebugData, getTurnDebugData } = require("./messageRepository");
 const { incrementTurnNumber, getTurnInfo, getCurrentTurnNumber } = require("./turnService");
 const { buildSystemMessageIfEnabled } = require("./systemPromptService");
@@ -402,14 +402,8 @@ async function handleChatWithTools(
                         inFlightState.streamedContent = streamedContent;
                     }
                 }
-
-                // Accumulate raw response body for debug
-                rawResponseBody += chunk.toString();
-
-                // Store raw chunks in transient debug store (not on message row)
-                if (requestId) {
-                    storeHttpChunk(requestId, chunk.toString());
-                }
+            // Accumulate raw response body for debug
+            rawResponseBody += chunk.toString();
             } catch (error) {
                 console.error(`[${adapter.providerName.toUpperCase()}-ADAPTER] Error processing chunk:`, error);
             }
@@ -424,19 +418,6 @@ async function handleChatWithTools(
             }
             inFlightState.saved = true;
             if (requestId) inFlightRequests.delete(requestId);
-
-            // Capture HTTP response in transient debug store
-            if (requestId) {
-                storeHttpRequest(requestId, {
-                    type: "http_response",
-                    timestamp: new Date().toISOString(),
-                    content: unifiedResponse.content || "",
-                    toolCalls: unifiedResponse.toolCalls || [],
-                    hasToolCalls: unifiedResponse.hasToolCalls(),
-                    statusCode: apiRes.statusCode,
-                    statusMessage: apiRes.statusMessage
-                });
-            }
 
              // Handle tool calls if any
             if (unifiedResponse.hasToolCalls()) {
@@ -492,11 +473,6 @@ async function handleChatWithTools(
                             unifiedResponse,
                             rawResponseBody
                         });
-
-                        if (requestId) {
-                            storeDebugData(requestId, debugPayload);
-                            log(`[ADAPTER-DEBUG] Transient debug data stored for request:`, requestId);
-                        }
 
                         if (turnInfo) {
                             try {
@@ -559,17 +535,7 @@ async function handleChatWithTools(
         res.end();
     });
 
-    // Capture ACTUAL HTTP request payload in transient debug store
     const actualRequestPayload = JSON.stringify(requestData);
-    if (requestId) {
-        storeHttpRequest(requestId, {
-            type: "http_request",
-            timestamp: new Date().toISOString(),
-            payload: requestData,
-            rawPayload: actualRequestPayload
-        });
-    }
-
     apiReq.write(actualRequestPayload);
     apiReq.end();
 }
@@ -711,11 +677,6 @@ async function executeToolCallsAndContinue(
             // Attach tool results to debug data
             if (toolResults.length > 0) {
                 debugPayload.toolResults = toolResults;
-            }
-
-            if (requestId) {
-                storeDebugData(requestId, debugPayload);
-                log(`[ADAPTER-DEBUG] Transient debug data stored for request:`, requestId);
             }
 
             if (turnInfo) {

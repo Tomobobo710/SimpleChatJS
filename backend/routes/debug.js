@@ -1,6 +1,6 @@
 // Debug routes - Handle debug data and tool events
 const express = require('express');
-const { handleDebugDataRequest, handleToolEventsStream } = require('../services/toolEventService');
+const { handleToolEventsStream } = require('../services/toolEventService');
 const { db } = require('../config/database');
 const { log } = require('../utils/logger');
 
@@ -42,9 +42,6 @@ router.get('/debug/schema', (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
-// Debug data endpoint - completely separate from content
-router.get('/debug/:requestId', handleDebugDataRequest);
 
 // Get all debug data for messages in a turn
 router.get('/debug/turn/:chatId/:turnId', (req, res) => {

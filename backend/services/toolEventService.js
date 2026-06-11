@@ -1,4 +1,4 @@
-// Tool Event Service - Handle real-time tool events, HTTP data, and debug data via SSE and REST.
+// Tool Event Service - Handle real-time tool events via SSE.
 const { log } = require('../utils/logger');
 
 // TTL for in-memory stores (5 minutes)
@@ -6,12 +6,6 @@ const STORE_TTL_MS = 5 * 60 * 1000;
 
 // Tool events storage - separate from content stream
 const toolEventsStore = new Map(); // requestId -> { events: [], listeners: Set, timestamp: number }
-
-// Debug data storage (transient, for live frontend fetch)
-const debugDataStore = new Map(); // requestId -> { data, timestamp: number }
-
-// HTTP request data storage (transient, for live frontend fetch)
-const httpDataStore = new Map(); // requestId -> { requests: [], chunks: [], timestamp: number }
 
 // TTL cleanup interval
 let cleanupInterval = null;
@@ -26,16 +20,6 @@ function startTtlCleanup() {
                     try { l.end(); } catch (_) {}
                 });
                 toolEventsStore.delete(key);
-            }
-        }
-        for (const [key, entry] of debugDataStore) {
-            if (now - entry.timestamp > STORE_TTL_MS) {
-                debugDataStore.delete(key);
-            }
-        }
-        for (const [key, entry] of httpDataStore) {
-            if (now - entry.timestamp > STORE_TTL_MS) {
-                httpDataStore.delete(key);
             }
         }
     }, 60 * 1000); // Check every minute
@@ -145,54 +129,9 @@ function handleToolEventsStream(req, res) {
     }
 }
 
-// Store debug data (transient, for live frontend fetch)
-function storeDebugData(requestId, debugData) {
-    debugDataStore.set(requestId, { data: debugData, timestamp: Date.now() });
-    log(`[DEBUG-SEPARATION] Stored debug data for request: ${requestId}`);
-}
-
-// Handle debug data endpoint
-function handleDebugDataRequest(req, res) {
-    const requestId = req.params.requestId;
-    const debugData = debugDataStore.get(requestId);
-    
-    log(`[DEBUG-SEPARATION] Debug data requested for request: ${requestId}`);
-    
-    if (debugData) {
-        log(`[DEBUG-SEPARATION] Debug data found and sent for request: ${requestId}`);
-        res.json(debugData.data);
-    } else {
-        log(`[DEBUG-SEPARATION] Debug data not found for request: ${requestId}`);
-        res.status(404).json({ error: 'Debug data not found' });
-    }
-}
-
-// Store HTTP request/response data (transient, for live frontend fetch)
-function storeHttpRequest(requestId, httpRequest) {
-    if (!httpDataStore.has(requestId)) {
-        httpDataStore.set(requestId, { requests: [], chunks: [], timestamp: Date.now() });
-    }
-    const store = httpDataStore.get(requestId);
-    store.requests.push(httpRequest);
-    log(`[HTTP-DEBUG] Stored HTTP request for requestId: ${requestId}, total: ${store.requests.length}`);
-}
-
-// Store raw HTTP response chunks (transient, for live frontend fetch)
-function storeHttpChunk(requestId, chunk) {
-    if (!httpDataStore.has(requestId)) {
-        httpDataStore.set(requestId, { requests: [], chunks: [], timestamp: Date.now() });
-    }
-    const store = httpDataStore.get(requestId);
-    store.chunks.push({ chunk, timestamp: new Date().toISOString() });
-}
-
 module.exports = {
     generateRequestId,
     initializeToolEvents,
     addToolEvent,
-    handleToolEventsStream,
-    storeDebugData,
-    handleDebugDataRequest,
-    storeHttpRequest,
-    storeHttpChunk
+    handleToolEventsStream
 };
