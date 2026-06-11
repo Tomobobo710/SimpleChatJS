@@ -44,8 +44,8 @@ class DebugPanel {
             for (const step of debugData.sequence) {
                 const labels = {
                     'user_http_request': 'Frontend &rarr; SimpleChat',
-                    'unified_request': 'SimpleChat &rarr; Unified Format',
-                    'ai_http_request': 'SimpleChat &rarr; AI Provider'
+                    'unified_request': 'SimpleChat &rarr; Adapter',
+                    'ai_http_request': 'Adapter &rarr; AI Provider'
                 };
                 const label = labels[step.type] || step.type;
 
