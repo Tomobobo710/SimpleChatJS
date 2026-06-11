@@ -149,13 +149,27 @@ class DebugPanel {
         for (let i = 0; i < allEntries.length; i++) {
             const entry = allEntries[i];
             const resp = entry.response;
+            const err = entry.error;
             const isLast = i === allEntries.length - 1;
             const nextEntry = allEntries[i + 1] || null;
 
             content += `<div class="debug-section timeline-item">`;
+            
+            // Handle error entries
+            if (err) {
+                content += `<div class="debug-section-title error-section">ERROR: ${err.type}</div>`;
+                content += `<div class="tool-info">Message: ${err.message || 'No message'}</div>`;
+                if (err.status_code) {
+                    content += `<div class="tool-info">Status: ${err.status_code}</div>`;
+                }
+                content += `</div>`;
+                continue;
+            }
+
+            // Handle response entries
             content += `<div class="debug-section-title">Response ${i + 1}</div>`;
 
-            if (resp.status) {
+            if (resp && resp.status) {
                 content += `<div class="tool-info">Status: ${resp.status}</div>`;
             }
 
