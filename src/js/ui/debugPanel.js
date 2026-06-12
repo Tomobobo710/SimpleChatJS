@@ -171,6 +171,20 @@ class DebugPanel {
                     content += this.createDropdown('SSE Stream', prettyLines, false, 'json');
                 }
 
+                // Reasoning
+                if (resp.reasoning && typeof resp.reasoning === 'string' && resp.reasoning.trim()) {
+                    const charCount = resp.reasoning.length;
+                    const preview = resp.reasoning.length > 300
+                        ? resp.reasoning.substring(0, 300) + '...'
+                        : resp.reasoning;
+                    content += this.createDropdown(
+                        `Reasoning (${charCount} chars)`,
+                        preview,
+                        false,
+                        'text'
+                    );
+                }
+
                 // Content
                 if (resp.content) {
                     const preview = resp.content.length > 500

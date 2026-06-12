@@ -78,22 +78,18 @@ class OpenAIAdapter extends BaseResponseAdapter {
                         // Handle reasoning content (o1/o3/Qwen reasoning models)
                         if (delta.reasoning_content || delta.reasoning) {
                             const reasoningText = delta.reasoning_content || delta.reasoning;
-                            if (!context.thinkingStarted) {
-                                response.addContent('<thinking>');
-                                context.thinkingStarted = true;
+                            // Start a new reasoning block if none is active
+                            if (!response._activeReasoningBlock) {
+                                response.startReasoningBlock();
                             }
-                            context.thinkingContent = (context.thinkingContent || '') + reasoningText;
-                            response.addContent(reasoningText);
+                            response.addReasoningBlock(reasoningText);
                         }
                         
                         // Handle content
                         if (delta.content) {
-                            // If reasoning content was streaming and content appears, close thinking
-                            if (context.thinkingStarted) {
-                                response.addContent('</thinking>');
-                                response.addDebugData('thinkingContent', context.thinkingContent || '');
-                                context.thinkingStarted = false;
-                                context.thinkingContent = null;
+                            // If reasoning content was streaming, finish the reasoning block
+                            if (response._activeReasoningBlock) {
+                                response.finishReasoningBlock();
                             }
                             response.addContent(delta.content);
                         }

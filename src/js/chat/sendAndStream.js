@@ -157,19 +157,37 @@ async function streamAndRenderResponse({
             throw streamError;
         }
 
-        for await (const chunk of streamResponse(response)) {
-            processor.addChunk(chunk);
-            updateLiveRendering(processor, liveRenderer, tempContainer);
-            if (typeof smartScrollToBottom === "function") {
-                smartScrollToBottom(scrollContainer);
+        for await (const event of streamSSEEvents(response)) {
+            try {
+                switch (event.type) {
+                    case 'reasoning_start':
+                        processor.startReasoningBlock(event.data.blockId);
+                        break;
+                    case 'reasoning_delta':
+                        processor.addReasoningDelta(event.data.blockId, event.data.text);
+                        break;
+                    case 'reasoning_end':
+                        processor.finishReasoningBlock(event.data.blockId);
+                        break;
+                    case 'content_delta':
+                        processor.addContentDelta(event.data.text);
+                        break;
+                    case 'done':
+                        processor.finalize(event.data);
+                        break;
+                }
+                updateLiveRendering(processor, liveRenderer, tempContainer);
+                if (typeof smartScrollToBottom === "function") {
+                    smartScrollToBottom(scrollContainer);
+                }
+            } catch (eventError) {
+                logger.error("Error processing SSE event:", eventError);
             }
         }
 
         if (toolEventSource) {
             toolEventSource.close();
         }
-
-        processor.finalize();
 
         // Build debug data array from DB
         // Always fetch from backend - it has the authoritative saved data

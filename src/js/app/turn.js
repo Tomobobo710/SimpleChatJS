@@ -159,6 +159,7 @@ class Turn {
     _renderResponse(liveProcessor) {
         const assistantMessages = this.assistantMessages;
         let primaryMessage = assistantMessages.find(m => !m.content.is && m.content !== '') || assistantMessages[0];
+        let turnDebugData = null;
 
         if (liveProcessor && primaryMessage) {
             return new RenderableTurnObject({
@@ -176,13 +177,18 @@ class Turn {
         const processor = new StreamingMessageProcessor();
 
         for (const msg of assistantMessages) {
-            if (!msg.content && !msg.toolCalls) {
+            if (!msg.content && !msg.toolCalls && !msg.reasoning) {
                 continue;
             }
 
             if (!primaryMessage) {
                 primaryMessage = msg;
                 turnDebugData = msg.debugData;
+            }
+
+            // Load reasoning from message if present
+            if (msg.reasoning) {
+                processor.loadReasoning(msg.reasoning);
             }
 
             const content = msg.content || '';

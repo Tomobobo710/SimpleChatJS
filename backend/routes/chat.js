@@ -191,7 +191,7 @@ router.get("/chat/:id/history-complete", (req, res) => {
 
         // Get ALL messages for the chat including errored ones
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
             WHERE chat_id = ?
             ORDER BY timestamp ASC

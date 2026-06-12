@@ -25,12 +25,13 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         // Extract turn info
         const turnId = turnInfo?.turn_id || null;
         const parentTurnId = turnInfo?.parent_turn_id || null;
+        const reasoning = messageData.reasoning ? JSON.stringify(messageData.reasoning) : null;
 
         // Insert message with turn info
         const insertStmt = db.prepare(`
             INSERT INTO messages 
-            (chat_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata, error_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (chat_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = insertStmt.run(
@@ -43,6 +44,7 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
             serialized.toolCalls,
             toolCallId,
             toolName,
+            reasoning,
             serialized.originalContent,
             serialized.fileMetadata,
             errorState
@@ -86,7 +88,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             const turnIdPlaceholders = ancestorIds.map(() => "?").join(",");
 
             messagesStmt = db.prepare(`
-                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
+                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata
                 FROM messages
                 WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != '')) AND turn_id IN (${turnIdPlaceholders})
                 ORDER BY timestamp ASC
@@ -94,7 +96,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             chatMessages = messagesStmt.all(chat_id, ...ancestorIds);
         } else {
             messagesStmt = db.prepare(`
-                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, original_content, file_metadata
+                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata
                 FROM messages
                 WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != ''))
                 ORDER BY timestamp ASC

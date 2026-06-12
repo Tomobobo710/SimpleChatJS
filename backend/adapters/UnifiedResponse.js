@@ -10,6 +10,9 @@ class UnifiedResponse {
         this.provider = null;           // 'openai', 'google', etc
         this.content = '';              // Text content for CURRENT response phase only
         this.toolCalls = [];            // Array of tool calls
+        this.reasoningBlocks = [];       // Array of reasoning/thinking blocks (live rendering only, not saved)
+        this._activeReasoningBlock = null; // Current reasoning block being written to
+        this.reasoning = '';             // Provider reasoning content (what we save to DB)
         this.isComplete = false;        // Whether response is finished
         this.debugData = {};            // Debug information
         this.usage = {};                // Token usage info
@@ -78,12 +81,48 @@ class UnifiedResponse {
         return this.toolCalls[this.toolCalls.length - 1] || null;
     }
 
-    // Convert to JSON for transmission
+    // Start a new reasoning block
+    startReasoningBlock() {
+        this._activeReasoningBlock = {
+            id: `reasoning_${Date.now()}_${this.reasoningBlocks.length}`,
+            content: '',
+            isComplete: false
+        };
+        this.reasoningBlocks.push(this._activeReasoningBlock);
+        return this;
+    }
+
+    // Add content to the current reasoning block
+    addReasoningBlock(text) {
+        if (!this._activeReasoningBlock) {
+            this.startReasoningBlock();
+        }
+        this._activeReasoningBlock.content += text;
+        this.reasoning += text;  // Also accumulate for database storage
+        return this;
+    }
+
+    // Finish the current reasoning block
+    finishReasoningBlock() {
+        if (this._activeReasoningBlock) {
+            this._activeReasoningBlock.isComplete = true;
+            this._activeReasoningBlock = null;
+        }
+        return this;
+    }
+
+    // Get reasoning blocks (for live streaming)
+    getReasoningBlocks() {
+        return this.reasoningBlocks;
+    }
+
+    // Convert to JSON for transmission (live SSE only)
     toJSON() {
         return {
             provider: this.provider,
             content: this.content,
             toolCalls: this.toolCalls,
+            reasoningBlocks: this.reasoningBlocks,
             isComplete: this.isComplete,
             usage: this.usage,
             debugData: this.debugData

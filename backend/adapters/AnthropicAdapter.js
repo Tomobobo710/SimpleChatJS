@@ -165,11 +165,9 @@ class AnthropicAdapter extends BaseResponseAdapter {
                                 // Text content block started
                                 context.currentContentBlock = 'text';
                             } else if (data.content_block.type === 'thinking') {
-                                // Thinking content block started
+                                // Thinking content block started - create structured reasoning block
                                 context.currentContentBlock = 'thinking';
-                                // Send thinking tag to trigger dropdown system
-                                response.addContent('<thinking>');
-                                // Thinking block started
+                                response.startReasoningBlock();
                             } else if (data.content_block.type === 'tool_use') {
                                 // Tool use block started
                                 const toolUse = data.content_block;
@@ -198,23 +196,17 @@ class AnthropicAdapter extends BaseResponseAdapter {
                                 // Text content delta
                                 response.addContent(data.delta.text);
                             } else if (data.delta.type === 'thinking_delta') {
-                                // Thinking content delta - stream to response for dropdown system
-                                if (!context.thinkingContent) {
-                                    context.thinkingContent = '';
-                                }
+                                // Thinking content delta - add to active reasoning block
                                 const thinkingText = data.delta.thinking || '';
-                                context.thinkingContent += thinkingText;
-                                // Stream thinking content so the dropdown system can capture it
-                                response.addContent(thinkingText);
+                                if (response._activeReasoningBlock) {
+                                    response.addReasoningBlock(thinkingText);
+                                }
                             }
                         } else if (data.type === 'content_block_stop') {
                             // Content block ended
-                            if (context.currentContentBlock === 'thinking' && context.thinkingContent) {
-                                // Close thinking tag for the dropdown system
-                                response.addContent('</thinking>');
-                                // Thinking block completed - add to response debug data
-                                response.addDebugData('thinkingContent', context.thinkingContent);
-                                // Thinking completed
+                            if (context.currentContentBlock === 'thinking') {
+                                // Finish reasoning block
+                                response.finishReasoningBlock();
                             }
                         } else if (data.type === 'message_stop') {
                             response.setComplete(true);

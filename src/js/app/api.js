@@ -191,6 +191,99 @@ async function* streamResponse(response) {
     }
 }
 
+// Parse structured SSE events from response
+async function* streamSSEEvents(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete events (terminated by blank line)
+            const events = buffer.split('\n\n');
+            
+            // Keep the last incomplete event in buffer
+            buffer = events.pop() || '';
+
+            for (const eventText of events) {
+                if (!eventText.trim()) continue;
+                
+                const lines = eventText.split('\n');
+                let eventType = null;
+                let eventData = [];
+
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        eventType = line.slice(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        eventData.push(line.slice(6));
+                    }
+                }
+
+                // Yield complete event
+                if (eventType && eventData.length > 0) {
+                    try {
+                        const jsonStr = eventData.join('\n');
+                        yield {
+                            type: eventType,
+                            data: JSON.parse(jsonStr)
+                        };
+                    } catch (e) {
+                        logger.error('Failed to parse SSE event:', { eventType, data: eventData.join('\n'), error: e.message });
+                    }
+                }
+            }
+        }
+
+        // Process remaining buffer
+        if (buffer.trim()) {
+            const lines = buffer.split('\n');
+            let eventType = null;
+            let eventData = [];
+
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    eventType = line.slice(7).trim();
+                } else if (line.startsWith('data: ')) {
+                    eventData.push(line.slice(6));
+                }
+            }
+
+            // Yield final event if we have one
+            if (eventType && eventData.length > 0) {
+                try {
+                    const jsonStr = eventData.join('\n');
+                    yield {
+                        type: eventType,
+                        data: JSON.parse(jsonStr)
+                    };
+                } catch (e) {
+                    logger.error('Failed to parse final SSE event:', { eventType, data: eventData.join('\n'), error: e.message });
+                }
+            }
+        }
+    } catch (error) {
+        if (error.name === "AbortError") {
+            logger.info("Stream aborted by user");
+            throw error;
+        }
+        throw error;
+    } finally {
+        reader.releaseLock();
+        if (currentAbortController) {
+            currentAbortController = null;
+        }
+        if (currentRequestId) {
+            currentRequestId = null;
+        }
+    }
+}
+
 // Get chat history
 async function getChatHistory(chatId = null) {
     try {

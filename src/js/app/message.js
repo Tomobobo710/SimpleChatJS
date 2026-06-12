@@ -15,6 +15,7 @@ class Message {
         this.toolName = data.tool_name ?? null;
         this.toolResults = data.tool_results ?? null;
         this.thinking = data.thinking ?? null;
+        this.reasoning = data.reasoning ?? null;
         this.errorState = data.error_state ?? null;
         const rawDebug = data.debug_data ?? null;
         if (rawDebug && typeof rawDebug === 'string') {
@@ -73,6 +74,7 @@ class Message {
             tool_name: data.tool_name ?? null,
             tool_results: data.tool_results ?? null,
             thinking: data.thinking ?? null,
+            reasoning: data.reasoning ?? null,
             error_state: data.error_state ?? null,
             debug_data: parsedDebugData,
             edit_count: data.edit_count || 0,
