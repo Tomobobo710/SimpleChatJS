@@ -4,6 +4,11 @@
 // through sendAndStream. The variations between them are passed in as
 // arguments and callbacks, not duplicated in the call sites.
 
+// Shared streaming state so switchToChat can re-attach live DOM when switching back.
+// Set while a stream is active, null when it completes or errors.
+// Structure: { chatId, processor, tempContainer, liveRenderer, responseTurnDiv }
+let activeStreamState = null;
+
 function generateRequestId() {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
@@ -35,6 +40,7 @@ async function streamAndRenderResponse({
     inputMethod,
     onError = null
 }) {
+    const activeChatId = currentChatId;
     const processor = new StreamingMessageProcessor();
     const tempContainer = document.createElement("div");
     tempContainer.style.width = "100%";
@@ -47,6 +53,9 @@ async function streamAndRenderResponse({
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
 
+    const streamEntry = { chatId: activeChatId, processor, tempContainer, liveRenderer, responseTurnDiv };
+    activeStreamState = streamEntry;
+
     let toolEventSource = null;
     try {
         toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
@@ -54,7 +63,8 @@ async function streamAndRenderResponse({
             try {
                 const toolEvent = JSON.parse(event.data);
                 processor.handleToolEvent(toolEvent);
-                updateLiveRendering(processor, liveRenderer, tempContainer);
+                const ss = activeStreamState;
+                if (ss) updateLiveRendering(processor, ss.liveRenderer, ss.tempContainer);
             } catch (parseError) {
                 logger.warn("Failed to parse tool event:", parseError);
             }
@@ -88,9 +98,10 @@ async function streamAndRenderResponse({
         if (toolEventSource) {
             toolEventSource.close();
         }
-        tempContainer.remove();
-        responseTurnDiv.remove();
-        if (onError) {
+        activeStreamState = null;
+        streamEntry.tempContainer.remove();
+        streamEntry.responseTurnDiv.remove();
+        if (onError && currentChatId === activeChatId) {
             try {
                 onError(err, processor, requestTurnInfo, savedResponseTurn);
             } catch (handlerError) {
@@ -140,7 +151,7 @@ async function streamAndRenderResponse({
                 const turnId = savedResponseTurn?.turn_id || null;
                 if (turnId) {
                     // Fetch from backend - it has the authoritative saved data including error
-                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
+                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${activeChatId}/${turnId}`);
                     if (turnDebugResponse.ok) {
                         responseDebugData = await turnDebugResponse.json();
                         logger.info(`Fetched stream-error responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
@@ -176,7 +187,8 @@ async function streamAndRenderResponse({
                         processor.finalize(event.data);
                         break;
                 }
-                updateLiveRendering(processor, liveRenderer, tempContainer);
+                const sseSs = activeStreamState;
+                if (sseSs) updateLiveRendering(processor, sseSs.liveRenderer, sseSs.tempContainer);
                 if (typeof smartScrollToBottom === "function") {
                     smartScrollToBottom(scrollContainer);
                 }
@@ -188,6 +200,7 @@ async function streamAndRenderResponse({
         if (toolEventSource) {
             toolEventSource.close();
         }
+        activeStreamState = null;
 
         // Build debug data array from DB
         // Always fetch from backend - it has the authoritative saved data
@@ -195,7 +208,7 @@ async function streamAndRenderResponse({
         try {
             const turnId = savedResponseTurn?.turn_id || null;
             if (turnId) {
-                const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
+                const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${activeChatId}/${turnId}`);
                 if (turnDebugResponse.ok) {
                     responseDebugData = await turnDebugResponse.json();
                     logger.info(`Fetched responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
@@ -207,7 +220,7 @@ async function streamAndRenderResponse({
         logger.info(`Final responseDebugData:`, responseDebugData);
 
         const dropdownStates = {};
-        const streamingDropdowns = tempContainer.querySelectorAll(".streaming-dropdown");
+        const streamingDropdowns = streamEntry.tempContainer.querySelectorAll(".streaming-dropdown");
         let thinkingIndex = 0;
         let toolIndex = 0;
         streamingDropdowns.forEach((streamingDropdown) => {
@@ -227,8 +240,8 @@ async function streamAndRenderResponse({
             }
         });
 
-        tempContainer.remove();
-        responseTurnDiv.remove();
+        streamEntry.tempContainer.remove();
+        streamEntry.responseTurnDiv.remove();
 
         const responseTurnNumber = requestTurnNumber + 1;
         // Set currentTurnNumber on all entries
@@ -247,16 +260,19 @@ async function streamAndRenderResponse({
             dropdownStates
         });
 
-        chatRenderer.renderTurn(rto, true);
+        if (currentChatId === activeChatId) {
+            chatRenderer.renderTurn(rto, true);
+        }
 
-        return { savedResponseTurn, responseDebugData, processor };
+        return { savedResponseTurn, responseDebugData, processor, chatId: activeChatId };
     } catch (error) {
         if (!errorAlreadyHandled) {
             if (toolEventSource) {
                 toolEventSource.close();
             }
-            tempContainer.remove();
-            responseTurnDiv.remove();
+            activeStreamState = null;
+            streamEntry.tempContainer.remove();
+            streamEntry.responseTurnDiv.remove();
             
             // Build debug data for error turns too
             let responseDebugData = null;
@@ -264,7 +280,7 @@ async function streamAndRenderResponse({
                 try {
                     const turnId = savedResponseTurn.turn_id;
                     // Fetch from backend - it has the authoritative saved data
-                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${currentChatId}/${turnId}`);
+                    const turnDebugResponse = await fetch(`${window.location.origin}/api/debug/response/${activeChatId}/${turnId}`);
                     if (turnDebugResponse.ok) {
                         responseDebugData = await turnDebugResponse.json();
                         logger.info(`Fetched catch-error responseDebugData with ${responseDebugData?.length || 0} entries from backend`);
@@ -277,7 +293,7 @@ async function streamAndRenderResponse({
             // Attach debug data to error for onError handler
             error.responseDebugData = responseDebugData;
             
-            if (onError) {
+            if (onError && currentChatId === activeChatId) {
                 try {
                     onError(error, processor, requestTurnInfo, savedResponseTurn);
                 } catch (handlerError) {
@@ -368,7 +384,7 @@ async function sendAndStream({
         requestTurnInfo || (inputMethod === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
 
     const container = truncateContainer || turnsContainer;
-   const { savedResponseTurn, responseDebugData, processor } = await streamAndRenderResponse({
+    const { savedResponseTurn, responseDebugData, processor, chatId: responseChatId } = await streamAndRenderResponse({
         fetchPromise: requestInfo.fetchPromise,
         requestId,
         requestTurnInfo: effectiveRequestTurnInfo,
@@ -382,7 +398,7 @@ async function sendAndStream({
         ? { turn_id: savedResponseTurn.turn_id, parent_turn_id: savedResponseTurn.parent_turn_id }
         : null;
 
-    if (onResponseRendered) {
+    if (onResponseRendered && currentChatId === responseChatId) {
         try {
             await onResponseRendered({
                 requestTurnInfo,
@@ -400,4 +416,29 @@ async function sendAndStream({
     // branch-nav per-turn.
 
     return { requestTurnInfo, responseTurnInfo, requestId };
+}
+
+// Called from switchToChat when the user returns to a chat that has an active stream.
+// Creates fresh DOM elements and renders the processor's current state into them.
+// Subsequent SSE events will update these new elements since streamAndRenderResponse
+// references through activeStreamState.
+function reconnectStreaming(chatId) {
+    if (!activeStreamState || activeStreamState.chatId !== chatId) return;
+
+    const { processor } = activeStreamState;
+    const newTempContainer = document.createElement("div");
+    newTempContainer.style.width = "100%";
+    newTempContainer.style.boxSizing = "border-box";
+    const newLiveRenderer = new ChatRenderer(newTempContainer);
+
+    const newResponseTurnDiv = document.createElement("div");
+    newResponseTurnDiv.className = "turn response-turn";
+    turnsContainer.appendChild(newResponseTurnDiv);
+    newResponseTurnDiv.appendChild(newTempContainer);
+
+    activeStreamState.tempContainer = newTempContainer;
+    activeStreamState.liveRenderer = newLiveRenderer;
+    activeStreamState.responseTurnDiv = newResponseTurnDiv;
+
+    updateLiveRendering(processor, newLiveRenderer, newTempContainer);
 }

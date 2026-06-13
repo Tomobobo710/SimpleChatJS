@@ -351,6 +351,11 @@ async function switchToChat(chatId) {
     // Load chat history
     await loadChatHistory(chatId);
 
+    // If there's a live stream for this chat, re-attach its DOM
+    if (typeof reconnectStreaming === "function") {
+        reconnectStreaming(chatId);
+    }
+
     // Focus input
     messageInput.focus();
 }
