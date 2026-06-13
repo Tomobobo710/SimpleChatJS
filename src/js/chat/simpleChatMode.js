@@ -117,53 +117,38 @@ async function handleSimpleChatError({ errorType, processor, requestTurnInfo, sa
 
     logger.error(`Simple chat failed (${errorType}): ${resolvedErrorText}`);
 
-    const partialContent = (processor && typeof processor.getRawContent === "function")
-        ? (processor.getRawContent() || "")
-        : "";
     const responseTurnNumber = requestTurnNumber + 1;
 
     if (processor && typeof processor.finalize === "function") {
         processor.finalize();
     }
 
-    const debugData = { error: { type: errorType, message: resolvedErrorText } };
+    // Capture all accumulated blocks (chat, thinking, tool) from the processor
+    const blocks = (processor && typeof processor.getBlocks === "function")
+        ? processor.getBlocks()
+        : [];
+    const partialContent = (processor && typeof processor.getRawContent === "function")
+        ? (processor.getRawContent() || "")
+        : "";
 
-    const errorMessage = new Message({
-        id: null,
-        role: "assistant",
-        content: partialContent,
-        turn_number: responseTurnNumber,
-        turn_id: savedResponseTurn?.turn_id || null,
-        parent_turn_id: savedResponseTurn?.parent_turn_id || null,
-        error_state: errorType,
-        debug_data: debugData,
-        edit_count: 0,
+    // Append error block after any accumulated content
+    const errorBlock = new Block({
+        type: 'error',
+        content: resolvedErrorText,
+        metadata: { error_type: errorType }
     });
+    blocks.push(errorBlock);
 
-    const turnMessages = [errorMessage];
-    if (partialContent.trim() !== "") {
-        const systemMessage = new Message({
-            id: null,
-            role: "system",
-            content: defaultErrorBlockContent(errorType),
-            turn_number: responseTurnNumber,
-            turn_id: savedResponseTurn?.turn_id || null,
-            parent_turn_id: savedResponseTurn?.parent_turn_id || null,
-            error_state: null,
-            debug_data: null,
-            edit_count: 0,
-        });
-        turnMessages.push(systemMessage);
-    }
-
-    const errorTurn = new Turn(
-        responseTurnNumber,
-        turnMessages,
-        savedResponseTurn?.turn_id || null,
-        savedResponseTurn?.parent_turn_id || null,
-        responseDebugData
-    );
-    chatRenderer.renderTurn(errorTurn.renderable(), true);
+    const rto = new RenderableTurnObject({
+        role: 'assistant',
+        content: partialContent,
+        blocks: blocks,
+        turnNumber: responseTurnNumber,
+        turnId: savedResponseTurn?.turn_id || null,
+        parentTurnId: savedResponseTurn?.parent_turn_id || null,
+        responseDebugData: responseDebugData,
+    });
+    chatRenderer.renderTurn(rto, true);
 
     updateChatPreview(currentChatId, partialContent);
     updateChatTitleFromMessage(message);

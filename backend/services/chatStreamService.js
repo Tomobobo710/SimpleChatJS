@@ -49,9 +49,14 @@ function cancelInFlightRequest(requestId) {
     inFlightRequests.delete(requestId);
 
     const streamedSoFar = state.streamedContent || "";
+    const ur = state.unifiedResponse;
+    const toolCalls = (ur && ur.toolCalls && ur.toolCalls.length > 0) ? ur.toolCalls : null;
+    const reasoning = (ur && ur.reasoning) || null;
     const errorMessage = {
         role: "assistant",
-        content: streamedSoFar
+        content: streamedSoFar,
+        reasoning,
+        tool_calls: toolCalls
     };
     saveMessage(state.chatId, errorMessage, state.currentTurn, "user_stopped", state.turnInfo)
         .then(async () => {
@@ -65,8 +70,8 @@ function cancelInFlightRequest(requestId) {
                     existingDebug.responses.push({
                         response: {
                             content: streamedSoFar,
-                            toolCalls: [],
-                            hasToolCalls: false,
+                            toolCalls: toolCalls || [],
+                            hasToolCalls: !!toolCalls,
                             status: null,
                             rawBody: state.rawResponseBody || ""
                         },
@@ -299,6 +304,7 @@ async function handleChatWithTools(
         chatId,
         currentTurn,
         turnInfo,
+        unifiedResponse,
         cancelledByUser: false,
         saved: false,
         destroyWhenCreated: false,
@@ -318,9 +324,13 @@ async function handleChatWithTools(
             try { inFlightState.apiReq.destroy(); } catch (_) {}
         }
         const streamedSoFar = inFlightState.streamedContent || "";
+        const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? unifiedResponse.toolCalls : null;
+        const reasoning = (unifiedResponse && unifiedResponse.reasoning) || null;
         const errorMessage = {
             role: "assistant",
-            content: streamedSoFar
+            content: streamedSoFar,
+            reasoning,
+            tool_calls: toolCalls
         };
         saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
             .then(async () => {
@@ -334,8 +344,8 @@ async function handleChatWithTools(
                         existingDebug.responses.push({
                             response: {
                                 content: streamedSoFar,
-                                toolCalls: [],
-                                hasToolCalls: false,
+                                toolCalls: toolCalls || [],
+                                hasToolCalls: !!toolCalls,
                                 status: null,
                                 rawBody: inFlightState.rawResponseBody || ""
                             },
@@ -391,9 +401,13 @@ async function handleChatWithTools(
 
                 // Save error message and burn the turn.
                 if (chatId && currentTurn) {
+                    const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? unifiedResponse.toolCalls : null;
+                    const reasoning = (unifiedResponse && unifiedResponse.reasoning) || null;
                     const errorMessage = {
                         role: "assistant",
-                        content: ""
+                        content: "",
+                        reasoning,
+                        tool_calls: toolCalls
                     };
                     saveMessage(chatId, errorMessage, currentTurn, "api_error", turnInfo)
                         .then(async () => {
@@ -407,8 +421,8 @@ async function handleChatWithTools(
                                     existingDebug.responses.push({
                                         response: {
                                             content: "",
-                                            toolCalls: [],
-                                            hasToolCalls: false,
+                                            toolCalls: toolCalls || [],
+                                            hasToolCalls: !!toolCalls,
                                             status: apiRes.statusCode,
                                             rawBody: errorData
                                         },
@@ -632,9 +646,13 @@ async function handleChatWithTools(
 
         if (chatId && currentTurn) {
             const streamedSoFar = inFlightState.streamedContent || "";
+            const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? unifiedResponse.toolCalls : null;
+            const reasoning = (unifiedResponse && unifiedResponse.reasoning) || null;
             const errorMessage = {
                 role: "assistant",
-                content: streamedSoFar
+                content: streamedSoFar,
+                reasoning,
+                tool_calls: toolCalls
             };
             saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
                 .then(async () => {
@@ -649,8 +667,8 @@ async function handleChatWithTools(
                             existingDebug.responses.push({
                                 response: {
                                     content: streamedSoFar,
-                                    toolCalls: [],
-                                    hasToolCalls: false,
+                                    toolCalls: toolCalls || [],
+                                    hasToolCalls: !!toolCalls,
                                     status: null,
                                     rawBody: inFlightState.rawResponseBody || ""
                                 },
