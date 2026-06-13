@@ -208,21 +208,15 @@ class GoogleAdapter extends BaseResponseAdapter {
                         for (const part of parts) {
                             // Handle text content (thinking or regular)
                             if (part.text) {
-                                // If this part has thought=true, it's thinking content
+                                // If this part has thought=true, it's thinking content - create structured reasoning block
                                 if (part.thought) {
                                      const lines = part.text.split('\n');
                                      const summaryLine = lines[0] || '';
                                      const summary = summaryLine.replace(/\*\*/g, '').trim();
                                      const detailedThoughts = lines.slice(2).join('\n').trim();
 
-                                     if (summary && detailedThoughts) {
-                                         response.addContent(`<thinking title="${summary}">`);
-                                         response.addContent(detailedThoughts);
-                                         response.addContent('</thinking>');
-                                         response.addDebugData('thinkingContent', detailedThoughts);
-                                         response.addDebugData('thinkingSummary', summary);
-                                     } else {
-                                         response.addContent(part.text);
+                                     if (detailedThoughts) {
+                                         response.addReasoningBlock(detailedThoughts);
                                      }
                                  }
                                 // Otherwise it's the regular response

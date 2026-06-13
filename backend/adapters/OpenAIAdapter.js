@@ -75,6 +75,12 @@ class OpenAIAdapter extends BaseResponseAdapter {
                         
                         if (!delta) continue;
                         
+                        // Handle reasoning content (o1/o3/Qwen reasoning models)
+                        if (delta.reasoning_content || delta.reasoning) {
+                            const reasoningText = delta.reasoning_content || delta.reasoning;
+                            response.addReasoningBlock(reasoningText);
+                        }
+                        
                         // Handle content
                         if (delta.content) {
                             response.addContent(delta.content);

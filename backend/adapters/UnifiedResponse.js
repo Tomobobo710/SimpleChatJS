@@ -8,8 +8,9 @@
 class UnifiedResponse {
     constructor() {
         this.provider = null;           // 'openai', 'google', etc
-        this.content = '';              // Text content for CURRENT response phase only
+        this.content = '';              // Text content
         this.toolCalls = [];            // Array of tool calls
+        this.reasoning = '';             // Provider reasoning content (accumulated for DB)
         this.isComplete = false;        // Whether response is finished
         this.debugData = {};            // Debug information
         this.usage = {};                // Token usage info
@@ -78,12 +79,28 @@ class UnifiedResponse {
         return this.toolCalls[this.toolCalls.length - 1] || null;
     }
 
-    // Convert to JSON for transmission
+    // Add reasoning content
+    addReasoningBlock(text) {
+        this.reasoning += text;
+        return this;
+    }
+
+    // Stub methods for adapter compatibility
+    startReasoningBlock() {
+        return this;
+    }
+
+    finishReasoningBlock() {
+        return this;
+    }
+
+    // Convert to JSON for transmission (live SSE only)
     toJSON() {
         return {
             provider: this.provider,
             content: this.content,
             toolCalls: this.toolCalls,
+            reasoning: this.reasoning,
             isComplete: this.isComplete,
             usage: this.usage,
             debugData: this.debugData

@@ -1,356 +1,115 @@
-// StreamingMessageProcessor.js - Creates blocks from streaming content (no rendering)
+/**
+ * StreamingMessageProcessor - Processes streaming responses and builds renderable objects.
+ * This processor handles structured SSE events from the backend to create reasoning blocks,
+ * content blocks, and tool blocks without mixing old and new code paths.
+ */
 
 class StreamingMessageProcessor {
     constructor() {
-        this.buffer = '';
-        this.state = 'normal'; // 'normal', 'thinking', 'codeblock'
-        this.blocks = [];
-        this.currentThinkingBlock = null;
-        this.currentCodeBlock = null; // Track current streaming code block
-        this.originalResponse = ''; // Track the actual streamed response for saving
+        // Ordered block sequence - maintains insertion order for all block types
+        this._blockSequence = [];         // Array of { type, id, ref } tracking arrival order
+        
+        // Block storage by type
+        this._reasoningBlocks = new Map(); // id -> reasoning block
+        this._toolBlocks = new Map();      // id -> tool block
+        this._activeReasoningBlock = null; // Current reasoning block being written
+        
+        // Content accumulation
+        this._chatContent = '';           // Current chat content accumulation
+        
+        // Finalization state
+        this._finalContent = null;
+        this._finalReasoningBlocks = null;
     }
-    
-    // Add chunk of streaming content
+
+    // ===== BACKWARD COMPAT: Loading from database =====
+    // For loading messages from database, we may need to reconstruct from raw content
     addChunk(chunk) {
-        this.originalResponse += chunk; // Track original streamed response
-        this.buffer += chunk;
-        this.processBuffer(); // Still process for blocks/UI
+        // Legacy method for loading content from database
+        // Just accumulate the content
+        this._chatContent += chunk;
     }
-    
-    // Process buffer to identify block boundaries
-    processBuffer() {
-        // Check if buffer ends with a potential partial tag/backticks - if so, wait for next chunk
-        const partialTags = [
-            // Opening tag partials
-            '<', '<t', '<th', '<thi', '<thin', '<think', '<thinki', '<thinkin', '<thinking',
-            // Closing tag partials  
-            '</', '</t', '</th', '</thi', '</thin', '</think', '</thinki', '</thinkin', '</thinking',
-            // Code block partials
-            '`', '``'
-        ];
-        const endsWithPartial = partialTags.some(partial => this.buffer.endsWith(partial));
-        
-        if (endsWithPartial) {
-            // Don't process yet, wait for next chunk to complete the tag
-            return;
-        }
-        
-        let foundPattern = true;
-        while (foundPattern) {
-            foundPattern = this.processNextPattern();
-        }
-    }
-    
-    processNextPattern() {
-        if (this.state === 'normal') {
-            // Check for both thinking and code block starts
-            return this.checkForThinkingStart() || this.checkForCodeBlockStart();
-        } else if (this.state === 'thinking') {
-            return this.checkForThinkingEnd();
-        } else if (this.state === 'codeblock') {
-            return this.checkForCodeBlockEnd();
-        }
-        return false;
-    }
-    
-    checkForCodeBlockStart() {
-        // Look for triple backticks (```)
-        const codeStartIndex = this.buffer.indexOf('```');
-        
-        if (codeStartIndex !== -1) {
-            // Look for language identifier after the backticks
-            const afterBackticks = this.buffer.slice(codeStartIndex + 3);
-            const newlineIndex = afterBackticks.indexOf('\n');
-            
-            // If we found backticks but no newline yet, wait for more content
-            // (unless the buffer doesn't look like it will have a language)
-            if (newlineIndex === -1) {
-                // Check if we have enough content to determine there's no language
-                // If we have spaces or non-word chars right after ```, then no language
-                const immediateChar = afterBackticks[0];
-                if (immediateChar && !/\w/.test(immediateChar)) {
-                    // No language, proceed with code block creation
-                } else if (afterBackticks.length < 20) {
-                    // Wait for more content - might be streaming language identifier
-                    return false;
+
+    // Load raw reasoning data from database and convert to reasoning blocks
+    loadReasoning(reasoningData) {
+        if (!reasoningData) return;
+
+        // If it's an array, it's reasoning blocks
+        if (Array.isArray(reasoningData)) {
+            for (const block of reasoningData) {
+                if (block.id && block.content) {
+                    const reasoningBlock = {
+                        id: block.id,
+                        content: block.content,
+                        isComplete: block.isComplete !== false,
+                        type: 'thinking'
+                    };
+                    this._reasoningBlocks.set(block.id, reasoningBlock);
+                    this._blockSequence.push({ type: 'thinking', id: block.id, ref: reasoningBlock });
                 }
             }
-            
-            // Create chat block for any content before code block
-            if (codeStartIndex > 0) {
-                const contentBefore = this.buffer.slice(0, codeStartIndex);
-                if (contentBefore) {
-                    this.createChatBlock(contentBefore);
-                }
-            }
-            
-            let language = '';
-            let startOfCode = codeStartIndex + 3;
-            
-            if (newlineIndex !== -1) {
-                // Extract potential language identifier
-                const potentialLang = afterBackticks.slice(0, newlineIndex).trim();
-                if (potentialLang && /^\w+$/.test(potentialLang)) {
-                    language = potentialLang;
-                    startOfCode = codeStartIndex + 3 + newlineIndex + 1; // Skip past language and newline
-                } else {
-                    startOfCode = codeStartIndex + 3; // No language, start right after backticks
-                }
-            } else {
-                // No newline found, but we're proceeding anyway
-                startOfCode = codeStartIndex + 3;
-            }
-            
-            // Create a live streaming code block
-            const codeBlock = new Block({
-                type: 'codeblock',
-                content: '',
-                metadata: { 
-                    id: `code_${Date.now()}`,
-                    isStreaming: true,
-                    language: language
-                }
-            });
-            
-            logger.debug(`[PROCESSOR] CODE BLOCK CREATED with language: "${language}" from buffer: "${afterBackticks.slice(0, 20)}..."`);
-            this.blocks.push(codeBlock);
-            this.currentCodeBlock = codeBlock;
-            
-            // Switch to code block state and update buffer
-            this.buffer = this.buffer.slice(startOfCode);
-            this.state = 'codeblock';
-            logger.debug(`[PROCESSOR] CODE BLOCK STARTED${language ? ` (${language})` : ''}! Total blocks: ${this.blocks.length}`);
-            return true;
         }
-        return false;
-    }
-    
-    checkForCodeBlockEnd() {
-        // Look for closing triple backticks
-        const codeEndIndex = this.buffer.indexOf('```');
-        
-        if (codeEndIndex !== -1) {
-            // Update the existing code block with final content
-            const codeContent = this.buffer.slice(0, codeEndIndex);
-            
-            if (this.currentCodeBlock) {
-                this.currentCodeBlock.content += codeContent;
-                this.currentCodeBlock.metadata.isStreaming = false;
-                logger.debug(`[PROCESSOR] Completed code block: ${this.currentCodeBlock.content.length} chars`);
-            }
-            
-            // Continue with normal content after the closing backticks
-            this.buffer = this.buffer.slice(codeEndIndex + 3);
-            this.state = 'normal';
-            this.currentCodeBlock = null;
-            
-            // Process any remaining content
-            if (this.buffer) {
-                logger.debug(`[PROCESSOR] Processing remaining content after code block`);
-                return true; // Continue processing
-            }
-            
-            return true;
-        } else {
-            // Still in code block, accumulate content and update live
-            if (this.currentCodeBlock) {
-                this.currentCodeBlock.content += this.buffer;
-                logger.debug(`[PROCESSOR] Updating code content: ${this.currentCodeBlock.content.length} chars`);
-            }
-            
-            this.buffer = '';
-        }
-        return false;
-    }
-    
-    checkForThinkingStart() {
-        // Check for both <think> and <thinking> tags, including ones with title attributes
-        const thinkStartIndex = this.buffer.indexOf('<think>');
-        const thinkingStartIndex = this.buffer.indexOf('<thinking');
-        
-        let startIndex = -1;
-        let tagLength = 0;
-        let tagType = '';
-        let title = null;
-        
-        // Find the earliest tag
-        if (thinkStartIndex !== -1 && (thinkingStartIndex === -1 || thinkStartIndex < thinkingStartIndex)) {
-            startIndex = thinkStartIndex;
-            tagLength = 7; // '<think>'.length
-            tagType = '<think>';
-        } else if (thinkingStartIndex !== -1) {
-            // Look for the full thinking tag (could be <thinking> or <thinking title="...">)
-            const thinkingTagMatch = this.buffer.slice(thinkingStartIndex).match(/^<thinking(?:\s+title="([^"]*)")?>/);
-            if (thinkingTagMatch) {
-                startIndex = thinkingStartIndex;
-                tagLength = thinkingTagMatch[0].length;
-                tagType = thinkingTagMatch[0];
-                title = thinkingTagMatch[1] || null; // Extract title if present
+        // If it's a string, treat it as raw reasoning text
+        else if (typeof reasoningData === 'string') {
+            if (reasoningData.trim()) {
+                const reasoningBlock = {
+                    id: `reasoning_${Date.now()}`,
+                    content: reasoningData,
+                    isComplete: true,
+                    type: 'thinking'
+                };
+                this._reasoningBlocks.set(reasoningBlock.id, reasoningBlock);
+                this._blockSequence.push({ type: 'thinking', id: reasoningBlock.id, ref: reasoningBlock });
             }
         }
-        
-        if (startIndex !== -1) {
-            // Create chat block for any content before thinking tag
-            if (startIndex > 0) {
-                const contentBefore = this.buffer.slice(0, startIndex);
-                if (contentBefore) { // Don't trim - preserve whitespace
-                    this.createChatBlock(contentBefore);
-                }
-            }
-            
-            // Immediately create a thinking block for real-time streaming
-            const thinkingBlock = new Block({
-                type: 'thinking',
-                content: '',
-                metadata: { 
-                    id: `thinking_${Date.now()}`, 
-                    isStreaming: true,
-                    tagType: tagType, // Track which tag type we're using
-                    title: title // Store the title if present
-                }
-            });
-            this.blocks.push(thinkingBlock);
-            this.currentThinkingBlock = thinkingBlock;
-            
-            // Switch to thinking state
-            this.buffer = this.buffer.slice(startIndex + tagLength);
-            this.state = 'thinking';
-            logger.debug(`[PROCESSOR] THINKING BLOCK CREATED with ${tagType}${title ? ` (title: "${title}")` : ''}! Total blocks: ${this.blocks.length}`);
-            return true;
-        }
-        return false;
     }
-    
-    checkForThinkingEnd() {
-        // Check for both </think> and </thinking> tags
-        const thinkEndIndex = this.buffer.indexOf('</think>');
-        const thinkingEndIndex = this.buffer.indexOf('</thinking>');
-        
-        let endIndex = -1;
-        let tagLength = 0;
-        let tagType = '';
-        
-        // Find the earliest closing tag
-        if (thinkEndIndex !== -1 && (thinkingEndIndex === -1 || thinkEndIndex < thinkingEndIndex)) {
-            endIndex = thinkEndIndex;
-            tagLength = 8; // '</think>'.length
-            tagType = '</think>';
-        } else if (thinkingEndIndex !== -1) {
-            endIndex = thinkingEndIndex;
-            tagLength = 11; // '</thinking>'.length
-            tagType = '</thinking>';
-        }
-        
-        if (endIndex !== -1) {
-            // Update the existing thinking block with final content
-            const thinkingContent = this.buffer.slice(0, endIndex);
-            
-            if (this.currentThinkingBlock) {
-                this.currentThinkingBlock.content += thinkingContent;
-                this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
-                this.currentThinkingBlock.metadata.isStreaming = false;
-                logger.debug(`[PROCESSOR] Completed thinking block with ${tagType}: ${this.currentThinkingBlock.content.length} chars`);
-            }
-            
-            // Continue with normal content
-            this.buffer = this.buffer.slice(endIndex + tagLength);
-            this.state = 'normal';
-            this.currentThinkingBlock = null;
-            
-            // Immediately process any remaining content as a chat block
-            if (this.buffer.trim()) {
-                logger.debug(`[PROCESSOR] Processing remaining content after thinking: "${this.buffer.trim().substring(0, 50)}..."`);
-                // Continue processing the remaining buffer in normal state
-                return true; // This will cause processBuffer to continue and handle the remaining content
-            }
-            
-            return true;
-        } else {
-            // Still in thinking block, accumulate content and update live
-            if (this.currentThinkingBlock) {
-                this.currentThinkingBlock.content += this.buffer;
-                this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
-                logger.debug(`[PROCESSOR] Updating thinking content: ${this.currentThinkingBlock.content.length} chars`);
-            }
-            
-            this.buffer = '';
-        }
-        return false;
+
+    // ===== STRUCTURED SSE HANDLERS =====
+
+    // Start a new reasoning block
+    startReasoningBlock(blockId) {
+        this._activeReasoningBlock = {
+            id: blockId,
+            content: '',
+            isComplete: false,
+            type: 'thinking'
+        };
+        this._reasoningBlocks.set(blockId, this._activeReasoningBlock);
+        // Track in sequence
+        this._blockSequence.push({ type: 'thinking', id: blockId, ref: this._activeReasoningBlock });
     }
-    
-    // Create a chat block immediately
-    createChatBlock(content) {
-        if (content) { // Don't check for trimmed content - preserve whitespace
-            const block = new Block({
-                type: 'chat',
-                content: content, // Don't trim - preserve whitespace
-                metadata: {}
-            });
-            this.blocks.push(block);
-            logger.debug(`[PROCESSOR] Created chat block: ${content.length} chars`);
+
+    // Add content to the active reasoning block
+    addReasoningDelta(blockId, text) {
+        if (this._activeReasoningBlock && this._activeReasoningBlock.id === blockId) {
+            this._activeReasoningBlock.content += text;
         }
     }
-    
-    finalize() {
-        logger.debug(`[PROCESSOR] Finalizing in state: ${this.state}, blocks: ${this.blocks.length}`);
-        
-        // Handle any remaining content based on current state
-        if (this.state === 'thinking') {
-            // Update existing thinking block if we have one
-            if (this.currentThinkingBlock) {
-                this.currentThinkingBlock.content += this.buffer;
-                this.currentThinkingBlock.content = this.currentThinkingBlock.content.trim();
-                this.currentThinkingBlock.metadata.isStreaming = false;
-                logger.debug(`[PROCESSOR] Finalized existing thinking block`);
-            }
-        } else if (this.state === 'codeblock') {
-            // Update existing code block if we have one (incomplete code block)
-            if (this.currentCodeBlock) {
-                this.currentCodeBlock.content += this.buffer;
-                this.currentCodeBlock.metadata.isStreaming = false;
-                logger.debug(`[PROCESSOR] Finalized incomplete code block`);
-            }
-        } else if (this.state === 'normal') {
-            // Create chat block for any remaining normal content
-            if (this.buffer) { // Don't trim check - preserve whitespace
-                this.createChatBlock(this.buffer);
-            }
+
+    // Finish the active reasoning block
+    finishReasoningBlock(blockId) {
+        if (this._activeReasoningBlock && this._activeReasoningBlock.id === blockId) {
+            this._activeReasoningBlock.isComplete = true;
+            this._activeReasoningBlock = null;
         }
-        
-        logger.debug(`[PROCESSOR] Finalized with ${this.blocks.length} blocks`);
-        return this.blocks;
     }
-    
-    // Get current blocks (for real-time updates)
-    getBlocks() {
-        return this.blocks;
+
+    // Add content delta to chat
+    addContentDelta(text) {
+        // Finish any active reasoning block before adding content
+        if (this._activeReasoningBlock) {
+            this._activeReasoningBlock.isComplete = true;
+            this._activeReasoningBlock = null;
+        }
+        this._chatContent += text;
     }
-    
-    // Get raw content for saving (original API response)
-    getRawContent() {
-        return this.originalResponse; // Return the actual streamed response, not reconstructed from blocks
-    }
-    
-    // Get display content (clean text for preview)
-    getDisplayContent() {
-        return this.blocks.filter(block => block.type === 'chat')
-                          .map(block => block.content)
-                          .join(' ');
-    }
-    
-    // Get current state (for live rendering)
-    getState() {
-        return this.state;
-    }
-    
-    // Get current buffer (for live rendering)
-    getBuffer() {
-        return this.buffer;
-    }
-    
-    // Handle tool events to create/update tool blocks (matches Rust implementation)
+
+    // Handle tool events
     handleToolEvent(toolEvent) {
+        if (!toolEvent || !toolEvent.data) return;
+
         const data = toolEvent.data;
+
         switch (toolEvent.type) {
             case 'tool_call_detected':
                 this._onToolCallDetected(data);
@@ -363,30 +122,25 @@ class StreamingMessageProcessor {
                 break;
         }
     }
-    
+
     _findToolBlock(toolId) {
-        return this.blocks.find(b =>
-            b.type === 'tool' && b.metadata?.id === toolId
-        );
+        return this._toolBlocks.get(toolId);
     }
-    
+
     _onToolCallDetected(data) {
-        const alreadyExists = this.blocks.some(b =>
-            b.type === 'tool' && b.metadata?.id === data.id
-        );
+        const alreadyExists = this._toolBlocks.has(data.id);
         if (!alreadyExists) {
-            if (this.state === 'normal' && this.buffer) {
-                this.createChatBlock(this.buffer);
-                this.buffer = '';
-            }
-            this.blocks.push(new Block({
+            const toolBlock = new Block({
                 type: 'tool',
                 content: `[${data.name}]:\nArguments: Loading...\nResult: Executing...`,
                 metadata: { toolName: data.name, id: data.id, status: 'executing' }
-            }));
+            });
+            this._toolBlocks.set(data.id, toolBlock);
+            // Track in sequence
+            this._blockSequence.push({ type: 'tool', id: data.id, ref: toolBlock });
         }
     }
-    
+
     _onToolExecutionStart(data) {
         const block = this._findToolBlock(data.id);
         if (block) {
@@ -395,7 +149,7 @@ class StreamingMessageProcessor {
             block.metadata.arguments = data.arguments;
         }
     }
-    
+
     _onToolExecutionComplete(data) {
         const block = this._findToolBlock(data.id);
         if (block) {
@@ -419,4 +173,76 @@ class StreamingMessageProcessor {
             block.metadata.execution_time_ms = data.execution_time_ms;
         }
     }
+
+    // Finalize the response with data from the done event
+    finalize(eventData) {
+        // Store final content and reasoning blocks from done event if available
+        if (eventData) {
+            this._finalContent = eventData.content || this._chatContent;
+            this._finalReasoningBlocks = eventData.reasoningBlocks || this._reasoningBlocks;
+        }
+
+        // Finish any remaining active reasoning block
+        if (this._activeReasoningBlock) {
+            this._activeReasoningBlock.isComplete = true;
+            this._activeReasoningBlock = null;
+        }
+    }
+
+    // ===== GETTERS FOR RENDERING =====
+
+    getBlocks() {
+        const blocks = [];
+
+        // Build blocks in arrival sequence - this preserves the order of thinking, content, and tool blocks
+        for (const item of this._blockSequence) {
+            if (item.type === 'thinking') {
+                blocks.push(item.ref);
+            } else if (item.type === 'tool') {
+                blocks.push(item.ref);
+            }
+        }
+
+        // Add accumulated chat content as a single block at the end (if any)
+        if (this._chatContent) {
+            blocks.push(new Block({
+                type: 'chat',
+                content: this._chatContent,
+                metadata: {}
+            }));
+        }
+
+        return blocks;
+    }
+
+    getRawContent() {
+        return this._finalContent !== null ? this._finalContent : this._chatContent;
+    }
+
+    getDisplayContent() {
+        return this.getRawContent();
+    }
+
+    getReasoningBlocks() {
+        const blocks = [];
+        for (const blockRef of this._reasoningBlocks.values()) {
+            blocks.push(blockRef);
+        }
+        return this._finalReasoningBlocks || blocks;
+    }
+
+    getState() {
+        return {
+            reasoningBlocks: Array.from(this._reasoningBlocks.values()),
+            chatContent: this._chatContent,
+            toolBlocks: Array.from(this._toolBlocks.values()),
+            activeReasoningBlock: this._activeReasoningBlock,
+            blockSequence: this._blockSequence
+        };
+    }
+}
+
+// Export for use in browser context
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = StreamingMessageProcessor;
 }

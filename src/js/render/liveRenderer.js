@@ -89,13 +89,4 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
     if (existingTemp) {
         existingTemp.remove();
     }
-    
-    // Add any current buffer content as temporary text (only for normal state)
-    const buffer = processor.getBuffer();
-    if (buffer && buffer.trim() && processor.getState() === 'normal') {
-        const tempDiv = document.createElement('div');
-        tempDiv.className = 'temp-streaming-content';
-        tempDiv.innerHTML = formatMessage(escapeHtml(buffer));
-        tempContainer.appendChild(tempDiv);
-    }
 }

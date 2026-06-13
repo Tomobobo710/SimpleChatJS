@@ -183,22 +183,30 @@ router.post("/chats", async (req, res) => {
 });
 
 // Get chat history including errored messages for UI display
-router.get("/chat/:id/history-complete", (req, res) => {
+router.get("/chat/:id/history", (req, res) => {
     const chatId = req.params.id;
+    const includeErrors = req.query.includeErrors !== 'false'; // default to true
 
     try {
-        log(`[HISTORY-COMPLETE] Getting complete history for chat ${chatId}`);
+        log(`[HISTORY] Getting history for chat ${chatId} (includeErrors: ${includeErrors})`);
 
-        // Get ALL messages for the chat including errored ones
-        const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+        // Build query with optional error filtering
+        let query = `
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
             WHERE chat_id = ?
-            ORDER BY timestamp ASC
-        `);
+        `;
+        
+        if (!includeErrors) {
+            query += ` AND error_state IS NULL`;
+        }
+        
+        query += ` ORDER BY timestamp ASC`;
+
+        const messagesStmt = db.prepare(query);
         const chatMessages = messagesStmt.all(chatId);
 
-       const { parseDbRowToMessage } = require("../utils/messageConversions");
+        const { parseDbRowToMessage } = require("../utils/messageConversions");
 
         const messages = chatMessages.map((row) =>
             parseDbRowToMessage(row, {
@@ -207,40 +215,7 @@ router.get("/chat/:id/history-complete", (req, res) => {
             })
         );
 
-        log(`[HISTORY-COMPLETE] Retrieved ${messages.length} messages (including errors) from chat ${chatId}`);
-        res.json({ messages });
-    } catch (err) {
-        log("[HISTORY-COMPLETE] Error:", err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Get chat history - FILTERED for AI
-router.get("/chat/:id/history", (req, res) => {
-    const chatId = req.params.id;
-
-    try {
-        log(`[HISTORY] Getting history for chat ${chatId}`);
-
-        // Get all messages for the chat (errors filtered out for AI)
-        const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata
-            FROM messages
-            WHERE chat_id = ? AND error_state IS NULL
-            ORDER BY timestamp ASC
-        `);
-        const chatMessages = messagesStmt.all(chatId);
-
-        const { parseDbRowToMessage } = require("../utils/messageConversions");
-
-        const messages = chatMessages.map((row) =>
-            parseDbRowToMessage(row, {
-                includeFileFields: true,
-                includeErrorState: false,
-            })
-        );
-
-        log(`[HISTORY] Retrieved ${messages.length} successful messages from chat ${chatId} (errors filtered out)`);
+        log(`[HISTORY] Retrieved ${messages.length} messages from chat ${chatId}`);
         res.json({ messages });
     } catch (err) {
         log("[HISTORY] Error:", err);

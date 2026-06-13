@@ -29,6 +29,12 @@ const inFlightRequests = new Map();
 //   ]
 // }
 
+// Helper: Write SSE event to response
+function writeSSEEvent(res, eventType, data) {
+    const jsonData = typeof data === 'string' ? data : JSON.stringify(data);
+    res.write(`event: ${eventType}\ndata: ${jsonData}\n\n`);
+}
+
 // Cancel an in-flight chat request by requestId.
 function cancelInFlightRequest(requestId) {
     const state = inFlightRequests.get(requestId);
@@ -108,6 +114,7 @@ function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, curren
         data.response = {
             content: unifiedResponse.content || "",
             toolCalls: unifiedResponse.toolCalls || [],
+            reasoning: unifiedResponse.reasoning || "",
             hasToolCalls: unifiedResponse.hasToolCalls(),
             status: apiRes ? apiRes.statusCode : null,
             rawBody: rawResponseBody || ""
@@ -454,20 +461,49 @@ async function handleChatWithTools(
 
                 Object.assign(context, result.context);
 
-                // Stream any new content to client
-                let newContent = "";
+                // Track reasoning phase - emit events when reasoning content appears/disappears
+                const hasReasoningNow = unifiedResponse.reasoning.length > (context.prevReasoningLength || 0);
+                
+                if (hasReasoningNow && !context.inReasoningPhase) {
+                    // Entering reasoning phase
+                    const blockId = `reasoning_${Date.now()}`;
+                    writeSSEEvent(res, 'reasoning_start', { blockId });
+                    context.reasoningBlockId = blockId;
+                    context.inReasoningPhase = true;
+                }
+
+                if (hasReasoningNow) {
+                    // Emit delta for new reasoning content
+                    const delta = unifiedResponse.reasoning.slice(context.prevReasoningLength || 0);
+                    if (delta) {
+                        writeSSEEvent(res, 'reasoning_delta', {
+                            blockId: context.reasoningBlockId,
+                            text: delta
+                        });
+                        context.prevReasoningLength = unifiedResponse.reasoning.length;
+                    }
+                } else if (context.inReasoningPhase && !hasReasoningNow) {
+                    // Exiting reasoning phase (content appeared, no more reasoning)
+                    if (unifiedResponse.content.length > 0) {
+                        writeSSEEvent(res, 'reasoning_end', { blockId: context.reasoningBlockId });
+                        context.inReasoningPhase = false;
+                    }
+                }
+
+                // Emit content deltas
                 if (unifiedResponse.content && context.lastContentLength !== unifiedResponse.content.length) {
-                    newContent = unifiedResponse.content.slice(context.lastContentLength || 0);
+                    const newContent = unifiedResponse.content.slice(context.lastContentLength || 0);
                     if (newContent) {
-                        res.write(newContent);
+                        writeSSEEvent(res, 'content_delta', { text: newContent });
                         context.lastContentLength = unifiedResponse.content.length;
                         streamedContent += newContent;
                         inFlightState.streamedContent = streamedContent;
                     }
                 }
-            // Accumulate raw response body for debug
-            rawResponseBody += chunk.toString();
-            inFlightState.rawResponseBody = rawResponseBody;
+
+                // Accumulate raw response body for debug
+                rawResponseBody += chunk.toString();
+                inFlightState.rawResponseBody = rawResponseBody;
             } catch (error) {
                 console.error(`[${adapter.providerName.toUpperCase()}-ADAPTER] Error processing chunk:`, error);
             }
@@ -495,6 +531,7 @@ async function handleChatWithTools(
                     tools,
                     chatId,
                     unifiedResponse.content,
+                    unifiedResponse.reasoning,
                     currentTurn,
                     requestId,
                     turnInfo,
@@ -511,14 +548,15 @@ async function handleChatWithTools(
 
                 // Save final assistant response to history
                 if (chatId && unifiedResponse.content) {
-                    log(`[CHAT-SAVE] About to save final assistant response:`);
+                    log(`[CHAT-SAVE] reasoning content: "${unifiedResponse.reasoning.substring(0, 100)}..."`);
                     log(`[CHAT-SAVE] Content length: ${unifiedResponse.content.length}`);
                     log(`[CHAT-SAVE] Content preview: "${unifiedResponse.content.substring(0, 200)}..."`);
                     log(`[CHAT-SAVE] Turn number: ${currentTurn}`);
 
                     const finalResponseMessage = {
                         role: "assistant",
-                        content: unifiedResponse.content
+                        content: unifiedResponse.content,
+                        reasoning: unifiedResponse.reasoning || null
                     };
                     try {
                         const finalMsgId = await saveMessage(chatId, finalResponseMessage, currentTurn, null, turnInfo);
@@ -568,6 +606,14 @@ async function handleChatWithTools(
                         `[CHAT-SAVE] NOT saving final response - chatId: ${chatId}, content length: ${unifiedResponse.content ? unifiedResponse.content.length : "null"}`
                     );
                 }
+
+                // Finish any active reasoning phase
+                if (context.inReasoningPhase) {
+                    writeSSEEvent(res, 'reasoning_end', { blockId: context.reasoningBlockId });
+                }
+
+                // Emit done event with complete response
+                writeSSEEvent(res, 'done', unifiedResponse.toJSON());
 
                 // Finish response
                 res.end();
@@ -647,6 +693,7 @@ async function executeToolCallsAndContinue(
     tools,
     chatId,
     assistantMessage,
+    reasoning,
     currentTurn,
     requestId,
     turnInfo = null,
@@ -659,8 +706,10 @@ async function executeToolCallsAndContinue(
     const assistantMessageWithTools = {
         role: "assistant",
         content: assistantMessage || "",
-        tool_calls: toolCalls
+        tool_calls: toolCalls,
+        reasoning: reasoning || null
     };
+    log(`[CHAT-SAVE] Saving tool message with reasoning: "${reasoning ? reasoning.substring(0, 100) : 'null'}..."`);
     messages.push(assistantMessageWithTools);
 
     // Execute each tool call and collect results
@@ -768,7 +817,7 @@ async function executeToolCallsAndContinue(
                 targetUrl,
                 requestData,
                 apiRes,
-                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, toolCalls: toolCalls || [] },
+                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, reasoning: reasoning || "" },
                 rawResponseBody
             });
 

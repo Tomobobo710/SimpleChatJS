@@ -65,7 +65,9 @@ class BaseResponseAdapter {
             currentToolCall: null,
             processingState: 'content',
             model: modelName,
-            thinkingConfig
+            thinkingConfig,
+            thinkingStarted: false,
+            thinkingContent: null
         };
     }
 
