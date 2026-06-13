@@ -308,6 +308,10 @@ async function performChatDeletion(chatId, title) {
                 const firstChatId = remainingChats[0].dataset.chatId;
                 await switchToChat(firstChatId);
             } else {
+                turnsContainer.innerHTML = "";
+                resetTurnTracking();
+                updateChatTitle("No chats yet");
+                chatInfo.textContent = "";
                 if (window.currentProjectId) {
                     await loadProjectChats(window.currentProjectId);
                 } else {
@@ -688,10 +692,9 @@ function updateChatPreview(chatId, message) {
         }
 
         // Update timestamp
-        const timeEl = chatItem.querySelector(".chat-item-time");
+        const timeEl = chatItem.querySelector(".chat-item-datetime");
         if (timeEl) {
-            const now = new Date();
-            timeEl.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            timeEl.textContent = formatChatDateTime(new Date());
         }
 
         // Keep chat in its original position (ordered by creation time)
@@ -874,6 +877,11 @@ async function loadProjectChats(projectId) {
         if (chats.length === 0) {
             chatList.innerHTML =
                 '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No chats in this project. Create one!</div>';
+            currentChatId = null;
+            turnsContainer.innerHTML = "";
+            resetTurnTracking();
+            updateChatTitle("No chats yet");
+            chatInfo.textContent = "";
             return;
         }
 
@@ -912,6 +920,7 @@ async function handleNewChat() {
 
         await createNewChatInDatabase(chatId, "New Chat", window.currentProjectId);
 
+        currentChatId = chatId;
         turnsContainer.innerHTML = "";
         resetTurnTracking();
 
@@ -920,12 +929,6 @@ async function handleNewChat() {
 
         addChatToList(chatId, "New Chat", "", new Date());
         selectChat(chatId);
-
-        if (window.currentProjectId) {
-            await loadProjectChats(window.currentProjectId);
-        } else {
-            await loadChatList();
-        }
     } catch (error) {
         logger.error("Failed to create new chat:", error, true);
         showError("Failed to create new chat");
