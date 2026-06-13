@@ -53,7 +53,7 @@ async function streamAndRenderResponse({
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
 
-    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv };
+    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null };
     activeStreamState.set(activeChatId, streamEntry);
 
     let toolEventSource = null;
@@ -137,6 +137,7 @@ async function streamAndRenderResponse({
             turn_id: responseTurnId,
             parent_turn_id: responseParentTurnId
         };
+        streamEntry.responseTurnId = responseTurnId;
 
         const streamErrorType = response.headers.get("X-Stream-Error");
         if (streamErrorType) {
@@ -425,6 +426,16 @@ async function sendAndStream({
 function reconnectStreaming(chatId) {
     const ss = activeStreamState.get(chatId);
     if (!ss) return;
+
+    // Remove any existing response turn for this stream that was rendered
+    // from saved DB messages (tool results, partial errors, etc.), so we
+    // don't get duplicate turns when reconnecting live.
+    // The turn_id is set once the response headers arrive; if it's not set
+    // yet, no content was saved to DB so there's nothing to remove.
+    if (ss.responseTurnId) {
+        const existingTurn = turnsContainer.querySelector(`[data-turn-id="${ss.responseTurnId}"]`);
+        if (existingTurn) existingTurn.remove();
+    }
 
     const { processor } = ss;
     const newTempContainer = document.createElement("div");
