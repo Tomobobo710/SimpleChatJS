@@ -183,12 +183,12 @@ router.post("/chats", async (req, res) => {
 });
 
 // Get chat history including errored messages for UI display
-router.get("/chat/:id/history-complete", (req, res) => {
+router.get("/chat/:id/history", (req, res) => {
     const chatId = req.params.id;
     const includeErrors = req.query.includeErrors !== 'false'; // default to true
 
     try {
-        log(`[HISTORY-COMPLETE] Getting history for chat ${chatId} (includeErrors: ${includeErrors})`);
+        log(`[HISTORY] Getting history for chat ${chatId} (includeErrors: ${includeErrors})`);
 
         // Build query with optional error filtering
         let query = `
@@ -215,10 +215,10 @@ router.get("/chat/:id/history-complete", (req, res) => {
             })
         );
 
-        log(`[HISTORY-COMPLETE] Retrieved ${messages.length} messages from chat ${chatId}`);
+        log(`[HISTORY] Retrieved ${messages.length} messages from chat ${chatId}`);
         res.json({ messages });
     } catch (err) {
-        log("[HISTORY-COMPLETE] Error:", err);
+        log("[HISTORY] Error:", err);
         res.status(500).json({ error: err.message });
     }
 });

@@ -284,12 +284,12 @@ async function* streamSSEEvents(response) {
     }
 }
 
-// Get complete chat history including error messages (for UI display)
-async function getCompleteChatHistory(chatId = null) {
+// Get chat history
+async function getChatHistory(chatId = null) {
     try {
         const url = chatId
-            ? `${API_BASE}/api/chat/${chatId}/history-complete`
-            : `${API_BASE}/api/chat/${currentChatId}/history-complete`;
+            ? `${API_BASE}/api/chat/${chatId}/history`
+            : `${API_BASE}/api/chat/${currentChatId}/history`;
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -298,7 +298,7 @@ async function getCompleteChatHistory(chatId = null) {
 
         return await response.json();
     } catch (error) {
-        logger.error("Error getting complete chat history:", error, true);
+        logger.error("Error getting chat history:", error, true);
         throw error;
     }
 }

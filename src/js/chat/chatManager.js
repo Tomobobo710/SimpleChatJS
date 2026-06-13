@@ -502,7 +502,7 @@ function buildBranchMap(allTurns, chatId) {
 // DOM-independent.
 async function getActiveTerminalTurnId(chatId) {
     if (!chatId) return null;
-    const history = await getCompleteChatHistory(chatId);
+    const history = await getChatHistory(chatId);
     if (!history?.messages || !Array.isArray(history.messages)) return null;
 
     // System messages are meta-only; filter them out here too.
@@ -529,7 +529,7 @@ async function loadChatHistory(chatId) {
     isLoadingHistory = true;
 
     try {
-        const history = await getCompleteChatHistory(chatId);
+        const history = await getChatHistory(chatId);
 
         if (!history || !history.messages || !Array.isArray(history.messages)) {
             console.error("[LOAD-HISTORY] Invalid history data received:", history);

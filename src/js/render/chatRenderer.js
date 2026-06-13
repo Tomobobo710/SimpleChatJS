@@ -780,7 +780,7 @@ class ChatRenderer {
             }
 
             // Anchor this retry to the parent turn of the response being retried.
-            const history = await getCompleteChatHistory(currentChatId);
+            const history = await getChatHistory(currentChatId);
             const allMessages = history.messages || [];
 
             const retriedResponseTurn = allMessages.find((msg) => msg.role === "assistant" && msg.turn_id === turnId);
@@ -1819,7 +1819,7 @@ class ChatRenderer {
                 }
 
                 // Get the parent_turn_id from history for the new lineage
-                const history = await getCompleteChatHistory(currentChatId);
+                const history = await getChatHistory(currentChatId);
                 const requestMsg = (history.messages || []).find(
                     (m) => m.role === "user" && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId
                 );
@@ -2038,7 +2038,7 @@ class ChatRenderer {
                     return false;
                 }
             } else {
-                const history = await getCompleteChatHistory(currentChatId);
+                const history = await getChatHistory(currentChatId);
                 if (!history?.messages) {
                     branchNavElement.style.display = "none";
                     return false;
