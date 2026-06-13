@@ -1617,23 +1617,71 @@ class ChatRenderer {
 
             // Add tool calls section if message has tool calls (AFTER content)
             if (message.tool_calls && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
-                const toolCallsSection = document.createElement("div");
-                toolCallsSection.className = "edit-content-section";
+                // Create a container for all tool calls
+                const allToolCallsContainer = document.createElement("div");
+                allToolCallsContainer.className = "edit-tool-calls-container";
 
-                const toolCallsLabel = document.createElement("label");
-                toolCallsLabel.className = "edit-content-label";
-                toolCallsLabel.textContent = `Tool Calls (${message.tool_calls.length}):`;
-                toolCallsSection.appendChild(toolCallsLabel);
+                for (let i = 0; i < message.tool_calls.length; i++) {
+                    const toolCall = message.tool_calls[i];
+                    const toolCallSection = document.createElement("div");
+                    toolCallSection.className = "edit-content-section edit-tool-call-section";
+                    toolCallSection.dataset.toolCallIndex = i;
+                    toolCallSection.dataset.toolCallId = toolCall.id || "unknown";
 
-                const toolCallsJsonText = JSON.stringify(message.tool_calls, null, 2);
-                const toolCallsTextarea = document.createElement("textarea");
-                toolCallsTextarea.className = "message-tool-calls-textarea";
-                toolCallsTextarea.value = toolCallsJsonText;
-                toolCallsTextarea.rows = Math.max(5, toolCallsJsonText.split("\n").length + 1);
-                toolCallsTextarea.placeholder = "Edit tool calls (JSON format)";
-                toolCallsSection.appendChild(toolCallsTextarea);
+                    // Header with ID and type dropdown
+                    const toolCallHeader = document.createElement("div");
+                    toolCallHeader.className = "edit-tool-call-header-row";
 
-                messageContainer.appendChild(toolCallsSection);
+                    const toolCallIdLabel = document.createElement("label");
+                    toolCallIdLabel.className = "edit-content-label";
+                    toolCallIdLabel.textContent = `Tool Call: ${toolCall.id || "unknown"}`;
+                    toolCallHeader.appendChild(toolCallIdLabel);
+
+                    // Type dropdown
+                    const typeDropdownContainer = document.createElement("div");
+                    typeDropdownContainer.className = "edit-tool-call-type-dropdown";
+
+                    const typeLabel = document.createElement("span");
+                    typeLabel.className = "edit-tool-call-type-label";
+                    typeLabel.textContent = "Type:";
+                    typeDropdownContainer.appendChild(typeLabel);
+
+                    const typeSelect = document.createElement("select");
+                    typeSelect.className = "edit-tool-call-type-select";
+                    typeSelect.dataset.toolCallType = "type";
+                    const functionOption = document.createElement("option");
+                    functionOption.value = "function";
+                    functionOption.textContent = "function";
+                    functionOption.selected = (toolCall.type === "function");
+                    typeSelect.appendChild(functionOption);
+                    typeDropdownContainer.appendChild(typeSelect);
+
+                    toolCallHeader.appendChild(typeDropdownContainer);
+                    toolCallSection.appendChild(toolCallHeader);
+
+                    // Textarea for function object only
+                    const functionObj = {
+                        name: toolCall.function?.name || "",
+                        arguments: toolCall.function?.arguments || ""
+                    };
+                    const functionJsonText = JSON.stringify(functionObj, null, 2);
+
+                    const functionLabel = document.createElement("label");
+                    functionLabel.className = "edit-content-label";
+                    functionLabel.textContent = "Function:";
+                    toolCallSection.appendChild(functionLabel);
+
+                    const functionTextarea = document.createElement("textarea");
+                    functionTextarea.className = "message-tool-call-function-textarea";
+                    functionTextarea.value = functionJsonText;
+                    functionTextarea.rows = Math.max(3, functionJsonText.split("\n").length + 1);
+                    functionTextarea.placeholder = "Edit function (JSON format)";
+                    toolCallSection.appendChild(functionTextarea);
+
+                    allToolCallsContainer.appendChild(toolCallSection);
+                }
+
+                messageContainer.appendChild(allToolCallsContainer);
             }
 
             // Store original content structure for reconstruction
@@ -1725,19 +1773,34 @@ class ChatRenderer {
                         const messageId = container.dataset.messageId;
                         const textarea = container.querySelector(".message-content-textarea");
                         const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
-                        const toolCallsTextarea = container.querySelector(".message-tool-calls-textarea");
                         const newTextContent = textarea.value;
                         const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
                         let newToolCalls = null;
 
-                        // Parse tool calls if present
-                        if (toolCallsTextarea) {
-                            try {
-                                newToolCalls = JSON.parse(toolCallsTextarea.value);
-                            } catch (e) {
-                                console.error("[EDIT-SAVE] Error parsing tool calls JSON:", e);
-                                showError(`Invalid tool calls JSON: ${e.message}`);
-                                throw e;
+                        // Parse tool calls from individual sections
+                        const toolCallSections = container.querySelectorAll(".edit-tool-call-section");
+                        if (toolCallSections.length > 0) {
+                            newToolCalls = [];
+                            for (const section of toolCallSections) {
+                                const toolCallId = section.dataset.toolCallId;
+                                const typeSelect = section.querySelector(".edit-tool-call-type-select");
+                                const functionTextarea = section.querySelector(".message-tool-call-function-textarea");
+                                
+                                const toolCallType = typeSelect?.value || "function";
+                                let functionObj;
+                                try {
+                                    functionObj = JSON.parse(functionTextarea.value);
+                                } catch (e) {
+                                    console.error("[EDIT-SAVE] Error parsing tool call function JSON:", e);
+                                    showError(`Invalid tool call function JSON: ${e.message}`);
+                                    throw e;
+                                }
+
+                                newToolCalls.push({
+                                    id: toolCallId,
+                                    type: toolCallType,
+                                    function: functionObj
+                                });
                             }
                         }
 
