@@ -167,7 +167,7 @@ details div {
     background: none;
     border: none;
     color: #e0e0e0;
-    padding: 10px 14px;
+    padding: 6px 10px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -199,7 +199,7 @@ details div {
     background: #1a1a1a;
     max-height: 400px;
     overflow-y: auto;
-    padding: 12px;
+    padding: 8px;
     font-size: 11px;
     line-height: 1.4;
     font-family: 'Courier New', monospace;
