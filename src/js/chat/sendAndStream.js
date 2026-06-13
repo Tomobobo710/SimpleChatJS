@@ -5,9 +5,9 @@
 // arguments and callbacks, not duplicated in the call sites.
 
 // Shared streaming state so switchToChat can re-attach live DOM when switching back.
-// Set while a stream is active, null when it completes or errors.
-// Structure: { chatId, processor, tempContainer, liveRenderer, responseTurnDiv }
-let activeStreamState = null;
+// Map<chatId, { processor, tempContainer, liveRenderer, responseTurnDiv }>
+// Entry exists while a stream is active for that chat; deleted on completion/error.
+const activeStreamState = new Map();
 
 function generateRequestId() {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -53,8 +53,8 @@ async function streamAndRenderResponse({
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
 
-    const streamEntry = { chatId: activeChatId, processor, tempContainer, liveRenderer, responseTurnDiv };
-    activeStreamState = streamEntry;
+    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv };
+    activeStreamState.set(activeChatId, streamEntry);
 
     let toolEventSource = null;
     try {
@@ -63,7 +63,7 @@ async function streamAndRenderResponse({
             try {
                 const toolEvent = JSON.parse(event.data);
                 processor.handleToolEvent(toolEvent);
-                const ss = activeStreamState;
+                const ss = activeStreamState.get(activeChatId);
                 if (ss) updateLiveRendering(processor, ss.liveRenderer, ss.tempContainer);
             } catch (parseError) {
                 logger.warn("Failed to parse tool event:", parseError);
@@ -96,11 +96,11 @@ async function streamAndRenderResponse({
     function fireError(err) {
         errorAlreadyHandled = true;
         if (toolEventSource) {
-            toolEventSource.close();
-        }
-        activeStreamState = null;
-        streamEntry.tempContainer.remove();
-        streamEntry.responseTurnDiv.remove();
+                toolEventSource.close();
+            }
+            activeStreamState.delete(activeChatId);
+            streamEntry.tempContainer.remove();
+            streamEntry.responseTurnDiv.remove();
         if (onError && currentChatId === activeChatId) {
             try {
                 onError(err, processor, requestTurnInfo, savedResponseTurn);
@@ -187,7 +187,7 @@ async function streamAndRenderResponse({
                         processor.finalize(event.data);
                         break;
                 }
-                const sseSs = activeStreamState;
+                const sseSs = activeStreamState.get(activeChatId);
                 if (sseSs) updateLiveRendering(processor, sseSs.liveRenderer, sseSs.tempContainer);
                 if (typeof smartScrollToBottom === "function") {
                     smartScrollToBottom(scrollContainer);
@@ -200,7 +200,7 @@ async function streamAndRenderResponse({
         if (toolEventSource) {
             toolEventSource.close();
         }
-        activeStreamState = null;
+        activeStreamState.delete(activeChatId);
 
         // Build debug data array from DB
         // Always fetch from backend - it has the authoritative saved data
@@ -270,7 +270,7 @@ async function streamAndRenderResponse({
             if (toolEventSource) {
                 toolEventSource.close();
             }
-            activeStreamState = null;
+            activeStreamState.delete(activeChatId);
             streamEntry.tempContainer.remove();
             streamEntry.responseTurnDiv.remove();
             
@@ -423,9 +423,10 @@ async function sendAndStream({
 // Subsequent SSE events will update these new elements since streamAndRenderResponse
 // references through activeStreamState.
 function reconnectStreaming(chatId) {
-    if (!activeStreamState || activeStreamState.chatId !== chatId) return;
+    const ss = activeStreamState.get(chatId);
+    if (!ss) return;
 
-    const { processor } = activeStreamState;
+    const { processor } = ss;
     const newTempContainer = document.createElement("div");
     newTempContainer.style.width = "100%";
     newTempContainer.style.boxSizing = "border-box";
@@ -436,9 +437,9 @@ function reconnectStreaming(chatId) {
     turnsContainer.appendChild(newResponseTurnDiv);
     newResponseTurnDiv.appendChild(newTempContainer);
 
-    activeStreamState.tempContainer = newTempContainer;
-    activeStreamState.liveRenderer = newLiveRenderer;
-    activeStreamState.responseTurnDiv = newResponseTurnDiv;
+    ss.tempContainer = newTempContainer;
+    ss.liveRenderer = newLiveRenderer;
+    ss.responseTurnDiv = newResponseTurnDiv;
 
     updateLiveRendering(processor, newLiveRenderer, newTempContainer);
 }
