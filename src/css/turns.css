@@ -203,7 +203,6 @@ details div {
     font-size: 11px;
     line-height: 1.4;
     font-family: 'Courier New', monospace;
-    white-space: pre-wrap;
 }
 
 .dropdown-content.expanded {

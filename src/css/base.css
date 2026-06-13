@@ -194,7 +194,6 @@ pre code {
 
 /* Tool content should also preserve whitespace */
 .dropdown-content {
-    white-space: pre-wrap;
     word-wrap: break-word;
 }
 
@@ -307,6 +306,8 @@ code[class*="language-"] {
 /* Ensure code language labels work with language-specific pre elements */
 .code-lang + pre[class*="language-"] {
     margin-top: 0;
+    margin-right: 0;
     border-radius: 0 0 4px 4px;
     border-top: none;
 }
+
