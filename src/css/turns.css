@@ -107,6 +107,8 @@
     border-radius: 2px;
     font-family: 'Courier New', monospace;
     font-size: 13px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 /* Dropdown styling */
