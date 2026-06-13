@@ -461,31 +461,33 @@ async function handleChatWithTools(
 
                 Object.assign(context, result.context);
 
-                // Track reasoning blocks - emit events for each new or updated active reasoning block
-                if (unifiedResponse._activeReasoningBlock) {
-                    // If this is a new active block (not seen before), emit start event
-                    if (!context.prevActiveBlock || context.prevActiveBlock.id !== unifiedResponse._activeReasoningBlock.id) {
-                        writeSSEEvent(res, 'reasoning_start', { blockId: unifiedResponse._activeReasoningBlock.id });
-                        context.prevActiveBlock = unifiedResponse._activeReasoningBlock;
-                        context.prevReasoningContent = 0;
-                    }
-                    
-                    // Emit delta if content has grown
-                    const prevLen = context.prevReasoningContent || 0;
-                    const currLen = unifiedResponse._activeReasoningBlock.content.length;
-                    if (currLen > prevLen) {
-                        const delta = unifiedResponse._activeReasoningBlock.content.slice(prevLen);
+                // Track reasoning phase - emit events when reasoning content appears/disappears
+                const hasReasoningNow = unifiedResponse.reasoning.length > (context.prevReasoningLength || 0);
+                
+                if (hasReasoningNow && !context.inReasoningPhase) {
+                    // Entering reasoning phase
+                    const blockId = `reasoning_${Date.now()}`;
+                    writeSSEEvent(res, 'reasoning_start', { blockId });
+                    context.reasoningBlockId = blockId;
+                    context.inReasoningPhase = true;
+                }
+
+                if (hasReasoningNow) {
+                    // Emit delta for new reasoning content
+                    const delta = unifiedResponse.reasoning.slice(context.prevReasoningLength || 0);
+                    if (delta) {
                         writeSSEEvent(res, 'reasoning_delta', {
-                            blockId: unifiedResponse._activeReasoningBlock.id,
+                            blockId: context.reasoningBlockId,
                             text: delta
                         });
-                        context.prevReasoningContent = currLen;
+                        context.prevReasoningLength = unifiedResponse.reasoning.length;
                     }
-                } else if (context.prevActiveBlock && !unifiedResponse._activeReasoningBlock) {
-                    // Active block was finished
-                    writeSSEEvent(res, 'reasoning_end', { blockId: context.prevActiveBlock.id });
-                    context.prevActiveBlock = null;
-                    context.prevReasoningContent = 0;
+                } else if (context.inReasoningPhase && !hasReasoningNow) {
+                    // Exiting reasoning phase (content appeared, no more reasoning)
+                    if (unifiedResponse.content.length > 0) {
+                        writeSSEEvent(res, 'reasoning_end', { blockId: context.reasoningBlockId });
+                        context.inReasoningPhase = false;
+                    }
                 }
 
                 // Emit content deltas
@@ -605,9 +607,9 @@ async function handleChatWithTools(
                     );
                 }
 
-                // Finish any active reasoning block
-                if (unifiedResponse._activeReasoningBlock) {
-                    writeSSEEvent(res, 'reasoning_end', { blockId: unifiedResponse._activeReasoningBlock.id });
+                // Finish any active reasoning phase
+                if (context.inReasoningPhase) {
+                    writeSSEEvent(res, 'reasoning_end', { blockId: context.reasoningBlockId });
                 }
 
                 // Emit done event with complete response

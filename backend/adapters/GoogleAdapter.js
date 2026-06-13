@@ -215,19 +215,12 @@ class GoogleAdapter extends BaseResponseAdapter {
                                      const summary = summaryLine.replace(/\*\*/g, '').trim();
                                      const detailedThoughts = lines.slice(2).join('\n').trim();
 
-                                     if (!response._activeReasoningBlock) {
-                                         response.startReasoningBlock();
-                                     }
                                      if (detailedThoughts) {
                                          response.addReasoningBlock(detailedThoughts);
                                      }
                                  }
                                 // Otherwise it's the regular response
                                 else {
-                                    // Finish any active reasoning block before adding content
-                                    if (response._activeReasoningBlock) {
-                                        response.finishReasoningBlock();
-                                    }
                                     response.addContent(part.text);
                                 }
                             }

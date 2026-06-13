@@ -224,7 +224,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Get all messages for the chat (errors filtered out for AI)
         const messagesStmt = db.prepare(`
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, edit_count, edited_at, timestamp, original_content, file_metadata
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
             FROM messages
             WHERE chat_id = ? AND error_state IS NULL
             ORDER BY timestamp ASC
@@ -236,7 +236,7 @@ router.get("/chat/:id/history", (req, res) => {
         const messages = chatMessages.map((row) =>
             parseDbRowToMessage(row, {
                 includeFileFields: true,
-                includeErrorState: false,
+                includeErrorState: true,
             })
         );
 

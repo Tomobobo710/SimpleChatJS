@@ -165,9 +165,8 @@ class AnthropicAdapter extends BaseResponseAdapter {
                                 // Text content block started
                                 context.currentContentBlock = 'text';
                             } else if (data.content_block.type === 'thinking') {
-                                // Thinking content block started - create structured reasoning block
+                                // Thinking content block started
                                 context.currentContentBlock = 'thinking';
-                                response.startReasoningBlock();
                             } else if (data.content_block.type === 'tool_use') {
                                 // Tool use block started
                                 const toolUse = data.content_block;
@@ -196,18 +195,12 @@ class AnthropicAdapter extends BaseResponseAdapter {
                                 // Text content delta
                                 response.addContent(data.delta.text);
                             } else if (data.delta.type === 'thinking_delta') {
-                                // Thinking content delta - add to active reasoning block
+                                // Thinking content delta - add to reasoning
                                 const thinkingText = data.delta.thinking || '';
-                                if (response._activeReasoningBlock) {
-                                    response.addReasoningBlock(thinkingText);
-                                }
+                                response.addReasoningBlock(thinkingText);
                             }
                         } else if (data.type === 'content_block_stop') {
                             // Content block ended
-                            if (context.currentContentBlock === 'thinking') {
-                                // Finish reasoning block
-                                response.finishReasoningBlock();
-                            }
                         } else if (data.type === 'message_stop') {
                             response.setComplete(true);
                         }

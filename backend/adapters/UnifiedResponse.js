@@ -10,7 +10,6 @@ class UnifiedResponse {
         this.provider = null;           // 'openai', 'google', etc
         this.content = '';              // Text content
         this.toolCalls = [];            // Array of tool calls
-        this._activeReasoningBlock = null; // Track current block for SSE events only
         this.reasoning = '';             // Provider reasoning content (accumulated for DB)
         this.isComplete = false;        // Whether response is finished
         this.debugData = {};            // Debug information
@@ -80,28 +79,18 @@ class UnifiedResponse {
         return this.toolCalls[this.toolCalls.length - 1] || null;
     }
 
-    // Start a new reasoning block (for SSE event tracking only, not saved)
-    startReasoningBlock() {
-        this._activeReasoningBlock = {
-            id: `reasoning_${Date.now()}`,
-            content: ''
-        };
-        return this;
-    }
-
     // Add reasoning content
     addReasoningBlock(text) {
-        if (!this._activeReasoningBlock) {
-            this.startReasoningBlock();
-        }
-        this._activeReasoningBlock.content += text;
-        this.reasoning += text;  // Accumulate for database storage
+        this.reasoning += text;
         return this;
     }
 
-    // Finish the current reasoning block
+    // Stub methods for adapter compatibility
+    startReasoningBlock() {
+        return this;
+    }
+
     finishReasoningBlock() {
-        this._activeReasoningBlock = null;
         return this;
     }
 
