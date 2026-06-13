@@ -547,7 +547,6 @@ async function handleChatWithTools(
                 // Save final assistant response to history
                 if (chatId && unifiedResponse.content) {
                     log(`[CHAT-SAVE] reasoning content: "${unifiedResponse.reasoning.substring(0, 100)}..."`);
-                    log(`[CHAT-SAVE] reasoningBlocks count: ${unifiedResponse.reasoningBlocks.length}`);
                     log(`[CHAT-SAVE] Content length: ${unifiedResponse.content.length}`);
                     log(`[CHAT-SAVE] Content preview: "${unifiedResponse.content.substring(0, 200)}..."`);
                     log(`[CHAT-SAVE] Turn number: ${currentTurn}`);
@@ -816,7 +815,7 @@ async function executeToolCallsAndContinue(
                 targetUrl,
                 requestData,
                 apiRes,
-                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, toolCalls: toolCalls || [], reasoning: reasoning || "" },
+                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, reasoning: reasoning || "" },
                 rawResponseBody
             });
 
