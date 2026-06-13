@@ -875,13 +875,20 @@ async function loadProjectChats(projectId) {
         chatList.innerHTML = "";
 
         if (chats.length === 0) {
-            chatList.innerHTML =
-                '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No chats in this project. Create one!</div>';
-            currentChatId = null;
-            turnsContainer.innerHTML = "";
-            resetTurnTracking();
-            updateChatTitle("No chats yet");
-            chatInfo.textContent = "";
+            currentChatId = generateId();
+            try {
+                await createNewChatInDatabase(currentChatId, "New Chat", projectId);
+                addChatToList(currentChatId, "New Chat", "", new Date());
+                selectChat(currentChatId);
+                updateChatTitle("New Chat");
+                chatInfo.textContent = `Chat ID: ${currentChatId}`;
+                turnsContainer.innerHTML = "";
+                resetTurnTracking();
+            } catch (error) {
+                logger.error("Failed to create initial project chat:", error, true);
+                chatList.innerHTML =
+                    '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error creating initial chat.</div>';
+            }
             return;
         }
 
