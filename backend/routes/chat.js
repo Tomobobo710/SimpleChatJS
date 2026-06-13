@@ -459,7 +459,7 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
         log(`[TURN-MESSAGES] Getting messages for turn ${turnNum} in chat ${chatId}`);
         const stmt = db.prepare(`
             SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
-                   edit_count, edited_at, reasoning, original_content, tool_calls, edit_history, active_edit_version
+                   edit_count, edited_at, reasoning, original_content, tool_calls, tool_call_id, edit_history, active_edit_version
             FROM messages 
             WHERE chat_id = ? AND turn_number = ? 
             ORDER BY timestamp ASC

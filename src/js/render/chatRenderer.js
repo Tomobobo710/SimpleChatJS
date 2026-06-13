@@ -1683,7 +1683,12 @@ class ChatRenderer {
 
             const contentLabel = document.createElement("label");
             contentLabel.className = "edit-content-label";
-            contentLabel.textContent = "Content:";
+            // For tool messages, show the linked tool call ID
+            if (message.role === "tool") {
+                contentLabel.textContent = `TOOL RESULT: ${message.tool_call_id}`;
+            } else {
+                contentLabel.textContent = "Content:";
+            }
             contentSection.appendChild(contentLabel);
 
             const textarea = document.createElement("textarea");
