@@ -134,10 +134,11 @@ class ChatRenderer {
             // it's read from the DB on every render.
             if (editCount > 0) {
                 // Find the message ID from turnMessages (contains all message data including id)
-                const messageWithId = turnMessages && Array.isArray(turnMessages) 
-                    ? turnMessages.find(m => m.id) 
+                // For turns with tool calls, there may be multiple messages - find the one that was edited
+                const editedMessage = turnMessages && Array.isArray(turnMessages) 
+                    ? turnMessages.find(m => m.id && m.editCount > 0) 
                     : null;
-                const messageId = messageWithId?.id;
+                const messageId = editedMessage?.id;
                 this.addEditIndicator(turnDiv, editCount, activeEditVersion, messageId);
             }
 
@@ -1024,10 +1025,24 @@ class ChatRenderer {
         try {
             logger.info(`[VERSION-SWITCH-START] Attempting to switch message ${messageId} to version ${targetVersion}`);
             
-            const response = await fetch(`/api/message/${messageId}/switch-version`, {
+            // Find the turn that contains this message
+            const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+            if (!messageDiv) {
+                throw new Error("Message element not found");
+            }
+            
+            const turnDiv = messageDiv.closest('[data-turn-id]');
+            if (!turnDiv) {
+                throw new Error("Turn element not found");
+            }
+            
+            const turnId = turnDiv.dataset.turnId;
+            logger.info(`[VERSION-SWITCH] Found turnId: ${turnId}`);
+            
+            const response = await fetch(`/api/message/${turnId}/switch-version`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ targetVersion })
+                body: JSON.stringify({ targetVersion, isTurnId: true })
             });
 
             logger.info(`[VERSION-SWITCH] Response status: ${response.status}`);
@@ -1041,7 +1056,7 @@ class ChatRenderer {
             const result = await response.json();
             logger.info(`[VERSION-SWITCH] Server response: `, result);
 
-            logger.info(`[VERSION-SWITCH] Switched message ${messageId} to version ${targetVersion}`);
+            logger.info(`[VERSION-SWITCH] Switched turn ${turnId} to version ${targetVersion}`);
             
             // Reload entire chat to show the new version
             await loadChatHistory(currentChatId);

@@ -161,7 +161,8 @@ class Turn {
     // "content + error" branches in renderable().
     _renderResponse(liveProcessor) {
         const assistantMessages = this.assistantMessages;
-        let primaryMessage = assistantMessages.find(m => !m.content.is && m.content !== '') || assistantMessages[0];
+        // Primary message should be one with actual content (not just tool calls)
+        let primaryMessage = assistantMessages.find(m => m.content && m.content !== '') || assistantMessages[0];
         let turnDebugData = null;
 
         if (liveProcessor && primaryMessage) {
@@ -266,7 +267,7 @@ class Turn {
             parentTurnId: this.parentTurnId,
             debugData: primary?.debugData || null,
             responseDebugData: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
-            turnMessages: this.messages.map(m => ({ id: m.id, role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName })),
+            turnMessages: this.messages.map(m => ({ id: m.id, role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName, editCount: m.editCount })),
             editCount: primary.editCount,
             activeEditVersion: primary.activeEditVersion,
         });

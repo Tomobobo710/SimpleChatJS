@@ -39,7 +39,7 @@ class RenderableTurnObject {
             turnId: message.turnId,
             parentTurnId: message.parentTurnId,
             debugData: message.debugData,
-            turnMessages: [{ id: message.id, role: message.role, content: message.content }],
+            turnMessages: [{ id: message.id, role: message.role, content: message.content, editCount: message.editCount }],
             editCount: message.editCount,
             activeEditVersion: message.activeEditVersion || 0,
         });
