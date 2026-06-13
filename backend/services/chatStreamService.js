@@ -712,6 +712,12 @@ async function executeToolCallsAndContinue(
     log(`[CHAT-SAVE] Saving tool message with reasoning: "${reasoning ? reasoning.substring(0, 100) : 'null'}..."`);
     messages.push(assistantMessageWithTools);
 
+    // Save assistant message with tool calls FIRST (before tool results)
+    if (chatId) {
+        await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
+        log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
+    }
+
     // Execute each tool call and collect results
     const toolResults = [];
     for (const toolCall of toolCalls) {
@@ -802,54 +808,49 @@ async function executeToolCallsAndContinue(
         }
     }
 
-    // Now save assistant message with tool calls and debug data (after results are known)
-    if (chatId) {
-        const msgId = await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
-        log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
+    // Tool results are saved — now handle debug data if needed
+    if (chatId && targetUrl) {
+        const debugPayload = buildMessageDebugData({
+            requestId,
+            chatId,
+            turnId: turnInfo?.turn_id,
+            parentTurnId: turnInfo?.parent_turn_id,
+            currentTurn,
+            targetUrl,
+            requestData,
+            apiRes,
+            unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, reasoning: reasoning || "" },
+            rawResponseBody
+        });
 
-        if (targetUrl) {
-            const debugPayload = buildMessageDebugData({
-                requestId,
-                chatId,
-                turnId: turnInfo?.turn_id,
-                parentTurnId: turnInfo?.parent_turn_id,
-                currentTurn,
-                targetUrl,
-                requestData,
-                apiRes,
-                unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, reasoning: reasoning || "" },
-                rawResponseBody
-            });
+        // Attach tool results to debug data
+        if (toolResults.length > 0) {
+            debugPayload.toolResults = toolResults;
+        }
 
-            // Attach tool results to debug data
-            if (toolResults.length > 0) {
-                debugPayload.toolResults = toolResults;
-            }
-
-            if (turnInfo) {
-                try {
-                    // Get existing turn debug data
-                    let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
-                    
-                    // Append response to array (wrap in object for consistency)
-                    if (!existingDebug.responses) {
-                        existingDebug.responses = [];
-                    }
-                    existingDebug.responses.push({
-                        response: debugPayload.response,
-                        turnId: debugPayload.turnId,
-                        parentTurnId: debugPayload.parentTurnId,
-                        currentTurnNumber: debugPayload.currentTurnNumber
-                    });
-                    if (debugPayload.toolResults) {
-                        existingDebug.toolResults = debugPayload.toolResults;
-                    }
-                    
-                    await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
-                    log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
-                } catch (error) {
-                    log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
+        if (turnInfo) {
+            try {
+                // Get existing turn debug data
+                let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
+                
+                // Append response to array (wrap in object for consistency)
+                if (!existingDebug.responses) {
+                    existingDebug.responses = [];
                 }
+                existingDebug.responses.push({
+                    response: debugPayload.response,
+                    turnId: debugPayload.turnId,
+                    parentTurnId: debugPayload.parentTurnId,
+                    currentTurnNumber: debugPayload.currentTurnNumber
+                });
+                if (debugPayload.toolResults) {
+                    existingDebug.toolResults = debugPayload.toolResults;
+                }
+                
+                await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
+                log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
+            } catch (error) {
+                log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
             }
         }
     }
