@@ -459,7 +459,7 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
         log(`[TURN-MESSAGES] Getting messages for turn ${turnNum} in chat ${chatId}`);
         const stmt = db.prepare(`
             SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
-                   edit_count, edited_at 
+                   edit_count, edited_at, reasoning, original_content
             FROM messages 
             WHERE chat_id = ? AND turn_number = ? 
             ORDER BY timestamp ASC
@@ -517,14 +517,10 @@ router.post("/chat/cancel/:requestId", (req, res) => {
 router.patch("/message/:id", async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
-        const { content, original_content, file_metadata } = req.body;
+        const { content, original_content, file_metadata, reasoning } = req.body;
 
         if (isNaN(messageId)) {
             return res.status(400).json({ error: "Invalid message ID" });
-        }
-
-        if (!content || (typeof content === "string" && content.trim() === "")) {
-            return res.status(400).json({ error: "Content is required" });
         }
 
         // Find the message
@@ -547,6 +543,7 @@ router.patch("/message/:id", async (req, res) => {
             SET content = ?, 
                 original_content = ?,
                 file_metadata = ?,
+                reasoning = ?,
                 edit_count = ?, 
                 edited_at = CURRENT_TIMESTAMP 
             WHERE id = ?
@@ -558,6 +555,7 @@ router.patch("/message/:id", async (req, res) => {
             serialized.content,
             serialized.originalContent,
             serialized.fileMetadata,
+            reasoning || null,
             newEditCount,
             messageId
         );

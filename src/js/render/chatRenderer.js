@@ -1504,6 +1504,7 @@ class ChatRenderer {
             let images = [];
             let files = []; // Extract files from separated structure
             let parsedContent = message.content;
+            let reasoningContent = message.reasoning || ""; // Get reasoning if present
 
             // Check if we have original_content with separated files
             if (message.original_content) {
@@ -1540,7 +1541,35 @@ class ChatRenderer {
 
             // Images will be shown via updateImagesDisplay after drag/drop setup
 
-            // Textarea for text content
+            // Add reasoning textarea if reasoning exists
+            if (reasoningContent && reasoningContent.trim()) {
+                const reasoningSection = document.createElement("div");
+                reasoningSection.className = "edit-content-section";
+
+                const reasoningLabel = document.createElement("label");
+                reasoningLabel.className = "edit-content-label";
+                reasoningLabel.textContent = "Reasoning:";
+                reasoningSection.appendChild(reasoningLabel);
+
+                const reasoningTextarea = document.createElement("textarea");
+                reasoningTextarea.className = "message-reasoning-textarea";
+                reasoningTextarea.value = reasoningContent;
+                reasoningTextarea.rows = Math.max(3, reasoningContent.split("\n").length + 1);
+                reasoningTextarea.placeholder = "Edit reasoning content";
+                reasoningSection.appendChild(reasoningTextarea);
+
+                messageContainer.appendChild(reasoningSection);
+            }
+
+            // Content section
+            const contentSection = document.createElement("div");
+            contentSection.className = "edit-content-section";
+
+            const contentLabel = document.createElement("label");
+            contentLabel.className = "edit-content-label";
+            contentLabel.textContent = "Content:";
+            contentSection.appendChild(contentLabel);
+
             const textarea = document.createElement("textarea");
             textarea.className = "message-content-textarea";
             textarea.value = textContent;
@@ -1554,7 +1583,7 @@ class ChatRenderer {
                 attachmentInfo.length > 0
                     ? `Edit text content (${attachmentInfo.join(" and ")} shown above)`
                     : "Enter message content";
-            messageContainer.appendChild(textarea);
+            contentSection.appendChild(textarea);
 
             // Add image controls (file input + paperclip button + drag/drop area) at the bottom
             const imageControlsContainer = document.createElement("div");
@@ -1582,7 +1611,9 @@ class ChatRenderer {
 
             imageControlsContainer.appendChild(fileInput);
             imageControlsContainer.appendChild(addImageBtn);
-            messageContainer.appendChild(imageControlsContainer);
+            contentSection.appendChild(imageControlsContainer);
+
+            messageContainer.appendChild(contentSection);
 
             // Store original content structure for reconstruction
             // Ensure _originalContent is always an array for consistent handling
@@ -1672,7 +1703,9 @@ class ChatRenderer {
                     Array.from(messageContainers).map(async (container) => {
                         const messageId = container.dataset.messageId;
                         const textarea = container.querySelector(".message-content-textarea");
+                        const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
                         const newTextContent = textarea.value;
+                        const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
 
                         if (messageId && newTextContent !== undefined) {
                             // Reconstruct content properly - _originalContent is always an array now
@@ -1716,12 +1749,13 @@ class ChatRenderer {
 
                             console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
                                 textContent: newTextContent,
+                                reasoningContent: newReasoningContent,
                                 hasFiles: container._editDocuments?.length > 0,
                                 fileCount: container._editDocuments?.length || 0,
                                 finalContent: typeof finalContent === "string" ? "string" : "multimodal"
                             });
 
-                            return editMessage(messageId, finalContent);
+                            return editMessage(messageId, finalContent, newReasoningContent);
                         }
                         return null;
                     })

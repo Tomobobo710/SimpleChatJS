@@ -55,9 +55,9 @@ function parseDbRowToMessage(row, options = {}) {
     if (row.tool_call_id) msg.tool_call_id = row.tool_call_id;
     if (row.tool_name) msg.tool_name = row.tool_name;
 
-    // Reasoning (raw data from AI)
+    // Reasoning (plain text from AI, not JSON)
     if (row.reasoning) {
-        msg.reasoning = safeJsonParse(row.reasoning, "reasoning") ?? row.reasoning;
+        msg.reasoning = row.reasoning;
     }
 
     // Conditional fields

@@ -328,6 +328,37 @@
     resize: vertical;
 }
 
+.edit-content-section {
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.edit-content-label {
+    display: block;
+    color: #aaa;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.message-reasoning-textarea {
+    width: 100%;
+    min-height: 100px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #666;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
 .edit-buttons {
     display: flex;
     gap: 10px;

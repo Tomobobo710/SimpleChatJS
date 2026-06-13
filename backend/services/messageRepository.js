@@ -25,7 +25,7 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         // Extract turn info
         const turnId = turnInfo?.turn_id || null;
         const parentTurnId = turnInfo?.parent_turn_id || null;
-        const reasoning = messageData.reasoning ? JSON.stringify(messageData.reasoning) : null;
+        const reasoning = messageData.reasoning || null;
 
         // Insert message with turn info
         const insertStmt = db.prepare(`
