@@ -209,7 +209,7 @@ class StreamingMessageProcessor {
                 blocks.push(item.ref);
             } else if (item.type === 'tool') {
                 blocks.push(item.ref);
-            } else if (item.type === 'chat') {
+            } else if (item.type === 'chat' && item.content.trim()) {
                 blocks.push(new Block({
                     type: 'chat',
                     content: item.content,

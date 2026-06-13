@@ -186,8 +186,10 @@ pre code {
 
 /* Message content should preserve whitespace for code */
 .chat-block {
-    white-space: pre-wrap; /* Preserve whitespace but allow wrapping */
+    white-space: pre-wrap;
     word-wrap: break-word;
+    margin-top: 1px;
+    margin-bottom: 2px;
 }
 
 /* Tool content should also preserve whitespace */
