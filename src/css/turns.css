@@ -31,6 +31,8 @@
 .turn-content, .message-content {
     width: 100%;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Debug panel spacing - applies to both user and assistant equally */

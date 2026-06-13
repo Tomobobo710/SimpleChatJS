@@ -46,7 +46,13 @@ function parseDbRowToMessage(row, options = {}) {
         parent_turn_id: row.parent_turn_id,
         edit_count: row.edit_count ?? 0,
         edited_at: row.edited_at,
+        active_edit_version: row.active_edit_version ?? 0,
     };
+
+    // Edit history (JSON array)
+    if (row.edit_history) {
+        msg.edit_history = safeJsonParse(row.edit_history, "edit_history") ?? [];
+    }
 
     // Tool fields (always parsed the same way, present in all three readers)
     if (row.tool_calls) {
@@ -55,9 +61,9 @@ function parseDbRowToMessage(row, options = {}) {
     if (row.tool_call_id) msg.tool_call_id = row.tool_call_id;
     if (row.tool_name) msg.tool_name = row.tool_name;
 
-    // Reasoning (raw data from AI)
+    // Reasoning (plain text from AI, not JSON)
     if (row.reasoning) {
-        msg.reasoning = safeJsonParse(row.reasoning, "reasoning") ?? row.reasoning;
+        msg.reasoning = row.reasoning;
     }
 
     // Conditional fields

@@ -3,7 +3,7 @@
 // The UI renders directly from this object.
 
 class RenderableTurnObject {
-    constructor({ role = 'other', content = '', blocks = null, turnNumber = 0, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, editCount = 0, dropdownStates = {} } = {}) {
+    constructor({ role = 'other', content = '', blocks = null, turnNumber = 0, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, editCount = 0, activeEditVersion = 0, dropdownStates = {} } = {}) {
         this.role = role;
         this.content = content;
         this.blocks = blocks;
@@ -14,6 +14,7 @@ class RenderableTurnObject {
         this.responseDebugData = responseDebugData;
         this.turnMessages = turnMessages;
         this.editCount = editCount;
+        this.activeEditVersion = activeEditVersion;
         this.dropdownStates = dropdownStates;
     }
 
@@ -38,8 +39,9 @@ class RenderableTurnObject {
             turnId: message.turnId,
             parentTurnId: message.parentTurnId,
             debugData: message.debugData,
-            turnMessages: [{ role: message.role, content: message.content }],
+            turnMessages: [{ id: message.id, role: message.role, content: message.content, editCount: message.editCount }],
             editCount: message.editCount,
+            activeEditVersion: message.activeEditVersion || 0,
         });
     }
 

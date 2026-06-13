@@ -44,8 +44,47 @@
     font-size: 9px;
     color: #aaa;
     font-style: italic;
-    margin-left: 8px;
+    align-self: flex-end;
     opacity: 0.7;
+}
+
+/* Edit version indicator with navigation buttons */
+.edit-version-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #aaa;
+    align-self: flex-end;
+    opacity: 0.8;
+}
+
+.edit-nav-btn {
+    background: transparent;
+    border: 1px solid #666;
+    color: #aaa;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: bold;
+}
+
+.edit-nav-btn:hover {
+    background: #2a2a2a;
+    border-color: #888;
+    color: #fff;
+}
+
+.edit-nav-btn:active {
+    background: #1a1a1a;
+}
+
+.edit-version-label {
+    font-style: italic;
+    font-weight: 500;
+    padding: 0 4px;
 }
 
 /* Turn in editing state */
@@ -166,12 +205,6 @@
 .message-id {
     color: #666;
     font-family: monospace;
-    font-size: 9px;
-}
-
-.edit-indicator {
-    color: #28a745;
-    font-style: italic;
     font-size: 9px;
 }
 
@@ -326,6 +359,147 @@
     font-family: 'Courier New', monospace;
     font-size: 14px;
     resize: vertical;
+}
+
+.edit-content-section {
+    background: #1a1a1a;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.edit-content-label {
+    display: block;
+    color: #aaa;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.message-reasoning-textarea {
+    width: 100%;
+    min-height: 100px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #666;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.message-tool-calls-textarea {
+    width: 100%;
+    min-height: 150px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #666;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.edit-tool-calls-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.edit-tool-call-section {
+}
+
+.edit-tool-call-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #555;
+}
+
+.edit-tool-call-type-dropdown {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.edit-tool-call-type-label {
+    color: #aaa;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.edit-tool-call-type-select {
+    background: #2a2a2a;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.edit-tool-call-type-select:hover {
+    border-color: #666;
+}
+
+.message-tool-call-function-textarea {
+    width: 100%;
+    min-height: 80px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #666;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.edit-tool-calls-display {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.edit-tool-call-item {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.edit-tool-call-header {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #444;
+    color: #aaa;
+    font-size: 13px;
+}
+
+.edit-tool-call-id {
+    color: #888;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.edit-tool-call-args {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 3px;
+    padding: 8px;
+    margin: 0;
+    font-size: 12px;
+    color: #ccc;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
 }
 
 .edit-buttons {

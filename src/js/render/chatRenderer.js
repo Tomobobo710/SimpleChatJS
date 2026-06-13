@@ -22,6 +22,7 @@ class ChatRenderer {
                 turnId,
                 parentTurnId,
                 editCount,
+                activeEditVersion = 0,
                 editedAt
             } = turnData;
 
@@ -132,7 +133,13 @@ class ChatRenderer {
             // times" and persists across reloads/branch switches because
             // it's read from the DB on every render.
             if (editCount > 0) {
-                this.addEditIndicator(turnDiv, editCount);
+                // Find the message ID from turnMessages (contains all message data including id)
+                // For turns with tool calls, there may be multiple messages - find the one that was edited
+                const editedMessage = turnMessages && Array.isArray(turnMessages) 
+                    ? turnMessages.find(m => m.id && m.editCount > 0) 
+                    : null;
+                const messageId = editedMessage?.id;
+                this.addEditIndicator(turnDiv, editCount, activeEditVersion, messageId);
             }
 
             this.container.appendChild(turnDiv);
@@ -910,8 +917,8 @@ class ChatRenderer {
             turnDiv.classList.remove("editing");
 
             // Show edit indicator if this was edited
-            if (result.edit_count > 1) {
-                this.addEditIndicator(turnDiv, result.edit_count);
+            if (result.edit_count > 0) {
+                this.addEditIndicator(turnDiv, result.edit_count, result.active_edit_version, messageId);
             }
         } catch (error) {
             console.error("[EDIT] Error saving message:", error);
@@ -929,24 +936,133 @@ class ChatRenderer {
         turnDiv.classList.remove("editing");
     }
 
-    // Add visual indicator that message was edited
-    addEditIndicator(turnDiv, editCount) {
+    // Add visual indicator that message was edited with version navigation
+    addEditIndicator(turnDiv, editCount, activeEditVersion = 0, messageId = null) {
         // Remove existing indicator
-        const existing = turnDiv.querySelector(".edit-indicator");
+        const existing = turnDiv.querySelector(".edit-version-indicator");
         if (existing) {
             existing.remove();
         }
 
-        // Add new indicator
-        const indicator = document.createElement("span");
-        indicator.className = "edit-indicator";
-        indicator.textContent = `(edited ${editCount}x)`;
-        indicator.title = "This message has been edited";
+        // Don't show anything if no edits
+        if (!editCount || editCount === 0) {
+            return;
+        }
+
+        // Get messageId if not provided
+        if (!messageId) {
+            const messageElement = turnDiv.querySelector('[data-message-id]');
+            messageId = messageElement ? messageElement.dataset.messageId : null;
+        }
+        
+        if (!messageId) {
+            console.warn("[EDIT-INDICATOR] Could not find messageId for turn");
+            return;
+        }
+
+        // Create version indicator container
+        const indicator = document.createElement("div");
+        indicator.className = "edit-version-indicator";
+
+        // Determine what to display
+        let label;
+        let showPrev = false;
+        let showNext = false;
+
+        if (activeEditVersion === 0) {
+            // Viewing original
+            label = "Original";
+            showPrev = false;
+            showNext = editCount > 0;
+        } else if (activeEditVersion === editCount) {
+            // Viewing latest edit
+            label = `Edit ${activeEditVersion}`;
+            showPrev = true;
+            showNext = false;
+        } else {
+            // Viewing middle edit
+            label = `Edit ${activeEditVersion}`;
+            showPrev = true;
+            showNext = true;
+        }
+
+        // Build indicator HTML
+        let html = '';
+        
+        if (showPrev) {
+            html += `<button class="edit-nav-btn edit-nav-prev" data-message-id="${messageId}" data-target-version="${activeEditVersion - 1}" title="Previous version">←</button>`;
+        }
+
+        html += `<span class="edit-version-label">${label}</span>`;
+
+        if (showNext) {
+            html += `<button class="edit-nav-btn edit-nav-next" data-message-id="${messageId}" data-target-version="${activeEditVersion + 1}" title="Next version">→</button>`;
+        }
+
+        indicator.innerHTML = html;
+
+        // Add event listeners to buttons
+        indicator.querySelectorAll('.edit-nav-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const btnMessageId = btn.dataset.messageId;
+                const targetVersion = parseInt(btn.dataset.targetVersion, 10);
+                await this.switchMessageVersion(btnMessageId, targetVersion);
+            });
+        });
+
+        indicator.title = "Edit version navigation";
 
         // Insert after the turn content
         const turnContent = turnDiv.querySelector(".turn-content");
         if (turnContent) {
             turnContent.appendChild(indicator);
+        }
+    }
+
+    // Switch message to different edit version
+    async switchMessageVersion(messageId, targetVersion) {
+        try {
+            logger.info(`[VERSION-SWITCH-START] Attempting to switch message ${messageId} to version ${targetVersion}`);
+            
+            // Find the turn that contains this message
+            const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+            if (!messageDiv) {
+                throw new Error("Message element not found");
+            }
+            
+            const turnDiv = messageDiv.closest('[data-turn-id]');
+            if (!turnDiv) {
+                throw new Error("Turn element not found");
+            }
+            
+            const turnId = turnDiv.dataset.turnId;
+            logger.info(`[VERSION-SWITCH] Found turnId: ${turnId}`);
+            
+            const response = await fetch(`/api/message/${turnId}/switch-version`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetVersion, isTurnId: true })
+            });
+
+            logger.info(`[VERSION-SWITCH] Response status: ${response.status}`);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`[VERSION-SWITCH] HTTP ${response.status}: ${errorText}`, true);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const result = await response.json();
+            logger.info(`[VERSION-SWITCH] Server response: `, result);
+
+            logger.info(`[VERSION-SWITCH] Switched turn ${turnId} to version ${targetVersion}`);
+            
+            // Reload entire chat to show the new version
+            await loadChatHistory(currentChatId);
+        } catch (error) {
+            logger.error(`[VERSION-SWITCH] Error: ${error.message}`, true);
+            showError(`Error switching version: ${error.message}`);
         }
     }
 
@@ -1504,6 +1620,7 @@ class ChatRenderer {
             let images = [];
             let files = []; // Extract files from separated structure
             let parsedContent = message.content;
+            let reasoningContent = message.reasoning || ""; // Get reasoning if present
 
             // Check if we have original_content with separated files
             if (message.original_content) {
@@ -1540,7 +1657,40 @@ class ChatRenderer {
 
             // Images will be shown via updateImagesDisplay after drag/drop setup
 
-            // Textarea for text content
+            // Add reasoning textarea if reasoning exists
+            if (reasoningContent && reasoningContent.trim()) {
+                const reasoningSection = document.createElement("div");
+                reasoningSection.className = "edit-content-section";
+
+                const reasoningLabel = document.createElement("label");
+                reasoningLabel.className = "edit-content-label";
+                reasoningLabel.textContent = "Reasoning:";
+                reasoningSection.appendChild(reasoningLabel);
+
+                const reasoningTextarea = document.createElement("textarea");
+                reasoningTextarea.className = "message-reasoning-textarea";
+                reasoningTextarea.value = reasoningContent;
+                reasoningTextarea.rows = Math.max(3, reasoningContent.split("\n").length + 1);
+                reasoningTextarea.placeholder = "Edit reasoning content";
+                reasoningSection.appendChild(reasoningTextarea);
+
+                messageContainer.appendChild(reasoningSection);
+            }
+
+            // Content section
+            const contentSection = document.createElement("div");
+            contentSection.className = "edit-content-section";
+
+            const contentLabel = document.createElement("label");
+            contentLabel.className = "edit-content-label";
+            // For tool messages, show the linked tool call ID
+            if (message.role === "tool") {
+                contentLabel.textContent = `TOOL RESULT: ${message.tool_call_id}`;
+            } else {
+                contentLabel.textContent = "Content:";
+            }
+            contentSection.appendChild(contentLabel);
+
             const textarea = document.createElement("textarea");
             textarea.className = "message-content-textarea";
             textarea.value = textContent;
@@ -1554,7 +1704,7 @@ class ChatRenderer {
                 attachmentInfo.length > 0
                     ? `Edit text content (${attachmentInfo.join(" and ")} shown above)`
                     : "Enter message content";
-            messageContainer.appendChild(textarea);
+            contentSection.appendChild(textarea);
 
             // Add image controls (file input + paperclip button + drag/drop area) at the bottom
             const imageControlsContainer = document.createElement("div");
@@ -1582,7 +1732,78 @@ class ChatRenderer {
 
             imageControlsContainer.appendChild(fileInput);
             imageControlsContainer.appendChild(addImageBtn);
-            messageContainer.appendChild(imageControlsContainer);
+            contentSection.appendChild(imageControlsContainer);
+
+            messageContainer.appendChild(contentSection);
+
+            // Add tool calls section if message has tool calls (AFTER content)
+            if (message.tool_calls && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+                // Create a container for all tool calls
+                const allToolCallsContainer = document.createElement("div");
+                allToolCallsContainer.className = "edit-tool-calls-container";
+
+                for (let i = 0; i < message.tool_calls.length; i++) {
+                    const toolCall = message.tool_calls[i];
+                    const toolCallSection = document.createElement("div");
+                    toolCallSection.className = "edit-content-section edit-tool-call-section";
+                    toolCallSection.dataset.toolCallIndex = i;
+                    toolCallSection.dataset.toolCallId = toolCall.id || "unknown";
+
+                    // Header with ID and type dropdown
+                    const toolCallHeader = document.createElement("div");
+                    toolCallHeader.className = "edit-tool-call-header-row";
+
+                    const toolCallIdLabel = document.createElement("label");
+                    toolCallIdLabel.className = "edit-content-label";
+                    toolCallIdLabel.textContent = `Tool Call: ${toolCall.id || "unknown"}`;
+                    toolCallHeader.appendChild(toolCallIdLabel);
+
+                    // Type dropdown
+                    const typeDropdownContainer = document.createElement("div");
+                    typeDropdownContainer.className = "edit-tool-call-type-dropdown";
+
+                    const typeLabel = document.createElement("span");
+                    typeLabel.className = "edit-tool-call-type-label";
+                    typeLabel.textContent = "Type:";
+                    typeDropdownContainer.appendChild(typeLabel);
+
+                    const typeSelect = document.createElement("select");
+                    typeSelect.className = "edit-tool-call-type-select";
+                    typeSelect.dataset.toolCallType = "type";
+                    const functionOption = document.createElement("option");
+                    functionOption.value = "function";
+                    functionOption.textContent = "function";
+                    functionOption.selected = (toolCall.type === "function");
+                    typeSelect.appendChild(functionOption);
+                    typeDropdownContainer.appendChild(typeSelect);
+
+                    toolCallHeader.appendChild(typeDropdownContainer);
+                    toolCallSection.appendChild(toolCallHeader);
+
+                    // Textarea for function object only
+                    const functionObj = {
+                        name: toolCall.function?.name || "",
+                        arguments: toolCall.function?.arguments || ""
+                    };
+                    const functionJsonText = JSON.stringify(functionObj, null, 2);
+
+                    const functionLabel = document.createElement("label");
+                    functionLabel.className = "edit-content-label";
+                    functionLabel.textContent = "Function:";
+                    toolCallSection.appendChild(functionLabel);
+
+                    const functionTextarea = document.createElement("textarea");
+                    functionTextarea.className = "message-tool-call-function-textarea";
+                    functionTextarea.value = functionJsonText;
+                    functionTextarea.rows = Math.max(3, functionJsonText.split("\n").length + 1);
+                    functionTextarea.placeholder = "Edit function (JSON format)";
+                    toolCallSection.appendChild(functionTextarea);
+
+                    allToolCallsContainer.appendChild(toolCallSection);
+                }
+
+                messageContainer.appendChild(allToolCallsContainer);
+            }
 
             // Store original content structure for reconstruction
             // Ensure _originalContent is always an array for consistent handling
@@ -1672,7 +1893,37 @@ class ChatRenderer {
                     Array.from(messageContainers).map(async (container) => {
                         const messageId = container.dataset.messageId;
                         const textarea = container.querySelector(".message-content-textarea");
+                        const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
                         const newTextContent = textarea.value;
+                        const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
+                        let newToolCalls = null;
+
+                        // Parse tool calls from individual sections
+                        const toolCallSections = container.querySelectorAll(".edit-tool-call-section");
+                        if (toolCallSections.length > 0) {
+                            newToolCalls = [];
+                            for (const section of toolCallSections) {
+                                const toolCallId = section.dataset.toolCallId;
+                                const typeSelect = section.querySelector(".edit-tool-call-type-select");
+                                const functionTextarea = section.querySelector(".message-tool-call-function-textarea");
+                                
+                                const toolCallType = typeSelect?.value || "function";
+                                let functionObj;
+                                try {
+                                    functionObj = JSON.parse(functionTextarea.value);
+                                } catch (e) {
+                                    console.error("[EDIT-SAVE] Error parsing tool call function JSON:", e);
+                                    showError(`Invalid tool call function JSON: ${e.message}`);
+                                    throw e;
+                                }
+
+                                newToolCalls.push({
+                                    id: toolCallId,
+                                    type: toolCallType,
+                                    function: functionObj
+                                });
+                            }
+                        }
 
                         if (messageId && newTextContent !== undefined) {
                             // Reconstruct content properly - _originalContent is always an array now
@@ -1716,12 +1967,14 @@ class ChatRenderer {
 
                             console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
                                 textContent: newTextContent,
+                                reasoningContent: newReasoningContent,
+                                toolCallsCount: newToolCalls?.length || 0,
                                 hasFiles: container._editDocuments?.length > 0,
                                 fileCount: container._editDocuments?.length || 0,
                                 finalContent: typeof finalContent === "string" ? "string" : "multimodal"
                             });
 
-                            return editMessage(messageId, finalContent);
+                            return editMessage(messageId, finalContent, newReasoningContent, newToolCalls);
                         }
                         return null;
                     })
