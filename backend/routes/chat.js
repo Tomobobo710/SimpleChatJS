@@ -459,7 +459,7 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
         log(`[TURN-MESSAGES] Getting messages for turn ${turnNum} in chat ${chatId}`);
         const stmt = db.prepare(`
             SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
-                   edit_count, edited_at, reasoning, original_content
+                   edit_count, edited_at, reasoning, original_content, tool_calls
             FROM messages 
             WHERE chat_id = ? AND turn_number = ? 
             ORDER BY timestamp ASC
@@ -482,9 +482,20 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
                 }
             }
 
+            // Parse tool_calls if present
+            let toolCalls = null;
+            if (msg.tool_calls) {
+                try {
+                    toolCalls = JSON.parse(msg.tool_calls);
+                } catch (e) {
+                    toolCalls = null;
+                }
+            }
+
             return {
                 ...msg,
                 content: processedContent,
+                tool_calls: toolCalls,
                 edit_count: msg.edit_count || 0
             };
         });
@@ -517,7 +528,7 @@ router.post("/chat/cancel/:requestId", (req, res) => {
 router.patch("/message/:id", async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
-        const { content, original_content, file_metadata, reasoning } = req.body;
+        const { content, original_content, file_metadata, reasoning, tool_calls } = req.body;
 
         if (isNaN(messageId)) {
             return res.status(400).json({ error: "Invalid message ID" });
@@ -544,6 +555,7 @@ router.patch("/message/:id", async (req, res) => {
                 original_content = ?,
                 file_metadata = ?,
                 reasoning = ?,
+                tool_calls = ?,
                 edit_count = ?, 
                 edited_at = CURRENT_TIMESTAMP 
             WHERE id = ?
@@ -551,11 +563,14 @@ router.patch("/message/:id", async (req, res) => {
         const { serializeMessageForDb } = require("../utils/messageConversions");
 
         const serialized = serializeMessageForDb({ content, original_content, file_metadata });
+        const toolCallsJson = tool_calls ? JSON.stringify(tool_calls) : null;
+        
         const result = updateStmt.run(
             serialized.content,
             serialized.originalContent,
             serialized.fileMetadata,
             reasoning || null,
+            toolCallsJson,
             newEditCount,
             messageId
         );

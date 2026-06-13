@@ -1615,6 +1615,27 @@ class ChatRenderer {
 
             messageContainer.appendChild(contentSection);
 
+            // Add tool calls section if message has tool calls (AFTER content)
+            if (message.tool_calls && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+                const toolCallsSection = document.createElement("div");
+                toolCallsSection.className = "edit-content-section";
+
+                const toolCallsLabel = document.createElement("label");
+                toolCallsLabel.className = "edit-content-label";
+                toolCallsLabel.textContent = `Tool Calls (${message.tool_calls.length}):`;
+                toolCallsSection.appendChild(toolCallsLabel);
+
+                const toolCallsJsonText = JSON.stringify(message.tool_calls, null, 2);
+                const toolCallsTextarea = document.createElement("textarea");
+                toolCallsTextarea.className = "message-tool-calls-textarea";
+                toolCallsTextarea.value = toolCallsJsonText;
+                toolCallsTextarea.rows = Math.max(5, toolCallsJsonText.split("\n").length + 1);
+                toolCallsTextarea.placeholder = "Edit tool calls (JSON format)";
+                toolCallsSection.appendChild(toolCallsTextarea);
+
+                messageContainer.appendChild(toolCallsSection);
+            }
+
             // Store original content structure for reconstruction
             // Ensure _originalContent is always an array for consistent handling
             if (Array.isArray(parsedContent)) {
@@ -1704,8 +1725,21 @@ class ChatRenderer {
                         const messageId = container.dataset.messageId;
                         const textarea = container.querySelector(".message-content-textarea");
                         const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
+                        const toolCallsTextarea = container.querySelector(".message-tool-calls-textarea");
                         const newTextContent = textarea.value;
                         const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
+                        let newToolCalls = null;
+
+                        // Parse tool calls if present
+                        if (toolCallsTextarea) {
+                            try {
+                                newToolCalls = JSON.parse(toolCallsTextarea.value);
+                            } catch (e) {
+                                console.error("[EDIT-SAVE] Error parsing tool calls JSON:", e);
+                                showError(`Invalid tool calls JSON: ${e.message}`);
+                                throw e;
+                            }
+                        }
 
                         if (messageId && newTextContent !== undefined) {
                             // Reconstruct content properly - _originalContent is always an array now
@@ -1750,12 +1784,13 @@ class ChatRenderer {
                             console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
                                 textContent: newTextContent,
                                 reasoningContent: newReasoningContent,
+                                toolCallsCount: newToolCalls?.length || 0,
                                 hasFiles: container._editDocuments?.length > 0,
                                 fileCount: container._editDocuments?.length || 0,
                                 finalContent: typeof finalContent === "string" ? "string" : "multimodal"
                             });
 
-                            return editMessage(messageId, finalContent, newReasoningContent);
+                            return editMessage(messageId, finalContent, newReasoningContent, newToolCalls);
                         }
                         return null;
                     })

@@ -359,6 +359,59 @@
     resize: vertical;
 }
 
+.message-tool-calls-textarea {
+    width: 100%;
+    min-height: 150px;
+    background: #1a1a1a;
+    color: #fff;
+    border: 1px solid #666;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.edit-tool-calls-display {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.edit-tool-call-item {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.edit-tool-call-header {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #444;
+    color: #aaa;
+    font-size: 13px;
+}
+
+.edit-tool-call-id {
+    color: #888;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.edit-tool-call-args {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 3px;
+    padding: 8px;
+    margin: 0;
+    font-size: 12px;
+    color: #ccc;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
 .edit-buttons {
     display: flex;
     gap: 10px;

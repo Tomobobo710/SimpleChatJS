@@ -608,7 +608,7 @@ async function getTurnMessages(chatId, turnNumber) {
     }
 }
 // Edit message content
-async function editMessage(messageId, newContent, newReasoning = null) {
+async function editMessage(messageId, newContent, newReasoning = null, newToolCalls = null) {
     try {
         // Build request data exactly like saveCompleteMessage
         const requestData = {
@@ -618,6 +618,11 @@ async function editMessage(messageId, newContent, newReasoning = null) {
         // Add reasoning if provided
         if (newReasoning) {
             requestData.reasoning = newReasoning;
+        }
+
+        // Add tool_calls if provided
+        if (newToolCalls) {
+            requestData.tool_calls = newToolCalls;
         }
 
         // Add file handling fields if content is multimodal (like saveCompleteMessage does)
