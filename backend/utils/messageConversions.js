@@ -46,7 +46,13 @@ function parseDbRowToMessage(row, options = {}) {
         parent_turn_id: row.parent_turn_id,
         edit_count: row.edit_count ?? 0,
         edited_at: row.edited_at,
+        active_edit_version: row.active_edit_version ?? 0,
     };
+
+    // Edit history (JSON array)
+    if (row.edit_history) {
+        msg.edit_history = safeJsonParse(row.edit_history, "edit_history") ?? [];
+    }
 
     // Tool fields (always parsed the same way, present in all three readers)
     if (row.tool_calls) {

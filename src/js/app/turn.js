@@ -98,6 +98,7 @@ class Turn {
                 debugData: responseRto.debugData,
                 responseDebugData: this.responseDebugData,
                 editCount: responseRto.editCount,
+                activeEditVersion: responseRto.activeEditVersion,
                 dropdownStates: responseRto.dropdownStates,
             });
         }
@@ -125,6 +126,7 @@ class Turn {
                 debugData: errorMsg.debugData,
                 responseDebugData: this.responseDebugData,
                 editCount: errorMsg.editCount,
+                activeEditVersion: errorMsg.activeEditVersion,
             });
         }
 
@@ -149,6 +151,7 @@ class Turn {
             debugData: null,
             responseDebugData: this.responseDebugData,
             editCount: 0,
+            activeEditVersion: 0,
         });
     }
 
@@ -171,6 +174,7 @@ class Turn {
                 parentTurnId: this.parentTurnId,
                 debugData: primaryMessage.debugData,
                 editCount: primaryMessage.editCount,
+                activeEditVersion: primaryMessage.activeEditVersion,
             });
         }
 
@@ -262,8 +266,9 @@ class Turn {
             parentTurnId: this.parentTurnId,
             debugData: primary?.debugData || null,
             responseDebugData: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
-            turnMessages: this.messages.map(m => ({ role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName })),
+            turnMessages: this.messages.map(m => ({ id: m.id, role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName })),
             editCount: primary.editCount,
+            activeEditVersion: primary.activeEditVersion,
         });
     }
 }

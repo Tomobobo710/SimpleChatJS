@@ -26,6 +26,16 @@ class Message {
         }
         this.editCount = data.edit_count ?? 0;
         this.editedAt = data.edited_at ?? null;
+        this.activeEditVersion = data.active_edit_version ?? 0;
+        
+        // Parse editHistory if it's a string (from DB)
+        const rawEditHistory = data.edit_history ?? null;
+        if (rawEditHistory && typeof rawEditHistory === 'string') {
+            try { this.editHistory = JSON.parse(rawEditHistory); }
+            catch (_) { this.editHistory = []; }
+        } else {
+            this.editHistory = Array.isArray(rawEditHistory) ? rawEditHistory : [];
+        }
     }
 
     isUser() {
@@ -79,6 +89,8 @@ class Message {
             debug_data: parsedDebugData,
             edit_count: data.edit_count || 0,
             edited_at: data.edited_at ?? null,
+            active_edit_version: data.active_edit_version ?? 0,
+            edit_history: data.edit_history ?? null,
         });
     }
 

@@ -44,8 +44,47 @@
     font-size: 9px;
     color: #aaa;
     font-style: italic;
-    margin-left: 8px;
+    align-self: flex-end;
     opacity: 0.7;
+}
+
+/* Edit version indicator with navigation buttons */
+.edit-version-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #aaa;
+    align-self: flex-end;
+    opacity: 0.8;
+}
+
+.edit-nav-btn {
+    background: transparent;
+    border: 1px solid #666;
+    color: #aaa;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: bold;
+}
+
+.edit-nav-btn:hover {
+    background: #2a2a2a;
+    border-color: #888;
+    color: #fff;
+}
+
+.edit-nav-btn:active {
+    background: #1a1a1a;
+}
+
+.edit-version-label {
+    font-style: italic;
+    font-weight: 500;
+    padding: 0 4px;
 }
 
 /* Turn in editing state */
@@ -166,12 +205,6 @@
 .message-id {
     color: #666;
     font-family: monospace;
-    font-size: 9px;
-}
-
-.edit-indicator {
-    color: #28a745;
-    font-style: italic;
     font-size: 9px;
 }
 

@@ -62,6 +62,8 @@ function initializeDatabase() {
                 original_content TEXT,
                 file_metadata TEXT,
                 error_state TEXT DEFAULT NULL,
+                edit_history TEXT DEFAULT '[]',
+                active_edit_version INTEGER DEFAULT 0,
                 FOREIGN KEY (chat_id) REFERENCES chats (id)
             )`);
 

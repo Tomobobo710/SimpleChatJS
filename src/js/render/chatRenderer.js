@@ -22,6 +22,7 @@ class ChatRenderer {
                 turnId,
                 parentTurnId,
                 editCount,
+                activeEditVersion = 0,
                 editedAt
             } = turnData;
 
@@ -132,7 +133,12 @@ class ChatRenderer {
             // times" and persists across reloads/branch switches because
             // it's read from the DB on every render.
             if (editCount > 0) {
-                this.addEditIndicator(turnDiv, editCount);
+                // Find the message ID from turnMessages (contains all message data including id)
+                const messageWithId = turnMessages && Array.isArray(turnMessages) 
+                    ? turnMessages.find(m => m.id) 
+                    : null;
+                const messageId = messageWithId?.id;
+                this.addEditIndicator(turnDiv, editCount, activeEditVersion, messageId);
             }
 
             this.container.appendChild(turnDiv);
@@ -910,8 +916,8 @@ class ChatRenderer {
             turnDiv.classList.remove("editing");
 
             // Show edit indicator if this was edited
-            if (result.edit_count > 1) {
-                this.addEditIndicator(turnDiv, result.edit_count);
+            if (result.edit_count > 0) {
+                this.addEditIndicator(turnDiv, result.edit_count, result.active_edit_version, messageId);
             }
         } catch (error) {
             console.error("[EDIT] Error saving message:", error);
@@ -929,24 +935,119 @@ class ChatRenderer {
         turnDiv.classList.remove("editing");
     }
 
-    // Add visual indicator that message was edited
-    addEditIndicator(turnDiv, editCount) {
+    // Add visual indicator that message was edited with version navigation
+    addEditIndicator(turnDiv, editCount, activeEditVersion = 0, messageId = null) {
         // Remove existing indicator
-        const existing = turnDiv.querySelector(".edit-indicator");
+        const existing = turnDiv.querySelector(".edit-version-indicator");
         if (existing) {
             existing.remove();
         }
 
-        // Add new indicator
-        const indicator = document.createElement("span");
-        indicator.className = "edit-indicator";
-        indicator.textContent = `(edited ${editCount}x)`;
-        indicator.title = "This message has been edited";
+        // Don't show anything if no edits
+        if (!editCount || editCount === 0) {
+            return;
+        }
+
+        // Get messageId if not provided
+        if (!messageId) {
+            const messageElement = turnDiv.querySelector('[data-message-id]');
+            messageId = messageElement ? messageElement.dataset.messageId : null;
+        }
+        
+        if (!messageId) {
+            console.warn("[EDIT-INDICATOR] Could not find messageId for turn");
+            return;
+        }
+
+        // Create version indicator container
+        const indicator = document.createElement("div");
+        indicator.className = "edit-version-indicator";
+
+        // Determine what to display
+        let label;
+        let showPrev = false;
+        let showNext = false;
+
+        if (activeEditVersion === 0) {
+            // Viewing original
+            label = "Original";
+            showPrev = false;
+            showNext = editCount > 0;
+        } else if (activeEditVersion === editCount) {
+            // Viewing latest edit
+            label = `Edit ${activeEditVersion}`;
+            showPrev = true;
+            showNext = false;
+        } else {
+            // Viewing middle edit
+            label = `Edit ${activeEditVersion}`;
+            showPrev = true;
+            showNext = true;
+        }
+
+        // Build indicator HTML
+        let html = '';
+        
+        if (showPrev) {
+            html += `<button class="edit-nav-btn edit-nav-prev" data-message-id="${messageId}" data-target-version="${activeEditVersion - 1}" title="Previous version">←</button>`;
+        }
+
+        html += `<span class="edit-version-label">${label}</span>`;
+
+        if (showNext) {
+            html += `<button class="edit-nav-btn edit-nav-next" data-message-id="${messageId}" data-target-version="${activeEditVersion + 1}" title="Next version">→</button>`;
+        }
+
+        indicator.innerHTML = html;
+
+        // Add event listeners to buttons
+        indicator.querySelectorAll('.edit-nav-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const btnMessageId = btn.dataset.messageId;
+                const targetVersion = parseInt(btn.dataset.targetVersion, 10);
+                await this.switchMessageVersion(btnMessageId, targetVersion);
+            });
+        });
+
+        indicator.title = "Edit version navigation";
 
         // Insert after the turn content
         const turnContent = turnDiv.querySelector(".turn-content");
         if (turnContent) {
             turnContent.appendChild(indicator);
+        }
+    }
+
+    // Switch message to different edit version
+    async switchMessageVersion(messageId, targetVersion) {
+        try {
+            logger.info(`[VERSION-SWITCH-START] Attempting to switch message ${messageId} to version ${targetVersion}`);
+            
+            const response = await fetch(`/api/message/${messageId}/switch-version`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targetVersion })
+            });
+
+            logger.info(`[VERSION-SWITCH] Response status: ${response.status}`);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`[VERSION-SWITCH] HTTP ${response.status}: ${errorText}`, true);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const result = await response.json();
+            logger.info(`[VERSION-SWITCH] Server response: `, result);
+
+            logger.info(`[VERSION-SWITCH] Switched message ${messageId} to version ${targetVersion}`);
+            
+            // Reload entire chat to show the new version
+            await loadChatHistory(currentChatId);
+        } catch (error) {
+            logger.error(`[VERSION-SWITCH] Error: ${error.message}`, true);
+            showError(`Error switching version: ${error.message}`);
         }
     }
 

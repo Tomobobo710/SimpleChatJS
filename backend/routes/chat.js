@@ -192,7 +192,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Build query with optional error filtering
         let query = `
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state
+            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history
             FROM messages
             WHERE chat_id = ?
         `;
@@ -459,7 +459,7 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
         log(`[TURN-MESSAGES] Getting messages for turn ${turnNum} in chat ${chatId}`);
         const stmt = db.prepare(`
             SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
-                   edit_count, edited_at, reasoning, original_content, tool_calls
+                   edit_count, edited_at, reasoning, original_content, tool_calls, edit_history, active_edit_version
             FROM messages 
             WHERE chat_id = ? AND turn_number = ? 
             ORDER BY timestamp ASC
@@ -492,10 +492,21 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
                 }
             }
 
+            // Parse edit_history if present
+            let editHistory = null;
+            if (msg.edit_history) {
+                try {
+                    editHistory = JSON.parse(msg.edit_history);
+                } catch (e) {
+                    editHistory = null;
+                }
+            }
+
             return {
                 ...msg,
                 content: processedContent,
                 tool_calls: toolCalls,
+                edit_history: editHistory,
                 edit_count: msg.edit_count || 0
             };
         });
@@ -536,7 +547,7 @@ router.patch("/message/:id", async (req, res) => {
 
         // Find the message
         const getMessageStmt = db.prepare(`
-            SELECT content, edit_count, edited_at 
+            SELECT content, edit_count, edited_at, reasoning, tool_calls, edit_history, active_edit_version
             FROM messages 
             WHERE id = ?
         `);
@@ -546,9 +557,52 @@ router.patch("/message/:id", async (req, res) => {
             return res.status(404).json({ error: "Message not found" });
         }
 
-        const newEditCount = (currentMessage.edit_count || 0) + 1;
+        // Check for actual changes by comparing with currently active version
+        const currentContent = content !== undefined ? content : currentMessage.content;
+        const currentReasoning = reasoning !== undefined ? reasoning : currentMessage.reasoning;
+        const currentToolCalls = tool_calls !== undefined ? tool_calls : currentMessage.tool_calls;
 
-        log(`[EDIT] Updating message ${messageId}`);
+        const hasChanges = 
+            currentContent !== currentMessage.content ||
+            currentReasoning !== currentMessage.reasoning ||
+            currentToolCalls !== currentMessage.tool_calls;
+
+        if (!hasChanges) {
+            // No changes detected, return current state without saving
+            log(`[EDIT] No changes detected for message ${messageId}, skipping save`);
+            return res.json({
+                success: true,
+                message_id: messageId,
+                edit_count: currentMessage.edit_count,
+                edited_at: currentMessage.edited_at,
+                skipped: true
+            });
+        }
+
+        // Archive current version to edit history
+        let editHistory = [];
+        try {
+            editHistory = JSON.parse(currentMessage.edit_history || '[]');
+        } catch (e) {
+            log(`[EDIT] Error parsing edit_history for message ${messageId}, initializing empty`);
+            editHistory = [];
+        }
+
+        // Create edit entry for current version
+        const editEntry = {
+            version: currentMessage.edit_count, // Store the version number
+            content: currentMessage.content,
+            reasoning: currentMessage.reasoning,
+            tool_calls: currentMessage.tool_calls,
+            timestamp: new Date().toISOString()
+        };
+
+        editHistory.push(editEntry);
+        const newEditCount = (currentMessage.edit_count || 0) + 1;
+        const newActiveEditVersion = newEditCount;
+
+        log(`[EDIT] Updating message ${messageId}, creating version ${newEditCount}`);
+        
         const updateStmt = db.prepare(`
             UPDATE messages 
             SET content = ?, 
@@ -557,6 +611,8 @@ router.patch("/message/:id", async (req, res) => {
                 reasoning = ?,
                 tool_calls = ?,
                 edit_count = ?, 
+                active_edit_version = ?,
+                edit_history = ?,
                 edited_at = CURRENT_TIMESTAMP 
             WHERE id = ?
         `);
@@ -564,6 +620,7 @@ router.patch("/message/:id", async (req, res) => {
 
         const serialized = serializeMessageForDb({ content, original_content, file_metadata });
         const toolCallsJson = tool_calls ? JSON.stringify(tool_calls) : null;
+        const editHistoryJson = JSON.stringify(editHistory);
         
         const result = updateStmt.run(
             serialized.content,
@@ -572,6 +629,8 @@ router.patch("/message/:id", async (req, res) => {
             reasoning || null,
             toolCallsJson,
             newEditCount,
+            newActiveEditVersion,
+            editHistoryJson,
             messageId
         );
 
@@ -585,6 +644,7 @@ router.patch("/message/:id", async (req, res) => {
             success: true,
             message_id: messageId,
             edit_count: newEditCount,
+            active_edit_version: newActiveEditVersion,
             edited_at: new Date().toISOString()
         });
     } catch (error) {
@@ -604,7 +664,7 @@ router.get("/message/:id", (req, res) => {
 
         const stmt = db.prepare(`
             SELECT id, chat_id, role, content, original_content, 
-                   edit_count, edited_at, timestamp, turn_number 
+                   edit_count, edited_at, timestamp, turn_number, edit_history, active_edit_version
             FROM messages WHERE id = ?
         `);
         const message = stmt.get(messageId);
@@ -616,6 +676,143 @@ router.get("/message/:id", (req, res) => {
         res.json(message);
     } catch (error) {
         log("[GET-MESSAGE] Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Switch to a different edit version
+router.post("/message/:id/switch-version", async (req, res) => {
+    try {
+        const messageId = parseInt(req.params.id, 10);
+        const { targetVersion } = req.body;
+
+        if (isNaN(messageId)) {
+            return res.status(400).json({ error: "Invalid message ID" });
+        }
+
+        if (targetVersion === undefined || targetVersion === null) {
+            return res.status(400).json({ error: "targetVersion is required" });
+        }
+
+        const targetVer = parseInt(targetVersion, 10);
+        if (isNaN(targetVer) || targetVer < 0) {
+            return res.status(400).json({ error: "targetVersion must be a non-negative integer" });
+        }
+
+        // Get current message
+        const getMessageStmt = db.prepare(`
+            SELECT content, reasoning, tool_calls, edit_count, active_edit_version, edit_history
+            FROM messages 
+            WHERE id = ?
+        `);
+        const currentMessage = getMessageStmt.get(messageId);
+
+        if (!currentMessage) {
+            return res.status(404).json({ error: "Message not found" });
+        }
+
+        // Validate target version
+        if (targetVer > currentMessage.edit_count) {
+            return res.status(400).json({ error: `Target version ${targetVer} exceeds edit count ${currentMessage.edit_count}` });
+        }
+
+        // Parse edit history
+        let editHistory = [];
+        try {
+            editHistory = JSON.parse(currentMessage.edit_history || '[]');
+        } catch (e) {
+            log(`[VERSION-SWITCH] Error parsing edit_history for message ${messageId}`);
+            return res.status(500).json({ error: "Corrupted edit history" });
+        }
+
+        // Determine source and target content
+        let targetContent, targetReasoning, targetToolCalls;
+
+        if (targetVer === 0) {
+            // Need to reconstruct original from edit_history
+            if (editHistory.length > 0) {
+                const firstEdit = editHistory[0];
+                targetContent = firstEdit.content;
+                targetReasoning = firstEdit.reasoning;
+                targetToolCalls = firstEdit.tool_calls;
+            } else {
+                // No history means we're already at original
+                log(`[VERSION-SWITCH] No history for message ${messageId}, already at original`);
+                return res.json({
+                    success: true,
+                    message_id: messageId,
+                    active_edit_version: 0,
+                    skipped: true
+                });
+            }
+        } else {
+            // Get from edit history (version N is at index N-1)
+            if (targetVer - 1 >= editHistory.length) {
+                return res.status(400).json({ error: "Target version not found in history" });
+            }
+            const targetEdit = editHistory[targetVer - 1];
+            targetContent = targetEdit.content;
+            targetReasoning = targetEdit.reasoning;
+            targetToolCalls = targetEdit.tool_calls;
+        }
+
+        // Archive current version to edit history
+        if (currentMessage.active_edit_version !== targetVer) {
+            const currentEditEntry = {
+                version: currentMessage.active_edit_version,
+                content: currentMessage.content,
+                reasoning: currentMessage.reasoning,
+                tool_calls: currentMessage.tool_calls,
+                timestamp: new Date().toISOString()
+            };
+
+            // Update edit history with current version
+            if (currentMessage.active_edit_version === 0) {
+                // Moving from original, need to insert at beginning
+                editHistory.unshift(currentEditEntry);
+            } else {
+                // Update existing version in history
+                editHistory[currentMessage.active_edit_version - 1] = currentEditEntry;
+            }
+        }
+
+        // Update message with target version
+        const updateStmt = db.prepare(`
+            UPDATE messages 
+            SET content = ?, 
+                reasoning = ?,
+                tool_calls = ?,
+                active_edit_version = ?,
+                edit_history = ?
+            WHERE id = ?
+        `);
+
+        const editHistoryJson = JSON.stringify(editHistory);
+        const result = updateStmt.run(
+            targetContent,
+            targetReasoning,
+            targetToolCalls,
+            targetVer,
+            editHistoryJson,
+            messageId
+        );
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: "Message not found" });
+        }
+
+        log(`[VERSION-SWITCH] Switched message ${messageId} to version ${targetVer}`);
+
+        res.json({
+            success: true,
+            message_id: messageId,
+            active_edit_version: targetVer,
+            content: targetContent,
+            reasoning: targetReasoning,
+            tool_calls: targetToolCalls
+        });
+    } catch (error) {
+        log("[VERSION-SWITCH] Error switching version:", error);
         res.status(500).json({ error: error.message });
     }
 });
