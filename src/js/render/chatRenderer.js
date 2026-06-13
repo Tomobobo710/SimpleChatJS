@@ -962,8 +962,8 @@ class ChatRenderer {
                 return null;
             }
 
-            // Get current chat history to find the message
-            const response = await fetch(`${apiBase}/api/chat/${chatId}/history`);
+            // Get current chat history to find the message (exclude errors)
+            const response = await fetch(`${apiBase}/api/chat/${chatId}/history-complete?includeErrors=false`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
