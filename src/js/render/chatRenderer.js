@@ -401,21 +401,22 @@ class ChatRenderer {
             try {
                 processedContent = JSON.parse(content);
             } catch (e) {
-                // If parsing fails, treat as regular text
                 processedContent = content;
             }
         }
 
+        // Strip trailing newlines from chat content so they don't render as empty <br>s
+        const stripTrailingNewlines = (str) => typeof str === 'string' ? str.replace(/\n+$/, '') : str;
+
         // Handle multimodal content (array) or simple text content (string)
         if (Array.isArray(processedContent)) {
-            // Multimodal content - render each part
             processedContent.forEach((part) => {
                 switch (part.type) {
                     case "text":
                         if (part.text !== undefined && part.text !== null && part.text !== "") {
                             const textDiv = document.createElement("div");
                             textDiv.className = "content-part text-part";
-                            textDiv.innerHTML = formatMessage(escapeHtml(part.text));
+                            textDiv.innerHTML = formatMessage(escapeHtml(stripTrailingNewlines(part.text)));
                             div.appendChild(textDiv);
                         }
                         break;
@@ -490,7 +491,7 @@ class ChatRenderer {
             });
         } else {
             // Simple text content (backward compatible)
-            div.innerHTML = formatMessage(escapeHtml(String(processedContent || "")));
+            div.innerHTML = formatMessage(escapeHtml(stripTrailingNewlines(String(processedContent || ""))));
         }
 
         return div;

@@ -25,9 +25,13 @@ class StreamingMessageProcessor {
     // ===== BACKWARD COMPAT: Loading from database =====
     // For loading messages from database, we may need to reconstruct from raw content
     addChunk(chunk) {
-        // Legacy method for loading content from database
-        // Just accumulate the content
         this._chatContent += chunk;
+        const lastSeq = this._blockSequence[this._blockSequence.length - 1];
+        if (lastSeq && lastSeq.type === 'chat') {
+            lastSeq.content += chunk;
+        } else {
+            this._blockSequence.push({ type: 'chat', content: '' + chunk });
+        }
     }
 
     // Load raw reasoning data from database and convert to reasoning blocks
@@ -102,6 +106,12 @@ class StreamingMessageProcessor {
             this._activeReasoningBlock = null;
         }
         this._chatContent += text;
+        const lastSeq = this._blockSequence[this._blockSequence.length - 1];
+        if (lastSeq && lastSeq.type === 'chat') {
+            lastSeq.content += text;
+        } else {
+            this._blockSequence.push({ type: 'chat', content: '' + text });
+        }
     }
 
     // Handle tool events
@@ -194,22 +204,18 @@ class StreamingMessageProcessor {
     getBlocks() {
         const blocks = [];
 
-        // Build blocks in arrival sequence - this preserves the order of thinking, content, and tool blocks
         for (const item of this._blockSequence) {
             if (item.type === 'thinking') {
                 blocks.push(item.ref);
             } else if (item.type === 'tool') {
                 blocks.push(item.ref);
+            } else if (item.type === 'chat' && item.content.trim()) {
+                blocks.push(new Block({
+                    type: 'chat',
+                    content: item.content,
+                    metadata: {}
+                }));
             }
-        }
-
-        // Add accumulated chat content as a single block at the end (if any)
-        if (this._chatContent) {
-            blocks.push(new Block({
-                type: 'chat',
-                content: this._chatContent,
-                metadata: {}
-            }));
         }
 
         return blocks;

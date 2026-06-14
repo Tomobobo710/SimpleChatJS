@@ -186,12 +186,11 @@ class DebugPanel {
                 }
 
                 // Content
-                if (resp.content) {
-                    const preview = resp.content.length > 500
-                        ? resp.content.substring(0, 500) + '...'
-                        : resp.content;
-                    content += this.createDropdown('Content', preview, false, 'json');
-                }
+                const contentText = resp.content || '';
+                const preview = contentText.length > 500
+                    ? contentText.substring(0, 500) + '...'
+                    : contentText;
+                content += this.createDropdown('Content', preview || '(empty)', false, 'json');
 
                 // Tool calls with results
                 if (resp.toolCalls && resp.toolCalls.length > 0) {

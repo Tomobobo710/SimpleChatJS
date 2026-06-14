@@ -65,7 +65,69 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
     }
     
     if (resultContent) {
-        formattedContent += `<div class="tool-section"><div class="tool-section-title">Result</div><pre class="tool-content">${escapeHtml(resultContent)}</pre></div>`;
+        let resultDisplay = resultContent;
+        try {
+            let parsed = JSON.parse(resultContent);
+            
+            // If content is a JSON string, parse it too
+            if (parsed.content && typeof parsed.content === 'string') {
+                try {
+                    parsed.content = JSON.parse(parsed.content);
+                } catch (e) {
+                    // Keep as string if not valid JSON
+                }
+            }
+            
+            // Deep unescape: convert escape sequences in all string values
+            const deepUnescape = (obj) => {
+                if (typeof obj === 'string') {
+                    return obj
+                        .replace(/\\n/g, '\n')
+                        .replace(/\\t/g, '\t')
+                        .replace(/\\r/g, '\r');
+                } else if (Array.isArray(obj)) {
+                    return obj.map(deepUnescape);
+                } else if (obj !== null && typeof obj === 'object') {
+                    const result = {};
+                    for (const [key, value] of Object.entries(obj)) {
+                        result[key] = deepUnescape(value);
+                    }
+                    return result;
+                }
+                return obj;
+            };
+            
+            parsed = deepUnescape(parsed);
+            
+            // Format as readable text WITHOUT re-escaping
+            const formatValue = (val, indent = 0) => {
+                const spaces = '  '.repeat(indent);
+                const nextSpaces = '  '.repeat(indent + 1);
+                if (typeof val === 'string') {
+                    // If string contains newlines, indent each line after the first
+                    if (val.includes('\n')) {
+                        const lines = val.split('\n');
+                        return '"' + lines.join('\n' + nextSpaces) + '"';
+                    }
+                    return `"${val}"`;
+                } else if (Array.isArray(val)) {
+                    if (val.length === 0) return '[]';
+                    return '[\n' + val.map(v => nextSpaces + formatValue(v, indent + 1)).join(',\n') + '\n' + spaces + ']';
+                } else if (val !== null && typeof val === 'object') {
+                    const keys = Object.keys(val);
+                    if (keys.length === 0) return '{}';
+                    return '{\n' + keys.map(k => nextSpaces + '"' + k + '": ' + formatValue(val[k], indent + 1)).join(',\n') + '\n' + spaces + '}';
+                } else {
+                    return String(val);
+                }
+            };
+            
+            resultDisplay = formatValue(parsed, 0);
+        } catch (e) {
+            // Not valid JSON, use as-is
+            resultDisplay = resultContent;
+        }
+        formattedContent += `<div class="tool-section"><div class="tool-section-title">Result</div><pre class="tool-content">${escapeHtml(resultDisplay)}</pre></div>`;
     }
     
     const result = formattedContent || '<em>No tool output available</em>';
