@@ -9,6 +9,26 @@
 // Entry exists while a stream is active for that chat; deleted on completion/error.
 const activeStreamState = new Map();
 
+// Show/hide a streaming spinner on the sidebar chat item for active streams.
+function updateStreamIndicator(chatId, active) {
+    const chatItem = document.querySelector(`[data-chat-id="${chatId}"]`);
+    if (!chatItem) return;
+    let spinner = chatItem.querySelector(".stream-spinner");
+    if (active) {
+        if (!spinner) {
+            spinner = document.createElement("span");
+            spinner.className = "stream-spinner";
+            const deleteBtn = chatItem.querySelector(".chat-delete-btn");
+            if (deleteBtn) {
+                deleteBtn.parentNode.insertBefore(spinner, deleteBtn);
+            }
+        }
+        spinner.style.display = "";
+    } else if (spinner) {
+        spinner.style.display = "none";
+    }
+}
+
 function generateRequestId() {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
@@ -55,6 +75,7 @@ async function streamAndRenderResponse({
 
     const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null };
     activeStreamState.set(activeChatId, streamEntry);
+    updateStreamIndicator(activeChatId, true);
 
     let toolEventSource = null;
     try {
@@ -98,9 +119,10 @@ async function streamAndRenderResponse({
         if (toolEventSource) {
                 toolEventSource.close();
             }
-            activeStreamState.delete(activeChatId);
-            streamEntry.tempContainer.remove();
-            streamEntry.responseTurnDiv.remove();
+        activeStreamState.delete(activeChatId);
+        updateStreamIndicator(activeChatId, false);
+        streamEntry.tempContainer.remove();
+        streamEntry.responseTurnDiv.remove();
         if (onError && currentChatId === activeChatId) {
             try {
                 onError(err, processor, requestTurnInfo, savedResponseTurn);
@@ -202,6 +224,7 @@ async function streamAndRenderResponse({
             toolEventSource.close();
         }
         activeStreamState.delete(activeChatId);
+        updateStreamIndicator(activeChatId, false);
 
         // Build debug data array from DB
         // Always fetch from backend - it has the authoritative saved data
@@ -272,6 +295,7 @@ async function streamAndRenderResponse({
                 toolEventSource.close();
             }
             activeStreamState.delete(activeChatId);
+            updateStreamIndicator(activeChatId, false);
             streamEntry.tempContainer.remove();
             streamEntry.responseTurnDiv.remove();
             
