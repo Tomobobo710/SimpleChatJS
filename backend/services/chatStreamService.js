@@ -6,7 +6,8 @@ const http = require("http");
 const crypto = require("crypto");
 const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
-const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
+const { executeMCPTool, getAvailableToolsForChat, isMcpTool } = require("./mcpService");
+const simpleTools = require("./simpleToolsService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
 const { incrementTurnNumber, getTurnInfo, getCurrentTurnNumber } = require("./turnService");
@@ -764,7 +765,13 @@ async function executeToolCallsAndContinue(
 
         try {
             const toolArgs = JSON.parse(toolCall.function.arguments);
-            const toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
+
+            let toolResult;
+            if (isMcpTool(toolCall.function.name)) {
+                toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
+            } else {
+                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
+            }
 
             const toolMessage = {
                 role: "tool",
@@ -932,6 +939,22 @@ async function processChatRequest(req, res) {
         }
 
         const tools = getAvailableToolsForChat(enabled_tools);
+
+        // Merge SimpleTools definitions
+        const simpleConfig = simpleTools.loadConfig();
+        const simpleDefs = simpleTools.getToolDefinitions();
+        for (const def of simpleDefs) {
+            if (simpleTools.isToolEnabled(def.name, simpleConfig)) {
+                tools.push({
+                    type: 'function',
+                    function: {
+                        name: def.name,
+                        description: def.description,
+                        parameters: def.input_schema
+                    }
+                });
+            }
+        }
 
         const { generateRequestId, initializeToolEvents } = require("./toolEventService");
         const requestId = request_id || generateRequestId();

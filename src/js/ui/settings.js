@@ -95,6 +95,13 @@ async function loadSettingsIntoModal() {
         // Setup system prompt event handlers
         setupSystemPromptEventHandlers();
         
+        // Load SimpleTools config
+        const simpleConfig = await loadSimpleToolsConfig();
+        document.getElementById('st-read-file').checked = simpleConfig.read_file !== false;
+        document.getElementById('st-write-file').checked = simpleConfig.write_file !== false;
+        document.getElementById('st-edit').checked = simpleConfig.edit !== false;
+        document.getElementById('st-bash-run').checked = simpleConfig.bash_run !== false;
+
         // Fetch models - fail hard if this doesn't work
         await fetchAvailableModels(settings.apiUrl, settings.apiKey);
         
@@ -167,6 +174,15 @@ async function handleSaveSettings() {
         if (Object.keys(enabledTools).length > 0) {
             await saveEnabledToolsToBackend(enabledTools);
         }
+
+        // Save SimpleTools config
+        const simpleToolsConfig = {
+            read_file: document.getElementById('st-read-file').checked,
+            write_file: document.getElementById('st-write-file').checked,
+            edit: document.getElementById('st-edit').checked,
+            bash_run: document.getElementById('st-bash-run').checked
+        };
+        await saveSimpleToolsConfig(simpleToolsConfig);
 
         // Update cached settings immediately
         const currentSettings = window.cachedSettings();

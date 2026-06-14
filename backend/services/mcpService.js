@@ -272,6 +272,11 @@ function saveEnabledTools(tools) {
     }
 }
 
+// Check if a tool name exists in MCP tools
+function isMcpTool(toolName) {
+    return mcpTools.some(t => t.name === toolName);
+}
+
 // Get available tools for chat
 function getAvailableToolsForChat(enabled_tools) {
     let availableTools = [];
@@ -336,5 +341,6 @@ module.exports = {
     loadEnabledTools,
     saveEnabledTools,
     getAvailableToolsForChat,
+    isMcpTool,
     shutdownMcp
 };

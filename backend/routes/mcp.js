@@ -9,6 +9,7 @@ const {
     loadEnabledTools, 
     saveEnabledTools 
 } = require('../services/mcpService');
+const simpleToolsService = require('../services/simpleToolsService');
 
 const router = express.Router();
 
@@ -74,6 +75,21 @@ router.get('/enabled-tools', (req, res) => {
 // Save enabled tools
 router.post('/enabled-tools', (req, res) => {
     const result = saveEnabledTools(req.body);
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(500).json(result);
+    }
+});
+
+// SimpleTools config
+router.get('/simple-tools/config', (req, res) => {
+    const result = simpleToolsService.loadConfig();
+    res.json(result);
+});
+
+router.post('/simple-tools/config', (req, res) => {
+    const result = simpleToolsService.saveConfig(req.body);
     if (result.success) {
         res.json(result);
     } else {
