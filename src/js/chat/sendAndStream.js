@@ -20,7 +20,14 @@ function updateStreamIndicator(chatId, active) {
             spinner.className = "stream-spinner";
             const deleteBtn = chatItem.querySelector(".chat-delete-btn");
             if (deleteBtn) {
-                deleteBtn.parentNode.insertBefore(spinner, deleteBtn);
+                let actionsWrap = chatItem.querySelector(".chat-item-actions");
+                if (!actionsWrap) {
+                    actionsWrap = document.createElement("div");
+                    actionsWrap.className = "chat-item-actions";
+                    deleteBtn.parentNode.insertBefore(actionsWrap, deleteBtn);
+                    actionsWrap.appendChild(deleteBtn);
+                }
+                actionsWrap.insertBefore(spinner, deleteBtn);
             }
         }
         spinner.style.display = "";

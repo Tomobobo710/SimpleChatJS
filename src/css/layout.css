@@ -336,11 +336,16 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 12px;
+    padding: 6px 6px 6px 12px;
     background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
     border-radius: 0;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     min-height: 24px;
+}
+
+.chat-item-actions {
+    display: flex;
+    align-items: center;
 }
 
 .chat-item-datetime {
