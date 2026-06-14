@@ -160,6 +160,33 @@ function getEnabledToolsForServer(serverName, allTools) {
     return allTools.filter((tool) => isToolEnabled(serverName, tool));
 }
 
+// SimpleTools config
+async function loadSimpleToolsConfig() {
+    try {
+        const response = await fetch(`${window.location.origin}/api/simple-tools/config`);
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        logger.warn("Failed to load SimpleTools config:", error);
+    }
+    return { read_file: true, write_file: true, edit: true, bash_run: true };
+}
+
+async function saveSimpleToolsConfig(config) {
+    try {
+        const response = await fetch(`${window.location.origin}/api/simple-tools/config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config)
+        });
+        return response.ok;
+    } catch (error) {
+        logger.warn("Failed to save SimpleTools config:", error);
+        return false;
+    }
+}
+
 // Stream response reader
 async function* streamResponse(response) {
     const reader = response.body.getReader();

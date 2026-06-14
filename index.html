@@ -113,6 +113,7 @@
                 <div class="tab-navigation">
                     <button class="btn btn-tab active" data-tab="general">General</button>
                     <button class="btn btn-tab" data-tab="tokens">Tokens</button>
+                    <button class="btn btn-tab" data-tab="tools">Tools</button>
                     <button class="btn btn-tab" data-tab="mcp">MCP</button>
                     <button class="btn btn-tab" data-tab="debug">Debug</button>
                     <button class="btn btn-tab" data-tab="logging">Logging</button>
@@ -232,6 +233,44 @@
                     </div>
                 </div>
                 
+                <!-- Tools Tab -->
+                <div id="toolsTab" class="tab-content">
+                    <div class="settings-section">
+                        <h3>SimpleTools</h3>
+                        <p class="setting-description">Built-in tools available to the AI. These run natively without external servers.</p>
+                        <div class="simple-tools-list">
+                            <div class="simple-tool-item">
+                                <input type="checkbox" id="st-read-file" class="simple-tool-toggle" data-tool="read_file" checked>
+                                <div class="simple-tool-info">
+                                    <span class="simple-tool-name">read_file</span>
+                                    <span class="simple-tool-desc">Read a UTF-8 text file and return its content</span>
+                                </div>
+                            </div>
+                            <div class="simple-tool-item">
+                                <input type="checkbox" id="st-write-file" class="simple-tool-toggle" data-tool="write_file" checked>
+                                <div class="simple-tool-info">
+                                    <span class="simple-tool-name">write_file</span>
+                                    <span class="simple-tool-desc">Create or overwrite a file with given content</span>
+                                </div>
+                            </div>
+                            <div class="simple-tool-item">
+                                <input type="checkbox" id="st-edit" class="simple-tool-toggle" data-tool="edit" checked>
+                                <div class="simple-tool-info">
+                                    <span class="simple-tool-name">edit</span>
+                                    <span class="simple-tool-desc">Replace exact string in an existing file</span>
+                                </div>
+                            </div>
+                            <div class="simple-tool-item">
+                                <input type="checkbox" id="st-bash-run" class="simple-tool-toggle" data-tool="bash_run" checked>
+                                <div class="simple-tool-info">
+                                    <span class="simple-tool-name">bash_run</span>
+                                    <span class="simple-tool-desc">Run a shell command and return output</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="mcpTab" class="tab-content">
                     <div class="settings-section">
                         <div class="mcp-controls">
