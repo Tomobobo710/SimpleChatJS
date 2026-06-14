@@ -65,7 +65,8 @@ async function streamAndRenderResponse({
     container,
     requestTurnNumber,
     inputMethod,
-    onError = null
+    onError = null,
+    expectedParentTurnId = null
 }) {
     const activeChatId = currentChatId;
     const processor = new StreamingMessageProcessor();
@@ -80,7 +81,7 @@ async function streamAndRenderResponse({
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
 
-    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null };
+    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, parentTurnId: expectedParentTurnId };
     activeStreamState.set(activeChatId, streamEntry);
     updateStreamIndicator(activeChatId, true);
 
@@ -423,7 +424,8 @@ async function sendAndStream({
         container,
         requestTurnNumber,
         inputMethod,
-        onError
+        onError,
+        expectedParentTurnId: effectiveParentTurnId
     });
 
     const responseTurnInfo = savedResponseTurn
@@ -466,6 +468,18 @@ function reconnectStreaming(chatId) {
     if (ss.responseTurnId) {
         const existingTurn = turnsContainer.querySelector(`[data-turn-id="${ss.responseTurnId}"]`);
         if (existingTurn) existingTurn.remove();
+    }
+
+    // Remove any sibling response turns at the same parent level that
+    // belong to a different branch. This handles the retry case where
+    // loadChatHistory rendered the original response (the retry isn't in
+    // DB yet), and reconnectStreaming is creating a new streaming div for
+    // the retry — without this removal both branches would be visible.
+    if (ss.parentTurnId) {
+        const siblings = turnsContainer.querySelectorAll(`.response-turn[data-parent-turn-id="${ss.parentTurnId}"]`);
+        for (const sibling of siblings) {
+            sibling.remove();
+        }
     }
 
     const { processor } = ss;
