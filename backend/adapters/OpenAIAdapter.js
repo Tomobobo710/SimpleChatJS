@@ -118,6 +118,16 @@ class OpenAIAdapter extends BaseResponseAdapter {
                                     // Continue building arguments
                                     context.currentToolCall.function.arguments += normalizeArgsDelta(toolCall.function.arguments);
 
+                                    // Emit tool call arguments delta for incremental streaming
+                                    events.push({
+                                        type: 'tool_call_arguments_delta',
+                                        data: {
+                                            toolId: context.currentToolCall.id,
+                                            toolName: context.currentToolCall.function.name,
+                                            arguments: context.currentToolCall.function.arguments
+                                        }
+                                    });
+
                                     // Update the tool call in response
                                     const latestToolCall = response.getLatestToolCall();
                                     if (latestToolCall) {

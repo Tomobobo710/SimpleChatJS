@@ -124,6 +124,9 @@ class StreamingMessageProcessor {
             case 'tool_call_detected':
                 this._onToolCallDetected(data);
                 break;
+            case 'tool_call_arguments_delta':
+                this._onToolCallArgumentsDelta(data);
+                break;
             case 'tool_execution_start':
                 this._onToolExecutionStart(data);
                 break;
@@ -148,6 +151,14 @@ class StreamingMessageProcessor {
             this._toolBlocks.set(data.id, toolBlock);
             // Track in sequence
             this._blockSequence.push({ type: 'tool', id: data.id, ref: toolBlock });
+        }
+    }
+
+    _onToolCallArgumentsDelta(data) {
+        const block = this._findToolBlock(data.id);
+        if (block) {
+            block.content = `[${data.name}]:\nArguments: ${data.arguments}\nResult: Executing...`;
+            block.metadata.arguments = data.arguments;
         }
     }
 
