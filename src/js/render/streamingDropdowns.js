@@ -19,8 +19,9 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
             toolName = toolMatch[1];
         }
         
-        // Extract JSON arguments from "Arguments: {...}" pattern  
-        const argsMatch = content.match(/Arguments?:\s*({[\s\S]*?})(?=\s*\n(?:Result:|\[)|$)/i);
+        // Extract JSON arguments from "Arguments: {...}" pattern
+        // Match both complete JSON ({...}) and partial JSON (no closing } yet)
+        const argsMatch = content.match(/Arguments?:\s*(\{[\s\S]*?)(?=\s*\n(?:Result:|\[)|$)/i);
         if (argsMatch) {
             if (window.debugToolFormatting) {
                 logger.debug('Found arguments match:', argsMatch[1]);
@@ -29,9 +30,9 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
                 toolArgs = JSON.parse(argsMatch[1]);
             } catch (e) {
                 if (window.debugToolFormatting) {
-                    logger.warn('Failed to parse arguments JSON:', e);
+                    logger.warn('Failed to parse arguments JSON (partial streaming):', e);
                 }
-                toolArgs = { raw: argsMatch[1].trim() };
+                toolArgs = argsMatch[1].trim();
             }
         }
         
@@ -45,7 +46,12 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
     
     // Always show Arguments section (even if empty)
     if (toolArgs !== null && toolArgs !== undefined) {
-        formattedContent += `<div class="tool-section"><div class="tool-section-title">Arguments</div><pre class="tool-content">${JSON.stringify(toolArgs, null, 2)}</pre></div>`;
+        if (typeof toolArgs === 'string') {
+            // Partial/incomplete JSON during streaming - show raw text
+            formattedContent += `<div class="tool-section"><div class="tool-section-title">Arguments</div><pre class="tool-content">${escapeHtml(toolArgs)}</pre></div>`;
+        } else {
+            formattedContent += `<div class="tool-section"><div class="tool-section-title">Arguments</div><pre class="tool-content">${JSON.stringify(toolArgs, null, 2)}</pre></div>`;
+        }
     } else {
         // If no arguments found, show empty object
         formattedContent += `<div class="tool-section"><div class="tool-section-title">Arguments</div><pre class="tool-content">{}</pre></div>`;

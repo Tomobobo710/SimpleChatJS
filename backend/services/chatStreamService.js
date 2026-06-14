@@ -471,6 +471,16 @@ async function handleChatWithTools(
                         });
                         if (DEBUG_ADAPTERS) log(`[ADAPTER-TOOL-EVENT] Tool call detected:`, event.data.toolName);
                     }
+                    if (event.type === "tool_call_arguments_delta" && requestId) {
+                        addToolEvent(requestId, {
+                            type: "tool_call_arguments_delta",
+                            data: {
+                                id: event.data.toolId,
+                                name: event.data.toolName,
+                                arguments: event.data.arguments
+                            }
+                        });
+                    }
                 }
 
                 Object.assign(context, result.context);
