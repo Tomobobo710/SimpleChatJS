@@ -1890,19 +1890,12 @@ class ChatRenderer {
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
 
             if (!isEditRetry) {
-                // Collect all message edits and send a single PATCH so one
-                // user action creates one version entry. Tool-result edits
-                // are batched as other_message_edits alongside the primary
-                // (tool-call or first) message.
-                let primaryMessageId = null;
-                let primaryContent = null;
-                let primaryReasoning = null;
-                let primaryToolCalls = null;
-                const otherMessageEdits = [];
+                // Collect ALL message edits into a single array and send one
+                // PATCH — one user action, one version entry.
+                const allEdits = [];
 
                 for (const container of messageContainers) {
-                    const messageId = container.dataset.messageId;
-                    const role = container.dataset.role;
+                    const messageId = parseInt(container.dataset.messageId, 10);
                     const textarea = container.querySelector(".message-content-textarea");
                     const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
                     const newTextContent = textarea ? textarea.value : "";
@@ -1936,7 +1929,7 @@ class ChatRenderer {
                         }
                     }
 
-                    // Reconstruct content (same logic as before, extracted from the Promise.all)
+                    // Reconstruct content
                     let finalContent;
                     if (Array.isArray(container._originalContent)) {
                         const reconstructedArray = [];
@@ -1959,38 +1952,20 @@ class ChatRenderer {
                         finalContent = newTextContent;
                     }
 
-                    if (role === "tool") {
-                        // Tool result — batch as other-message edit
-                        otherMessageEdits.push({ id: parseInt(messageId, 10), content: finalContent });
-                    } else if (newToolCalls && (!primaryMessageId || !primaryToolCalls)) {
-                        // Prefer message with tool_calls as primary (the
-                        // assistant message that invoked the tools), so the
-                        // backend receives the tool_calls data and regenerates
-                        // tool_call_ids properly for the linked tool results.
-                        primaryMessageId = messageId;
-                        primaryContent = finalContent;
-                        primaryReasoning = newReasoningContent;
-                        primaryToolCalls = newToolCalls;
-                    } else if (!primaryMessageId) {
-                        // First non-tool message (e.g. a plain user turn)
-                        primaryMessageId = messageId;
-                        primaryContent = finalContent;
-                        primaryReasoning = newReasoningContent;
-                        primaryToolCalls = newToolCalls;
-                    } else {
-                        // Additional non-tool message — batch as other edit
-                        otherMessageEdits.push({ id: parseInt(messageId, 10), content: finalContent });
+                    const edit = { id: messageId, content: finalContent };
+                    if (newReasoningContent !== null) {
+                        edit.reasoning = newReasoningContent;
                     }
+                    if (newToolCalls) {
+                        edit.tool_calls = newToolCalls;
+                    }
+                    allEdits.push(edit);
                 }
 
-                if (primaryMessageId) {
-                    await editMessage(
-                        primaryMessageId,
-                        primaryContent,
-                        primaryReasoning,
-                        primaryToolCalls,
-                        otherMessageEdits.length > 0 ? otherMessageEdits : null
-                    );
+                // Use the first message's ID — any message in the turn works,
+                // the backend only uses it to look up the turn_id.
+                if (allEdits.length > 0) {
+                    await editMessage(allEdits[0].id, allEdits);
                 }
             }
 

@@ -634,44 +634,11 @@ async function getTurnMessages(chatId, turnNumber) {
         throw error;
     }
 }
-// Edit message content
-async function editMessage(messageId, newContent, newReasoning = null, newToolCalls = null, otherMessageEdits = null) {
+// Edit messages — accepts an array of edits for every message in the turn.
+// The messageId is any message in the turn (used only to find the turn_id).
+async function editMessage(messageId, allMessageEdits) {
     try {
-        // Build request data exactly like saveCompleteMessage
-        const requestData = {
-            content: newContent
-        };
-
-        // Add reasoning if provided
-        if (newReasoning) {
-            requestData.reasoning = newReasoning;
-        }
-
-        // Add tool_calls if provided
-        if (newToolCalls) {
-            requestData.tool_calls = newToolCalls;
-        }
-
-        // Add batched edits for other messages in the same turn
-        if (otherMessageEdits) {
-            requestData.other_message_edits = otherMessageEdits;
-        }
-
-        // Add file handling fields if content is multimodal (like saveCompleteMessage does)
-        if (Array.isArray(newContent)) {
-            requestData.original_content = newContent;
-
-            // Extract file metadata
-            const filesPart = newContent.find((part) => part.type === "files");
-            if (filesPart && filesPart.files) {
-                requestData.file_metadata = {
-                    hasFiles: true,
-                    fileCount: filesPart.files.length,
-                    imageCount: newContent.filter((part) => part.type === "image").length,
-                    files: filesPart.files
-                };
-            }
-        }
+        const requestData = { all_message_edits: allMessageEdits };
 
         const response = await fetch(`${API_BASE}/api/message/${messageId}`, {
             method: "PATCH",
