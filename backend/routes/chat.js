@@ -539,7 +539,7 @@ router.post("/chat/cancel/:requestId", (req, res) => {
 router.patch("/message/:id", async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
-        const { content, original_content, file_metadata, reasoning, tool_calls, turn_id } = req.body;
+        const { content, original_content, file_metadata, reasoning, tool_calls, turn_id, other_message_edits } = req.body;
 
         if (isNaN(messageId)) {
             return res.status(400).json({ error: "Invalid message ID" });
@@ -587,7 +587,8 @@ router.patch("/message/:id", async (req, res) => {
         const hasChanges = 
             currentContent !== currentMessage.content ||
             currentReasoning !== currentMessage.reasoning ||
-            JSON.stringify(normalizedRequestToolCalls) !== JSON.stringify(normalizedDbToolCalls);
+            JSON.stringify(normalizedRequestToolCalls) !== JSON.stringify(normalizedDbToolCalls) ||
+            (other_message_edits && other_message_edits.length > 0);
 
         if (!hasChanges) {
             // No changes detected, return current state without saving
@@ -710,23 +711,34 @@ router.patch("/message/:id", async (req, res) => {
                 finalReasoning = reasoning || null;
                 finalToolCalls = newToolCallsData ? JSON.stringify(newToolCallsData) : null;
             } else {
-                // Other messages in turn - keep current values
-                finalContent = msg.content;
-                finalOriginalContent = null;
-                finalFileMetadata = null;
-                finalReasoning = msg.reasoning;
-                // Normalize tool_calls - parse if string, then stringify for DB storage
-                let normalizedToolCalls = null;
-                if (msg.tool_calls) {
-                    try {
-                        normalizedToolCalls = typeof msg.tool_calls === 'string' 
-                            ? JSON.parse(msg.tool_calls) 
-                            : msg.tool_calls;
-                    } catch (e) {
-                        normalizedToolCalls = msg.tool_calls;
+                // Other messages in turn - check for batched edit first
+                const otherEdit = other_message_edits?.find(e => e.id == msg.id);
+                if (otherEdit) {
+                    const serializedOther = serializeMessageForDb({ content: otherEdit.content });
+                    finalContent = serializedOther.content;
+                    finalOriginalContent = null;
+                    finalFileMetadata = null;
+                    finalReasoning = msg.reasoning;
+                    finalToolCalls = null;
+                } else {
+                    // Keep current values
+                    finalContent = msg.content;
+                    finalOriginalContent = null;
+                    finalFileMetadata = null;
+                    finalReasoning = msg.reasoning;
+                    // Normalize tool_calls - parse if string, then stringify for DB storage
+                    let normalizedToolCalls = null;
+                    if (msg.tool_calls) {
+                        try {
+                            normalizedToolCalls = typeof msg.tool_calls === 'string' 
+                                ? JSON.parse(msg.tool_calls) 
+                                : msg.tool_calls;
+                        } catch (e) {
+                            normalizedToolCalls = msg.tool_calls;
+                        }
                     }
+                    finalToolCalls = normalizedToolCalls ? JSON.stringify(normalizedToolCalls) : null;
                 }
-                finalToolCalls = normalizedToolCalls ? JSON.stringify(normalizedToolCalls) : null;
             }
 
             updateStmt.run(

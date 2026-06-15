@@ -1609,6 +1609,7 @@ class ChatRenderer {
             const messageContainer = document.createElement("div");
             messageContainer.className = "editable-message";
             messageContainer.dataset.messageId = message.id;
+            messageContainer.dataset.role = message.role;
 
             // Message header
             const messageHeader = document.createElement("div");
@@ -1889,97 +1890,108 @@ class ChatRenderer {
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
 
             if (!isEditRetry) {
-                // Save each message (normal in-place edit, no retry)
-                await Promise.all(
-                    Array.from(messageContainers).map(async (container) => {
-                        const messageId = container.dataset.messageId;
-                        const textarea = container.querySelector(".message-content-textarea");
-                        const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
-                        const newTextContent = textarea.value;
-                        const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
-                        let newToolCalls = null;
+                // Collect all message edits and send a single PATCH so one
+                // user action creates one version entry. Tool-result edits
+                // are batched as other_message_edits alongside the primary
+                // (tool-call or first) message.
+                let primaryMessageId = null;
+                let primaryContent = null;
+                let primaryReasoning = null;
+                let primaryToolCalls = null;
+                const otherMessageEdits = [];
 
-                        // Parse tool calls from individual sections
-                        const toolCallSections = container.querySelectorAll(".edit-tool-call-section");
-                        if (toolCallSections.length > 0) {
-                            newToolCalls = [];
-                            for (const section of toolCallSections) {
-                                const toolCallId = section.dataset.toolCallId;
-                                const typeSelect = section.querySelector(".edit-tool-call-type-select");
-                                const functionTextarea = section.querySelector(".message-tool-call-function-textarea");
-                                
-                                const toolCallType = typeSelect?.value || "function";
-                                let functionObj;
-                                try {
-                                    functionObj = JSON.parse(functionTextarea.value);
-                                } catch (e) {
-                                    console.error("[EDIT-SAVE] Error parsing tool call function JSON:", e);
-                                    showError(`Invalid tool call function JSON: ${e.message}`);
-                                    throw e;
-                                }
+                for (const container of messageContainers) {
+                    const messageId = container.dataset.messageId;
+                    const role = container.dataset.role;
+                    const textarea = container.querySelector(".message-content-textarea");
+                    const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
+                    const newTextContent = textarea ? textarea.value : "";
+                    const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
 
-                                newToolCalls.push({
-                                    id: toolCallId,
-                                    type: toolCallType,
-                                    function: functionObj
-                                });
-                            }
-                        }
+                    // Parse tool calls from individual sections
+                    let newToolCalls = null;
+                    const toolCallSections = container.querySelectorAll(".edit-tool-call-section");
+                    if (toolCallSections.length > 0) {
+                        newToolCalls = [];
+                        for (const section of toolCallSections) {
+                            const toolCallId = section.dataset.toolCallId;
+                            const typeSelect = section.querySelector(".edit-tool-call-type-select");
+                            const functionTextarea = section.querySelector(".message-tool-call-function-textarea");
 
-                        if (messageId && newTextContent !== undefined) {
-                            // Reconstruct content properly - _originalContent is always an array now
-                            let finalContent;
-
-                            if (Array.isArray(container._originalContent)) {
-                                // Reconstruct content with text, images, AND files
-                                const reconstructedArray = [];
-
-                                // Add text part
-                                if (newTextContent) {
-                                    reconstructedArray.push({ type: "text", text: newTextContent });
-                                }
-
-                                // Add existing images (unchanged)
-                                const images = container._originalContent.filter((part) => part.type === "image");
-                                reconstructedArray.push(...images);
-
-                                // Add files from edit documents
-                                if (container._editDocuments && container._editDocuments.length > 0) {
-                                    reconstructedArray.push({
-                                        type: "files",
-                                        files: container._editDocuments
-                                    });
-                                }
-
-                                // Determine if we need multimodal format
-                                const hasMultipleTypes =
-                                    reconstructedArray.length > 1 ||
-                                    reconstructedArray.some((part) => part.type !== "text");
-
-                                if (hasMultipleTypes) {
-                                    finalContent = reconstructedArray;
-                                } else {
-                                    finalContent = newTextContent; // Text-only, send as string
-                                }
-                            } else {
-                                // Fallback for old format
-                                finalContent = newTextContent;
+                            const toolCallType = typeSelect?.value || "function";
+                            let functionObj;
+                            try {
+                                functionObj = JSON.parse(functionTextarea.value);
+                            } catch (e) {
+                                console.error("[EDIT-SAVE] Error parsing tool call function JSON:", e);
+                                showError(`Invalid tool call function JSON: ${e.message}`);
+                                throw e;
                             }
 
-                            console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
-                                textContent: newTextContent,
-                                reasoningContent: newReasoningContent,
-                                toolCallsCount: newToolCalls?.length || 0,
-                                hasFiles: container._editDocuments?.length > 0,
-                                fileCount: container._editDocuments?.length || 0,
-                                finalContent: typeof finalContent === "string" ? "string" : "multimodal"
+                            newToolCalls.push({
+                                id: toolCallId,
+                                type: toolCallType,
+                                function: functionObj
                             });
-
-                            return editMessage(messageId, finalContent, newReasoningContent, newToolCalls);
                         }
-                        return null;
-                    })
-                );
+                    }
+
+                    // Reconstruct content (same logic as before, extracted from the Promise.all)
+                    let finalContent;
+                    if (Array.isArray(container._originalContent)) {
+                        const reconstructedArray = [];
+                        if (newTextContent) {
+                            reconstructedArray.push({ type: "text", text: newTextContent });
+                        }
+                        const images = container._originalContent.filter((part) => part.type === "image");
+                        reconstructedArray.push(...images);
+                        if (container._editDocuments && container._editDocuments.length > 0) {
+                            reconstructedArray.push({
+                                type: "files",
+                                files: container._editDocuments
+                            });
+                        }
+                        const hasMultipleTypes =
+                            reconstructedArray.length > 1 ||
+                            reconstructedArray.some((part) => part.type !== "text");
+                        finalContent = hasMultipleTypes ? reconstructedArray : newTextContent;
+                    } else {
+                        finalContent = newTextContent;
+                    }
+
+                    if (role === "tool") {
+                        // Tool result — batch as other-message edit
+                        otherMessageEdits.push({ id: parseInt(messageId, 10), content: finalContent });
+                    } else if (newToolCalls && (!primaryMessageId || !primaryToolCalls)) {
+                        // Prefer message with tool_calls as primary (the
+                        // assistant message that invoked the tools), so the
+                        // backend receives the tool_calls data and regenerates
+                        // tool_call_ids properly for the linked tool results.
+                        primaryMessageId = messageId;
+                        primaryContent = finalContent;
+                        primaryReasoning = newReasoningContent;
+                        primaryToolCalls = newToolCalls;
+                    } else if (!primaryMessageId) {
+                        // First non-tool message (e.g. a plain user turn)
+                        primaryMessageId = messageId;
+                        primaryContent = finalContent;
+                        primaryReasoning = newReasoningContent;
+                        primaryToolCalls = newToolCalls;
+                    } else {
+                        // Additional non-tool message — batch as other edit
+                        otherMessageEdits.push({ id: parseInt(messageId, 10), content: finalContent });
+                    }
+                }
+
+                if (primaryMessageId) {
+                    await editMessage(
+                        primaryMessageId,
+                        primaryContent,
+                        primaryReasoning,
+                        primaryToolCalls,
+                        otherMessageEdits.length > 0 ? otherMessageEdits : null
+                    );
+                }
             }
 
             // Exit edit mode. For edit-retry this carries the messages forward

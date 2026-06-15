@@ -635,7 +635,7 @@ async function getTurnMessages(chatId, turnNumber) {
     }
 }
 // Edit message content
-async function editMessage(messageId, newContent, newReasoning = null, newToolCalls = null) {
+async function editMessage(messageId, newContent, newReasoning = null, newToolCalls = null, otherMessageEdits = null) {
     try {
         // Build request data exactly like saveCompleteMessage
         const requestData = {
@@ -650,6 +650,11 @@ async function editMessage(messageId, newContent, newReasoning = null, newToolCa
         // Add tool_calls if provided
         if (newToolCalls) {
             requestData.tool_calls = newToolCalls;
+        }
+
+        // Add batched edits for other messages in the same turn
+        if (otherMessageEdits) {
+            requestData.other_message_edits = otherMessageEdits;
         }
 
         // Add file handling fields if content is multimodal (like saveCompleteMessage does)
