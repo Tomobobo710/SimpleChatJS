@@ -1592,7 +1592,6 @@ class ChatRenderer {
             const messageContainer = document.createElement("div");
             messageContainer.className = "editable-message";
             messageContainer.dataset.messageId = message.id;
-            messageContainer.dataset.role = message.role;
 
             // Message header
             const messageHeader = document.createElement("div");
