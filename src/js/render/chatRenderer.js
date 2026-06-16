@@ -32,24 +32,7 @@ class ChatRenderer {
                 return null;
             }
 
-            // Check if this turn already exists in DOM
-            if (turnId) {
-                const existingTurns = document.querySelectorAll(`[data-turn-id="${turnId}"]`);
-                if (existingTurns.length > 0 && role === "assistant") {
-                    console.warn(`[DUPLICATE-GUARD] Turn ${turnId} already exists in DOM! SKIPPING RENDER`);
-                    return existingTurns[0];
-                }
-            } else {
-                const existingTurns = document.querySelectorAll(`[data-turn-number="${turnNumber}"]`);
-                if (existingTurns.length > 0 && role === "assistant") {
-                    console.warn(
-                        `[DUPLICATE-GUARD] Turn ${turnNumber} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
-                    );
-                    return existingTurns[0];
-                }
-            }
-
-            // Handle blocks: Required for assistant messages, optional for user messages
+// Handle blocks: Required for assistant messages, optional for user messages
             let finalBlocks;
             if (!blocks) {
                 if (role === "assistant") {

@@ -283,11 +283,27 @@ async function streamAndRenderResponse({
             }
         }
 
+        // Use the DB's turn_id rather than the header value, so the
+        // rendered turn's data-turn-id matches what handleEditMessage
+        // expects when filtering messages by turn_id.
+        let dbTurnId = savedResponseTurn?.turn_id || null;
+        let dbParentTurnId = savedResponseTurn?.parent_turn_id || null;
+        try {
+            const dbData = await getTurnMessages(activeChatId, responseTurnNumber);
+            const assistantMsgs = (dbData?.messages || []).filter(m => m.role === "assistant");
+            if (assistantMsgs.length > 0) {
+                dbTurnId = assistantMsgs[0].turn_id;
+                dbParentTurnId = assistantMsgs[0].parent_turn_id;
+            }
+        } catch (_) {
+            // Fall through to header values
+        }
+
         const rto = RenderableTurnObject.fromStreamingProcessor({
             processor,
             turnNumber: responseTurnNumber,
-            turnId: savedResponseTurn?.turn_id || null,
-            parentTurnId: savedResponseTurn?.parent_turn_id || null,
+            turnId: dbTurnId,
+            parentTurnId: dbParentTurnId,
             responseDebugData,
             dropdownStates
         });
