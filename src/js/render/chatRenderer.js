@@ -795,7 +795,42 @@ class ChatRenderer {
                 turnId: parentTurnId,
                 truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
-                inputMethod: "retry"
+                inputMethod: "retry",
+                onError: (error, processor, requestTurnInfo, savedResponseTurn) => {
+                    const errorType = error.name === 'AbortError' ? 'user_stopped' : (error.streamErrorType || 'api_error');
+                    const errorText = error.errorText || (error.name === 'AbortError' ? 'Generation stopped by user.' : '') || error.message || '';
+
+                    const responseTurnNumber = turnNumber + 1;
+
+                    if (processor && typeof processor.finalize === "function") {
+                        processor.finalize();
+                    }
+
+                    const blocks = (processor && typeof processor.getBlocks === "function") ? processor.getBlocks() : [];
+                    const partialContent = (processor && typeof processor.getRawContent === "function") ? (processor.getRawContent() || "") : "";
+
+                    const errorBlock = new Block({
+                        type: 'error',
+                        content: errorText,
+                        metadata: { error_type: errorType }
+                    });
+                    blocks.push(errorBlock);
+
+                    const rto = new RenderableTurnObject({
+                        role: 'assistant',
+                        content: partialContent,
+                        blocks: blocks,
+                        turnNumber: responseTurnNumber,
+                        turnId: savedResponseTurn?.turn_id || null,
+                        parentTurnId: savedResponseTurn?.parent_turn_id || null,
+                        responseDebugData: error.responseDebugData || null,
+                    });
+                    this.renderTurn(rto, true);
+
+                    if (typeof updateChatPreview === "function") {
+                        updateChatPreview(currentChatId, partialContent);
+                    }
+                },
             });
         } catch (error) {
             console.error("[RETRY] Error:", error);

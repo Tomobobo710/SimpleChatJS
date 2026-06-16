@@ -386,6 +386,9 @@ async function streamAndRenderResponse({
                 }
             }
         }
+        if (error.name === 'AbortError') {
+            return { savedResponseTurn, responseDebugData: null, processor, chatId: activeChatId };
+        }
         throw error;
     }
 }
