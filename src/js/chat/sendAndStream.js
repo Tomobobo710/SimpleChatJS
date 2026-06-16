@@ -34,6 +34,41 @@ function updateStreamIndicator(chatId, active) {
     } else if (spinner) {
         spinner.style.display = "none";
     }
+
+    // Keep the send/stop button in sync with the chat the user is viewing.
+    refreshSendButton();
+}
+
+// Drive the send/stop button from the *currently viewed* chat's stream state.
+// With multiple concurrent in-flight responses the button must reflect the
+// chat on screen, not a single global flag: a chat that is streaming shows
+// "Stop", any other chat shows "Send".
+function refreshSendButton() {
+    if (typeof setLoading === "function") {
+        setLoading(activeStreamState.has(currentChatId));
+    }
+}
+
+// True if the given chat currently has an in-flight stream.
+function isChatStreaming(chatId) {
+    return activeStreamState.has(chatId);
+}
+
+// Stop the in-flight stream for a specific chat (not just the last one started).
+// Awaits the backend cancel before aborting the fetch so the cancel flag is set
+// before the close handler fires on the backend. Returns true if a stream was
+// stopped. Cleanup (state removal, button refresh) happens via the stream's own
+// abort/error handling.
+async function stopChatStream(chatId) {
+    const ss = activeStreamState.get(chatId);
+    if (!ss) return false;
+    if (ss.requestId && typeof cancelRequest === "function") {
+        await cancelRequest(ss.requestId);
+    }
+    if (ss.abortController) {
+        ss.abortController.abort();
+    }
+    return true;
 }
 
 function generateRequestId() {
@@ -66,7 +101,8 @@ async function streamAndRenderResponse({
     requestTurnNumber,
     inputMethod,
     onError = null,
-    expectedParentTurnId = null
+    expectedParentTurnId = null,
+    abortController = null
 }) {
     const activeChatId = currentChatId;
     const processor = new StreamingMessageProcessor();
@@ -81,7 +117,7 @@ async function streamAndRenderResponse({
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
 
-    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, parentTurnId: expectedParentTurnId };
+    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, parentTurnId: expectedParentTurnId, abortController, requestId };
     activeStreamState.set(activeChatId, streamEntry);
     updateStreamIndicator(activeChatId, true);
 
@@ -441,7 +477,8 @@ async function sendAndStream({
         requestTurnNumber,
         inputMethod,
         onError,
-        expectedParentTurnId: effectiveParentTurnId
+        expectedParentTurnId: effectiveParentTurnId,
+        abortController: requestInfo.controller
     });
 
     const responseTurnInfo = savedResponseTurn

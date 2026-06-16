@@ -186,7 +186,10 @@ async function handleSendMessage() {
             showError(`Failed to send message: ${error.message}`);
         }
     } finally {
-        setLoading(false);
+        // Recompute the button from the viewed chat's stream state instead of
+        // forcing "Send": other chats may still be streaming, and if this send
+        // failed before a stream started this resets to "Send".
+        refreshSendButton();
         messageInput.focus();
     }
 }
