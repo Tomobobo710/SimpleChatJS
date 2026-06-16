@@ -158,14 +158,14 @@ function stopStream() {
     }
 }
 
-// Stop + cleanup + debug panels (full stop)
+// Stop the in-flight response for the chat the user is currently viewing.
+// Each chat tracks its own stream in activeStreamState, so stopping cancels
+// only that chat's request and leaves other concurrent streams running.
+// The button/indicator are refreshed by the stream's own abort handling.
 async function stopGeneration() {
-    if (currentAbortController) {
-        await cancelRequest(currentRequestId);
-        currentAbortController.abort();
-        currentAbortController = null;
-        currentRequestId = null;
-        setLoading(false);
+    if (typeof stopChatStream !== 'function') return;
+    const stopped = await stopChatStream(currentChatId);
+    if (stopped) {
         logger.info('Generation stopped by user');
         showNotification('Generation stopped', 'info');
     }

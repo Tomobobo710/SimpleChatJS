@@ -535,115 +535,98 @@ router.post("/chat/cancel/:requestId", (req, res) => {
     }
 });
 
-// Edit message content
+// Edit message content — accepts all_message_edits array with edits for every
+// message in the turn. The :id in the URL is any message in the turn, used
+// only to look up the turn_id. All edit data comes from the body.
 router.patch("/message/:id", async (req, res) => {
     try {
         const messageId = parseInt(req.params.id, 10);
-        const { content, original_content, file_metadata, reasoning, tool_calls, turn_id } = req.body;
+        const { all_message_edits } = req.body;
 
         if (isNaN(messageId)) {
             return res.status(400).json({ error: "Invalid message ID" });
         }
+        if (!all_message_edits || !Array.isArray(all_message_edits) || all_message_edits.length === 0) {
+            return res.status(400).json({ error: "all_message_edits array is required" });
+        }
 
-        // Get the message and its turn info
+        // Use :id just to find the turn
         const getMessageStmt = db.prepare(`
             SELECT chat_id, turn_id, content, edit_count, edited_at, reasoning, tool_calls, edit_history, active_edit_version
             FROM messages 
             WHERE id = ?
         `);
-        const currentMessage = getMessageStmt.get(messageId);
+        const anyTurnMessage = getMessageStmt.get(messageId);
 
-        if (!currentMessage) {
+        if (!anyTurnMessage) {
             return res.status(404).json({ error: "Message not found" });
         }
 
-        const actualTurnId = turn_id || currentMessage.turn_id;
-
-        if (!currentMessage) {
-            return res.status(404).json({ error: "Message not found" });
-        }
-
-        // Check for actual changes by comparing with currently active version
-        // Need to normalize comparisons since tool_calls comes from DB as JSON string
-        const currentContent = content !== undefined ? content : currentMessage.content;
-        const currentReasoning = reasoning !== undefined ? reasoning : currentMessage.reasoning;
-        
-        // Normalize tool_calls for comparison
-        let normalizedDbToolCalls = null;
-        if (currentMessage.tool_calls) {
-            try {
-                normalizedDbToolCalls = typeof currentMessage.tool_calls === 'string' 
-                    ? JSON.parse(currentMessage.tool_calls) 
-                    : currentMessage.tool_calls;
-            } catch (e) {
-                normalizedDbToolCalls = currentMessage.tool_calls;
-            }
-        }
-        
-        let normalizedRequestToolCalls = tool_calls !== undefined 
-            ? (typeof tool_calls === 'string' ? JSON.parse(tool_calls) : tool_calls)
-            : normalizedDbToolCalls;
-
-        const hasChanges = 
-            currentContent !== currentMessage.content ||
-            currentReasoning !== currentMessage.reasoning ||
-            JSON.stringify(normalizedRequestToolCalls) !== JSON.stringify(normalizedDbToolCalls);
-
-        if (!hasChanges) {
-            // No changes detected, return current state without saving
-            log(`[EDIT] No changes detected for message ${messageId}, skipping save`);
-            return res.json({
-                success: true,
-                message_id: messageId,
-                edit_count: currentMessage.edit_count,
-                edited_at: currentMessage.edited_at,
-                skipped: true
-            });
-        }
-
-        // Get ALL messages in this turn to update them together with synchronized versioning
+        // Load all messages in this turn
         const getTurnMessagesStmt = db.prepare(`
             SELECT id, content, reasoning, tool_calls, edit_count, edit_history, active_edit_version
             FROM messages
             WHERE turn_id = ?
         `);
-        const turnMessages = getTurnMessagesStmt.all(currentMessage.turn_id);
+        const turnMessages = getTurnMessagesStmt.all(anyTurnMessage.turn_id);
+
+        // Check for actual changes across all edits
+        let hasChanges = false;
+        for (const edit of all_message_edits) {
+            const dbMsg = turnMessages.find(m => m.id === edit.id);
+            if (!dbMsg) continue;
+            if (edit.content !== undefined && edit.content !== dbMsg.content) { hasChanges = true; break; }
+            if (edit.reasoning !== undefined && edit.reasoning !== dbMsg.reasoning) { hasChanges = true; break; }
+            if (edit.tool_calls !== undefined) {
+                let normalizedDb = null;
+                if (dbMsg.tool_calls) {
+                    try { normalizedDb = JSON.parse(dbMsg.tool_calls); } catch { normalizedDb = dbMsg.tool_calls; }
+                }
+                if (JSON.stringify(edit.tool_calls) !== JSON.stringify(normalizedDb)) { hasChanges = true; break; }
+            }
+        }
+
+        if (!hasChanges) {
+            log(`[EDIT] No changes detected for message ${messageId}, skipping save`);
+            return res.json({
+                success: true,
+                message_id: messageId,
+                edit_count: anyTurnMessage.edit_count,
+                edited_at: anyTurnMessage.edited_at,
+                skipped: true
+            });
+        }
 
         // Generate fresh tool_call_ids for this version
         let newToolCallsData = null;
-        const toolIdMapping = {}; // Map old IDs to new IDs
-        
-        if (tool_calls && Array.isArray(tool_calls)) {
-            newToolCallsData = tool_calls.map(tc => {
+        const toolIdMapping = {};
+        const toolCallEdit = all_message_edits.find(e => e.tool_calls && Array.isArray(e.tool_calls));
+
+        if (toolCallEdit) {
+            newToolCallsData = toolCallEdit.tool_calls.map(tc => {
                 const oldId = tc.id;
                 const newId = require('crypto').randomBytes(16).toString('base64').replace(/[+/]/g, '').substring(0, 16);
-                if (oldId) {
-                    toolIdMapping[oldId] = newId;
-                }
-                return {
-                    ...tc,
-                    id: newId
-                };
+                if (oldId) toolIdMapping[oldId] = newId;
+                return { ...tc, id: newId };
             });
         }
-        
-        // Update all tool messages in this turn with new tool_call_ids
+
+        // Update tool_call_id references in tool messages
         if (Object.keys(toolIdMapping).length > 0) {
             const updateToolStmt = db.prepare(`
                 UPDATE messages
                 SET tool_call_id = ?
                 WHERE turn_id = ? AND role = 'tool' AND tool_call_id = ?
             `);
-            
             for (const [oldId, newId] of Object.entries(toolIdMapping)) {
-                updateToolStmt.run(newId, currentMessage.turn_id, oldId);
+                updateToolStmt.run(newId, anyTurnMessage.turn_id, oldId);
             }
         }
 
-        // Update all messages in the turn with synchronized versioning
-        const newEditCount = (currentMessage.edit_count || 0) + 1;
+        // Synchronized versioning — all messages get the same bump
+        const newEditCount = (anyTurnMessage.edit_count || 0) + 1;
         const newActiveEditVersion = newEditCount;
-        
+
         log(`[EDIT] Updating ${turnMessages.length} messages in turn, creating version ${newEditCount}`);
 
         const updateStmt = db.prepare(`
@@ -659,74 +642,58 @@ router.patch("/message/:id", async (req, res) => {
                 edited_at = CURRENT_TIMESTAMP 
             WHERE id = ?
         `);
-        
+
         const { serializeMessageForDb } = require("../utils/messageConversions");
 
-        // For the current message being edited, use the new values
-        // For other messages in the turn, archive their current state
         for (const msg of turnMessages) {
-            const serialized = serializeMessageForDb(msg.id === messageId ? { content, original_content, file_metadata } : {});
-            
-            let editHistory = [];
-            try {
-                editHistory = JSON.parse(msg.edit_history || '[]');
-            } catch (e) {
-                log(`[EDIT] Error parsing edit_history for message ${msg.id}, initializing empty`);
-                editHistory = [];
-            }
+            const edit = all_message_edits.find(e => e.id === msg.id);
 
-            // Create edit entry for current version
+            // Archive current state
+            let editHistory = [];
+            try { editHistory = JSON.parse(msg.edit_history || '[]'); } catch { editHistory = []; }
+
             let toolCallsForHistory = null;
             if (msg.tool_calls) {
-                try {
-                    // Parse to object for storage in edit_history
-                    toolCallsForHistory = typeof msg.tool_calls === 'string' 
-                        ? JSON.parse(msg.tool_calls) 
-                        : msg.tool_calls;
-                } catch (e) {
-                    toolCallsForHistory = msg.tool_calls;
-                }
+                try { toolCallsForHistory = JSON.parse(msg.tool_calls); } catch { toolCallsForHistory = msg.tool_calls; }
             }
 
-            const editEntry = {
+            editHistory.push({
                 version: msg.edit_count,
                 content: msg.content,
                 reasoning: msg.reasoning,
                 tool_calls: toolCallsForHistory,
                 timestamp: new Date().toISOString()
-            };
+            });
 
-            editHistory.push(editEntry);
-            const editHistoryJson = JSON.stringify(editHistory);
-            
-            // Determine what to save for this message
             let finalContent, finalOriginalContent, finalFileMetadata, finalReasoning, finalToolCalls;
-            
-            if (msg.id === messageId) {
-                // This is the message being edited - use new values with fresh tool IDs
+
+            if (edit) {
+                const serialized = serializeMessageForDb({
+                    content: edit.content,
+                    original_content: edit.original_content,
+                    file_metadata: edit.file_metadata
+                });
                 finalContent = serialized.content;
                 finalOriginalContent = serialized.originalContent;
                 finalFileMetadata = serialized.fileMetadata;
-                finalReasoning = reasoning || null;
-                finalToolCalls = newToolCallsData ? JSON.stringify(newToolCallsData) : null;
+                finalReasoning = edit.reasoning !== undefined ? edit.reasoning : null;
+
+                if (edit.tool_calls !== undefined) {
+                    const isToolSource = toolCallEdit && msg.id === toolCallEdit.id;
+                    finalToolCalls = JSON.stringify(isToolSource ? newToolCallsData : edit.tool_calls);
+                } else {
+                    let normalized = null;
+                    if (msg.tool_calls) { try { normalized = JSON.parse(msg.tool_calls); } catch { normalized = msg.tool_calls; } }
+                    finalToolCalls = normalized ? JSON.stringify(normalized) : null;
+                }
             } else {
-                // Other messages in turn - keep current values
                 finalContent = msg.content;
                 finalOriginalContent = null;
                 finalFileMetadata = null;
                 finalReasoning = msg.reasoning;
-                // Normalize tool_calls - parse if string, then stringify for DB storage
-                let normalizedToolCalls = null;
-                if (msg.tool_calls) {
-                    try {
-                        normalizedToolCalls = typeof msg.tool_calls === 'string' 
-                            ? JSON.parse(msg.tool_calls) 
-                            : msg.tool_calls;
-                    } catch (e) {
-                        normalizedToolCalls = msg.tool_calls;
-                    }
-                }
-                finalToolCalls = normalizedToolCalls ? JSON.stringify(normalizedToolCalls) : null;
+                let normalized = null;
+                if (msg.tool_calls) { try { normalized = JSON.parse(msg.tool_calls); } catch { normalized = msg.tool_calls; } }
+                finalToolCalls = normalized ? JSON.stringify(normalized) : null;
             }
 
             updateStmt.run(
@@ -737,10 +704,11 @@ router.patch("/message/:id", async (req, res) => {
                 finalToolCalls,
                 newEditCount,
                 newActiveEditVersion,
-                editHistoryJson,
+                JSON.stringify(editHistory),
                 msg.id
             );
         }
+
         log(`[EDIT] Updated ${turnMessages.length} messages in turn with version ${newEditCount}`);
 
         res.json({

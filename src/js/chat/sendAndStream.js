@@ -34,6 +34,41 @@ function updateStreamIndicator(chatId, active) {
     } else if (spinner) {
         spinner.style.display = "none";
     }
+
+    // Keep the send/stop button in sync with the chat the user is viewing.
+    refreshSendButton();
+}
+
+// Drive the send/stop button from the *currently viewed* chat's stream state.
+// With multiple concurrent in-flight responses the button must reflect the
+// chat on screen, not a single global flag: a chat that is streaming shows
+// "Stop", any other chat shows "Send".
+function refreshSendButton() {
+    if (typeof setLoading === "function") {
+        setLoading(activeStreamState.has(currentChatId));
+    }
+}
+
+// True if the given chat currently has an in-flight stream.
+function isChatStreaming(chatId) {
+    return activeStreamState.has(chatId);
+}
+
+// Stop the in-flight stream for a specific chat (not just the last one started).
+// Awaits the backend cancel before aborting the fetch so the cancel flag is set
+// before the close handler fires on the backend. Returns true if a stream was
+// stopped. Cleanup (state removal, button refresh) happens via the stream's own
+// abort/error handling.
+async function stopChatStream(chatId) {
+    const ss = activeStreamState.get(chatId);
+    if (!ss) return false;
+    if (ss.requestId && typeof cancelRequest === "function") {
+        await cancelRequest(ss.requestId);
+    }
+    if (ss.abortController) {
+        ss.abortController.abort();
+    }
+    return true;
 }
 
 function generateRequestId() {
@@ -65,7 +100,9 @@ async function streamAndRenderResponse({
     container,
     requestTurnNumber,
     inputMethod,
-    onError = null
+    onError = null,
+    expectedParentTurnId = null,
+    abortController = null
 }) {
     const activeChatId = currentChatId;
     const processor = new StreamingMessageProcessor();
@@ -80,7 +117,7 @@ async function streamAndRenderResponse({
     container.appendChild(responseTurnDiv);
     responseTurnDiv.appendChild(tempContainer);
 
-    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null };
+    const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, parentTurnId: expectedParentTurnId, abortController, requestId };
     activeStreamState.set(activeChatId, streamEntry);
     updateStreamIndicator(activeChatId, true);
 
@@ -282,11 +319,27 @@ async function streamAndRenderResponse({
             }
         }
 
+        // Use the DB's turn_id rather than the header value, so the
+        // rendered turn's data-turn-id matches what handleEditMessage
+        // expects when filtering messages by turn_id.
+        let dbTurnId = savedResponseTurn?.turn_id || null;
+        let dbParentTurnId = savedResponseTurn?.parent_turn_id || null;
+        try {
+            const dbData = await getTurnMessages(activeChatId, responseTurnNumber);
+            const assistantMsgs = (dbData?.messages || []).filter(m => m.role === "assistant");
+            if (assistantMsgs.length > 0) {
+                dbTurnId = assistantMsgs[0].turn_id;
+                dbParentTurnId = assistantMsgs[0].parent_turn_id;
+            }
+        } catch (_) {
+            // Fall through to header values
+        }
+
         const rto = RenderableTurnObject.fromStreamingProcessor({
             processor,
             turnNumber: responseTurnNumber,
-            turnId: savedResponseTurn?.turn_id || null,
-            parentTurnId: savedResponseTurn?.parent_turn_id || null,
+            turnId: dbTurnId,
+            parentTurnId: dbParentTurnId,
             responseDebugData,
             dropdownStates
         });
@@ -332,6 +385,9 @@ async function streamAndRenderResponse({
                     logger.error("onError handler threw:", handlerError);
                 }
             }
+        }
+        if (error.name === 'AbortError') {
+            return { savedResponseTurn, responseDebugData: null, processor, chatId: activeChatId };
         }
         throw error;
     }
@@ -423,7 +479,9 @@ async function sendAndStream({
         container,
         requestTurnNumber,
         inputMethod,
-        onError
+        onError,
+        expectedParentTurnId: effectiveParentTurnId,
+        abortController: requestInfo.controller
     });
 
     const responseTurnInfo = savedResponseTurn
@@ -466,6 +524,18 @@ function reconnectStreaming(chatId) {
     if (ss.responseTurnId) {
         const existingTurn = turnsContainer.querySelector(`[data-turn-id="${ss.responseTurnId}"]`);
         if (existingTurn) existingTurn.remove();
+    }
+
+    // Remove any sibling response turns at the same parent level that
+    // belong to a different branch. This handles the retry case where
+    // loadChatHistory rendered the original response (the retry isn't in
+    // DB yet), and reconnectStreaming is creating a new streaming div for
+    // the retry — without this removal both branches would be visible.
+    if (ss.parentTurnId) {
+        const siblings = turnsContainer.querySelectorAll(`.response-turn[data-parent-turn-id="${ss.parentTurnId}"]`);
+        for (const sibling of siblings) {
+            sibling.remove();
+        }
     }
 
     const { processor } = ss;

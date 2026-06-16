@@ -32,24 +32,7 @@ class ChatRenderer {
                 return null;
             }
 
-            // Check if this turn already exists in DOM
-            if (turnId) {
-                const existingTurns = document.querySelectorAll(`[data-turn-id="${turnId}"]`);
-                if (existingTurns.length > 0 && role === "assistant") {
-                    console.warn(`[DUPLICATE-GUARD] Turn ${turnId} already exists in DOM! SKIPPING RENDER`);
-                    return existingTurns[0];
-                }
-            } else {
-                const existingTurns = document.querySelectorAll(`[data-turn-number="${turnNumber}"]`);
-                if (existingTurns.length > 0 && role === "assistant") {
-                    console.warn(
-                        `[DUPLICATE-GUARD] Turn ${turnNumber} already exists in DOM! Found ${existingTurns.length} existing turns - SKIPPING RENDER`
-                    );
-                    return existingTurns[0];
-                }
-            }
-
-            // Handle blocks: Required for assistant messages, optional for user messages
+// Handle blocks: Required for assistant messages, optional for user messages
             let finalBlocks;
             if (!blocks) {
                 if (role === "assistant") {
@@ -812,7 +795,42 @@ class ChatRenderer {
                 turnId: parentTurnId,
                 truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
-                inputMethod: "retry"
+                inputMethod: "retry",
+                onError: (error, processor, requestTurnInfo, savedResponseTurn) => {
+                    const errorType = error.name === 'AbortError' ? 'user_stopped' : (error.streamErrorType || 'api_error');
+                    const errorText = error.errorText || (error.name === 'AbortError' ? 'Generation stopped by user.' : '') || error.message || '';
+
+                    const responseTurnNumber = turnNumber + 1;
+
+                    if (processor && typeof processor.finalize === "function") {
+                        processor.finalize();
+                    }
+
+                    const blocks = (processor && typeof processor.getBlocks === "function") ? processor.getBlocks() : [];
+                    const partialContent = (processor && typeof processor.getRawContent === "function") ? (processor.getRawContent() || "") : "";
+
+                    const errorBlock = new Block({
+                        type: 'error',
+                        content: errorText,
+                        metadata: { error_type: errorType }
+                    });
+                    blocks.push(errorBlock);
+
+                    const rto = new RenderableTurnObject({
+                        role: 'assistant',
+                        content: partialContent,
+                        blocks: blocks,
+                        turnNumber: responseTurnNumber,
+                        turnId: savedResponseTurn?.turn_id || null,
+                        parentTurnId: savedResponseTurn?.parent_turn_id || null,
+                        responseDebugData: error.responseDebugData || null,
+                    });
+                    this.renderTurn(rto, true);
+
+                    if (typeof updateChatPreview === "function") {
+                        updateChatPreview(currentChatId, partialContent);
+                    }
+                },
             });
         } catch (error) {
             console.error("[RETRY] Error:", error);
@@ -1889,97 +1907,83 @@ class ChatRenderer {
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
 
             if (!isEditRetry) {
-                // Save each message (normal in-place edit, no retry)
-                await Promise.all(
-                    Array.from(messageContainers).map(async (container) => {
-                        const messageId = container.dataset.messageId;
-                        const textarea = container.querySelector(".message-content-textarea");
-                        const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
-                        const newTextContent = textarea.value;
-                        const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
-                        let newToolCalls = null;
+                // Collect ALL message edits into a single array and send one
+                // PATCH — one user action, one version entry.
+                const allEdits = [];
 
-                        // Parse tool calls from individual sections
-                        const toolCallSections = container.querySelectorAll(".edit-tool-call-section");
-                        if (toolCallSections.length > 0) {
-                            newToolCalls = [];
-                            for (const section of toolCallSections) {
-                                const toolCallId = section.dataset.toolCallId;
-                                const typeSelect = section.querySelector(".edit-tool-call-type-select");
-                                const functionTextarea = section.querySelector(".message-tool-call-function-textarea");
-                                
-                                const toolCallType = typeSelect?.value || "function";
-                                let functionObj;
-                                try {
-                                    functionObj = JSON.parse(functionTextarea.value);
-                                } catch (e) {
-                                    console.error("[EDIT-SAVE] Error parsing tool call function JSON:", e);
-                                    showError(`Invalid tool call function JSON: ${e.message}`);
-                                    throw e;
-                                }
+                for (const container of messageContainers) {
+                    const messageId = parseInt(container.dataset.messageId, 10);
+                    const textarea = container.querySelector(".message-content-textarea");
+                    const reasoningTextarea = container.querySelector(".message-reasoning-textarea");
+                    const newTextContent = textarea ? textarea.value : "";
+                    const newReasoningContent = reasoningTextarea ? reasoningTextarea.value : null;
 
-                                newToolCalls.push({
-                                    id: toolCallId,
-                                    type: toolCallType,
-                                    function: functionObj
-                                });
-                            }
-                        }
+                    // Parse tool calls from individual sections
+                    let newToolCalls = null;
+                    const toolCallSections = container.querySelectorAll(".edit-tool-call-section");
+                    if (toolCallSections.length > 0) {
+                        newToolCalls = [];
+                        for (const section of toolCallSections) {
+                            const toolCallId = section.dataset.toolCallId;
+                            const typeSelect = section.querySelector(".edit-tool-call-type-select");
+                            const functionTextarea = section.querySelector(".message-tool-call-function-textarea");
 
-                        if (messageId && newTextContent !== undefined) {
-                            // Reconstruct content properly - _originalContent is always an array now
-                            let finalContent;
-
-                            if (Array.isArray(container._originalContent)) {
-                                // Reconstruct content with text, images, AND files
-                                const reconstructedArray = [];
-
-                                // Add text part
-                                if (newTextContent) {
-                                    reconstructedArray.push({ type: "text", text: newTextContent });
-                                }
-
-                                // Add existing images (unchanged)
-                                const images = container._originalContent.filter((part) => part.type === "image");
-                                reconstructedArray.push(...images);
-
-                                // Add files from edit documents
-                                if (container._editDocuments && container._editDocuments.length > 0) {
-                                    reconstructedArray.push({
-                                        type: "files",
-                                        files: container._editDocuments
-                                    });
-                                }
-
-                                // Determine if we need multimodal format
-                                const hasMultipleTypes =
-                                    reconstructedArray.length > 1 ||
-                                    reconstructedArray.some((part) => part.type !== "text");
-
-                                if (hasMultipleTypes) {
-                                    finalContent = reconstructedArray;
-                                } else {
-                                    finalContent = newTextContent; // Text-only, send as string
-                                }
-                            } else {
-                                // Fallback for old format
-                                finalContent = newTextContent;
+                            const toolCallType = typeSelect?.value || "function";
+                            let functionObj;
+                            try {
+                                functionObj = JSON.parse(functionTextarea.value);
+                            } catch (e) {
+                                console.error("[EDIT-SAVE] Error parsing tool call function JSON:", e);
+                                showError(`Invalid tool call function JSON: ${e.message}`);
+                                throw e;
                             }
 
-                            console.log(`[EDIT-SAVE] Saving message ${messageId}:`, {
-                                textContent: newTextContent,
-                                reasoningContent: newReasoningContent,
-                                toolCallsCount: newToolCalls?.length || 0,
-                                hasFiles: container._editDocuments?.length > 0,
-                                fileCount: container._editDocuments?.length || 0,
-                                finalContent: typeof finalContent === "string" ? "string" : "multimodal"
+                            newToolCalls.push({
+                                id: toolCallId,
+                                type: toolCallType,
+                                function: functionObj
                             });
-
-                            return editMessage(messageId, finalContent, newReasoningContent, newToolCalls);
                         }
-                        return null;
-                    })
-                );
+                    }
+
+                    // Reconstruct content
+                    let finalContent;
+                    if (Array.isArray(container._originalContent)) {
+                        const reconstructedArray = [];
+                        if (newTextContent) {
+                            reconstructedArray.push({ type: "text", text: newTextContent });
+                        }
+                        const images = container._originalContent.filter((part) => part.type === "image");
+                        reconstructedArray.push(...images);
+                        if (container._editDocuments && container._editDocuments.length > 0) {
+                            reconstructedArray.push({
+                                type: "files",
+                                files: container._editDocuments
+                            });
+                        }
+                        const hasMultipleTypes =
+                            reconstructedArray.length > 1 ||
+                            reconstructedArray.some((part) => part.type !== "text");
+                        finalContent = hasMultipleTypes ? reconstructedArray : newTextContent;
+                    } else {
+                        finalContent = newTextContent;
+                    }
+
+                    const edit = { id: messageId, content: finalContent };
+                    if (newReasoningContent !== null) {
+                        edit.reasoning = newReasoningContent;
+                    }
+                    if (newToolCalls) {
+                        edit.tool_calls = newToolCalls;
+                    }
+                    allEdits.push(edit);
+                }
+
+                // Use the first message's ID — any message in the turn works,
+                // the backend only uses it to look up the turn_id.
+                if (allEdits.length > 0) {
+                    await editMessage(allEdits[0].id, allEdits);
+                }
             }
 
             // Exit edit mode. For edit-retry this carries the messages forward
