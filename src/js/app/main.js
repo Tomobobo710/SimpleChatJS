@@ -170,9 +170,87 @@ async function handleSendMessage() {
     try {
         // Resolve the active terminal turn so the new message continues
         // the current branch (null for a fresh chat).
-        const activeParentTurnId = await getActiveTerminalTurnId(currentChatId);
+        const parentTurnId = await getActiveTerminalTurnId(currentChatId);
 
-        await handleSimpleChat(messageContent, activeParentTurnId);
+        const requestTurnNumber = getNextTurnNumber();
+
+        await sendAndStream({
+            requestTurnNumber,
+            parentTurnId,
+            turnId: null,
+            inputMethod: "manual",
+
+            saveRequestMessage: async () => {
+                const messageForSaving = { role: "user", content: messageContent };
+                if (Array.isArray(messageContent)) {
+                    const filesPart = messageContent.find((part) => part.type === "files");
+                    if (filesPart && filesPart.files) {
+                        messageForSaving.original_content = messageContent;
+                        messageForSaving.file_metadata = {
+                            hasFiles: true,
+                            fileCount: filesPart.files.length,
+                            imageCount: messageContent.filter((part) => part.type === "image").length,
+                            files: filesPart.files,
+                        };
+                    }
+                }
+                const saveResult = await saveCompleteMessage(
+                    currentChatId, messageForSaving, requestTurnNumber,
+                    parentTurnId ? { parent_turn_id: parentTurnId } : null
+                );
+                if (!saveResult || !saveResult.turn_id) {
+                    throw new Error("saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor");
+                }
+                return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
+            },
+
+            renderRequestTurn: async (requestTurnInfo, requestId) => {
+                if (!requestTurnInfo) return;
+
+                const requestMessage = new Message({
+                    id: null,
+                    role: "user",
+                    content: messageContent,
+                    turn_number: requestTurnNumber,
+                    turn_id: requestTurnInfo.turn_id,
+                    parent_turn_id: requestTurnInfo.parent_turn_id,
+                    edit_count: 0,
+                });
+
+                const requestTurn = new Turn(requestTurnNumber, [requestMessage], requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
+                const rto = requestTurn.renderable();
+                chatRenderer.renderTurn(rto, true);
+
+                const turnMessages = rto.turnMessages || [{ role: "user", content: messageContent }];
+                listenForRequestDebug(requestId, requestTurnNumber, turnMessages);
+            },
+
+            onResponseRendered: async ({ processor }) => {
+                const responseContent = processor.getRawContent() || "";
+                updateChatPreview(currentChatId, responseContent);
+                updateChatTitleFromMessage(messageContent);
+            },
+
+            onError: (error, processor, requestTurnInfo, savedResponseTurn) => {
+                const errorType = error.name === "AbortError"
+                    ? "user_stopped"
+                    : (error.streamErrorType || "api_error");
+                const errorText = error.errorText
+                    || (error.name === "AbortError" ? "Generation stopped by user." : "")
+                    || error.message
+                    || "";
+                handleSimpleChatError({
+                    errorType,
+                    processor,
+                    requestTurnInfo,
+                    savedResponseTurn,
+                    requestTurnNumber,
+                    message: messageContent,
+                    errorText,
+                    responseDebugData: error.responseDebugData,
+                });
+            },
+        });
     } catch (error) {
         if (error.name === "AbortError") {
             logger.info("Message generation was stopped by user");

@@ -554,3 +554,123 @@ function reconnectStreaming(chatId) {
 
     updateLiveRendering(processor, newLiveRenderer, newTempContainer);
 }
+
+// --- Helpers formerly in simpleChatMode.js ---
+
+function listenForRequestDebug(requestId, requestTurnNumber, turnMessages) {
+    if (!requestId) return;
+    let source;
+    try {
+        source = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
+    } catch (error) {
+        logger.warn('Failed to open request-debug event stream:', error);
+        return;
+    }
+    source.onmessage = (event) => {
+        let evt;
+        try {
+            evt = JSON.parse(event.data);
+        } catch (_) {
+            return;
+        }
+        if (evt.type !== 'request_debug') return;
+        const requestDebugData = evt.data || {};
+        requestDebugData.turnMessages = turnMessages;
+        attachRequestDebugPanel(requestTurnNumber, requestDebugData);
+        source.close();
+    };
+    source.onerror = () => {};
+}
+
+async function attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
+    const requestMessages = turnsContainer.querySelectorAll('.turn.request-turn, .message.user');
+    const lastRequestMessage = requestMessages[requestMessages.length - 1];
+    if (!lastRequestMessage) return;
+
+    const messageId = lastRequestMessage.dataset.messageId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    lastRequestMessage.dataset.messageId = messageId;
+
+    const existingDebug = lastRequestMessage.querySelector('.debug-panel-container');
+    const existingToggle = lastRequestMessage.querySelector('.debug-toggle');
+    if (existingDebug) existingDebug.remove();
+    if (existingToggle) existingToggle.remove();
+
+    lastRequestMessage.classList.add('has-debug');
+
+    const debugToggle = document.createElement('button');
+    debugToggle.className = 'debug-toggle';
+    debugToggle.dataset.messageId = messageId;
+    debugToggle.innerHTML = '+';
+    debugToggle.title = 'Show debug info';
+
+    const settings = loadSettings();
+    if (!settings.debugPanels) {
+        debugToggle.style.display = 'none';
+    }
+
+    debugToggle.addEventListener('click', () => {
+        const debugPanel = lastRequestMessage.querySelector('.debug-panel-container');
+        if (debugPanel) {
+            const isHidden = debugPanel.style.display === 'none';
+            debugPanel.style.display = isHidden ? 'block' : 'none';
+            debugToggle.innerHTML = isHidden ? '−' : '+';
+            debugToggle.classList.toggle('active', isHidden);
+        }
+    });
+
+    lastRequestMessage.appendChild(debugToggle);
+
+    const debugPanel = createDebugPanel(lastRequestMessage, messageId, requestDebugData, requestTurnNumber);
+    lastRequestMessage.appendChild(debugPanel);
+}
+
+function updateChatTitleFromMessage(message) {
+    const currentTitle = document.getElementById('chatTitle').textContent;
+    if (currentTitle === 'New Chat' || currentTitle === 'Chat') {
+        const titleFromMessage = getTextContent(message);
+        const shortTitle = titleFromMessage.length > 30 ? titleFromMessage.substring(0, 30) + '...' : titleFromMessage;
+        updateChatTitle(shortTitle);
+    }
+}
+
+async function handleSimpleChatError({ errorType, processor, requestTurnInfo, savedResponseTurn, requestTurnNumber, message, errorText = "", responseDebugData = null }) {
+    const resolvedErrorText = errorText
+        || (errorType === "user_stopped" ? "Generation stopped by user." : "")
+        || `Error: ${errorType}`;
+
+    logger.error(`Simple chat failed (${errorType}): ${resolvedErrorText}`);
+
+    const responseTurnNumber = requestTurnNumber + 1;
+
+    if (processor && typeof processor.finalize === "function") {
+        processor.finalize();
+    }
+
+    const blocks = (processor && typeof processor.getBlocks === "function")
+        ? processor.getBlocks()
+        : [];
+    const partialContent = (processor && typeof processor.getRawContent === "function")
+        ? (processor.getRawContent() || "")
+        : "";
+
+    const errorBlock = new Block({
+        type: 'error',
+        content: resolvedErrorText,
+        metadata: { error_type: errorType }
+    });
+    blocks.push(errorBlock);
+
+    const rto = new RenderableTurnObject({
+        role: 'assistant',
+        content: partialContent,
+        blocks: blocks,
+        turnNumber: responseTurnNumber,
+        turnId: savedResponseTurn?.turn_id || null,
+        parentTurnId: savedResponseTurn?.parent_turn_id || null,
+        responseDebugData: responseDebugData,
+    });
+    chatRenderer.renderTurn(rto, true);
+
+    updateChatPreview(currentChatId, partialContent);
+    updateChatTitleFromMessage(message);
+}
