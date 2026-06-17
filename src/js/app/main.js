@@ -168,17 +168,11 @@ async function handleSendMessage() {
     setLoading(true);
 
     try {
-        // Get clean conversation history once using our utility function
-        // Use text for logging, but we'll send the full messageContent
-        const logMessage = typeof messageContent === "string" ? messageContent : textMessage || "[Images only]";
-        const conversationHistory = await getCleanConversationHistory(currentChatId, logMessage);
-
         // Resolve the active terminal turn so the new message continues
         // the current branch (null for a fresh chat).
         const activeParentTurnId = await getActiveTerminalTurnId(currentChatId);
 
-        // Simple chat mode
-        await handleSimpleChat(messageContent, conversationHistory, activeParentTurnId);
+        await handleSimpleChat(messageContent, activeParentTurnId);
     } catch (error) {
         if (error.name === "AbortError") {
             logger.info("Message generation was stopped by user");

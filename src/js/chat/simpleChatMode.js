@@ -154,7 +154,7 @@ async function handleSimpleChatError({ errorType, processor, requestTurnInfo, sa
     updateChatTitleFromMessage(message);
 }
 
-async function handleSimpleChat(message, conversationHistory, parentTurnId = null) {
+async function handleSimpleChat(message, parentTurnId = null) {
     logger.info('Starting simple chat');
 
     const requestTurnNumber = getNextTurnNumber();

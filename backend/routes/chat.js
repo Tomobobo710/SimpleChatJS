@@ -2,7 +2,7 @@
 const express = require("express");
 const { db } = require("../config/database");
 const { processChatRequest, cancelInFlightRequest } = require("../services/chatStreamService");
-const { saveMessage, getChatHistoryForAPI, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
+const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
 const { getCurrentTurnNumber, getTurnInfo, incrementTurnNumber, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
 const { buildSystemMessageIfEnabled } = require("../services/systemPromptService");
 const { log } = require("../utils/logger");
@@ -384,19 +384,6 @@ router.patch("/chat/:id/title", (req, res) => {
         res.json({ success: true, chat_id: chatId, title: title });
     } catch (err) {
         log("[CHAT] Error updating title:", err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Get clean chat history in API format (for user debug panels)
-router.get("/chat/:id/api-history", (req, res) => {
-    const chatId = req.params.id;
-
-    try {
-        const apiHistory = getChatHistoryForAPI(chatId);
-        res.json(apiHistory);
-    } catch (err) {
-        log("[API-HISTORY] Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
