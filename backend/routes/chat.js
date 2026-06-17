@@ -1,7 +1,7 @@
 // Chat routes - Handle chat operations and messaging
 const express = require("express");
 const { db } = require("../config/database");
-const { processChatRequest, cancelInFlightRequest } = require("../services/chatStreamService");
+const { processRequest, cancelInFlightRequest } = require("../services/chatStreamService");
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
 const { getCurrentTurnNumber, getTurnInfo, incrementTurnNumber, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
 const { buildSystemMessageIfEnabled } = require("../services/systemPromptService");
@@ -503,7 +503,7 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
 });
 
 // Main chat endpoint that frontend expects
-router.post("/chat", processChatRequest);
+router.post("/chat", processRequest);
 
 // Cancel an in-flight chat request. Marks it user_stopped, destroys the
 // upstream AI provider request, and persists the partial content as an

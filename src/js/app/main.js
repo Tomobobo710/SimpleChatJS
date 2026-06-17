@@ -98,15 +98,7 @@ async function initializeTurnTrackingForChat(chatId) {
 }
 
 // Handle sending a message
-async function handleSendMessage() {
-    const sendBtn = document.getElementById("sendBtn");
-
-    // Check if we're in stop mode
-    if (sendBtn.classList.contains("btn-stop")) {
-        stopGeneration();
-        return;
-    }
-
+async function onSubmitRequest() {
     const textMessage = messageInput.value; // Don't trim - preserve user's intentional whitespace
     const images = getSelectedImages();
     const documents = getSelectedDocuments();
@@ -178,7 +170,7 @@ async function handleSendMessage() {
             requestTurnNumber,
             parentTurnId,
             turnId: null,
-            inputMethod: "manual",
+            requestOrigin: "send",
 
             saveRequestMessage: async () => {
                 const messageForSaving = { role: "user", content: messageContent };

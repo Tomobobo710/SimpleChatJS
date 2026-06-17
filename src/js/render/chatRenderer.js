@@ -795,7 +795,7 @@ class ChatRenderer {
                 turnId: parentTurnId,
                 truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
-                inputMethod: "retry",
+                requestOrigin: "retry",
                 onError: (error, processor, requestTurnInfo, savedResponseTurn) => {
                     const errorType = error.name === 'AbortError' ? 'user_stopped' : (error.streamErrorType || 'api_error');
                     const errorText = error.errorText || (error.name === 'AbortError' ? 'Generation stopped by user.' : '') || error.message || '';
@@ -2102,7 +2102,7 @@ class ChatRenderer {
                     parentTurnId: originalParentTurnId,
                     truncateFromTurnNumber: retryTurnNumber,
                     truncateContainer: this.container,
-                    inputMethod: "edit_retry",
+                    requestOrigin: "edit_retry",
 
                     saveRequestMessage: async () => {
                         // Save the first carried-forward message; the response

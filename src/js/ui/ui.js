@@ -71,13 +71,23 @@ function initializeElements() {
 // Setup event listeners
 function setupEventListeners() {
     // Send message
-    sendBtn.addEventListener('click', handleSendMessage);
+    sendBtn.addEventListener('click', () => {
+        if (sendBtn.classList.contains("btn-stop")) {
+            stopGeneration();
+        } else {
+            onSubmitRequest();
+        }
+    });
     
     // Enter key to send (Shift+Enter for new line)
     messageInput.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            handleSendMessage();
+            if (sendBtn.classList.contains("btn-stop")) {
+                stopGeneration();
+            } else {
+                onSubmitRequest();
+            }
         }
     });
     

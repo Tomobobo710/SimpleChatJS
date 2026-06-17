@@ -132,7 +132,7 @@ function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, curren
 }
 
 // Handle chat with potential tool calls
-async function handleChatWithTools(
+async function executeStreamingLoop(
     req,
     res,
     messages,
@@ -852,7 +852,7 @@ async function executeToolCallsAndContinue(
     }
 
     // Continue conversation with tool results — same turn as the tool-call response
-    await handleChatWithTools(
+    await executeStreamingLoop(
         req,
         res,
         messages,
@@ -868,7 +868,7 @@ async function executeToolCallsAndContinue(
 }
 
 // Process chat request (entry point from routes)
-async function processChatRequest(req, res) {
+async function processRequest(req, res) {
     const { db } = require("../config/database");
     const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, history_anchor_turn_id } = req.body || {};
     try {
@@ -922,7 +922,7 @@ async function processChatRequest(req, res) {
         log(`[CHAT] Using request ID: ${requestId} (provided: ${!!request_id})`);
         initializeToolEvents(requestId);
 
-        await handleChatWithTools(
+        await executeStreamingLoop(
             req,
             res,
             messages,
@@ -982,8 +982,8 @@ async function processChatRequest(req, res) {
 }
 
 module.exports = {
-    handleChatWithTools,
+    executeStreamingLoop,
     cancelInFlightRequest,
     executeToolCallsAndContinue,
-    processChatRequest
+    processRequest
 };

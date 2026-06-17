@@ -99,7 +99,7 @@ async function streamAndRenderResponse({
     requestTurnInfo,
     container,
     requestTurnNumber,
-    inputMethod,
+    requestOrigin,
     onError = null,
     expectedParentTurnId = null,
     abortController = null
@@ -418,7 +418,7 @@ async function sendAndStream({
     // message on AbortError), and the requestTurnInfo if the request message was saved.
     onError = null,
 
-    inputMethod = "manual"
+    requestOrigin = "send"
 }) {
     // Generate requestId early so request-side callbacks can include it in debug data.
     const requestId = generateRequestId();
@@ -440,7 +440,7 @@ async function sendAndStream({
         try {
             await renderRequestTurn(requestTurnInfo, requestId);
         } catch (error) {
-            logger.warn(`[${inputMethod.toUpperCase()}] Failed to render request turn:`, error);
+            logger.warn(`[${requestOrigin.toUpperCase()}] Failed to render request turn:`, error);
         }
     }
 
@@ -468,7 +468,7 @@ async function sendAndStream({
     // response lookup; the retry caller passes the parent turn id via
     // turnId, so synthesize a requestTurnInfo.
     const effectiveRequestTurnInfo =
-        requestTurnInfo || (inputMethod === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
+        requestTurnInfo || (requestOrigin === "retry" && turnId ? { turn_id: turnId, parent_turn_id: parentTurnId } : null);
 
     const container = truncateContainer || turnsContainer;
     const { savedResponseTurn, responseDebugData, processor, chatId: responseChatId } = await streamAndRenderResponse({
@@ -477,7 +477,7 @@ async function sendAndStream({
         requestTurnInfo: effectiveRequestTurnInfo,
         container,
         requestTurnNumber,
-        inputMethod,
+        requestOrigin,
         onError,
         expectedParentTurnId: effectiveParentTurnId,
         abortController: requestInfo.controller
@@ -497,7 +497,7 @@ async function sendAndStream({
                 processor
             });
         } catch (error) {
-            logger.warn(`[${inputMethod.toUpperCase()}] onResponseRendered failed:`, error);
+            logger.warn(`[${requestOrigin.toUpperCase()}] onResponseRendered failed:`, error);
         }
     }
 
