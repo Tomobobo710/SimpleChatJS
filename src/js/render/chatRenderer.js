@@ -2135,32 +2135,41 @@ class ChatRenderer {
                         if (!requestTurnInfo) return;
                         const firstContent = carriedForward[0]?.content;
                         const enabledToolsFlags = loadEnabledTools();
+
+                        const requestBody = {
+                            chat_id: currentChatId,
+                            enabled_tools: enabledToolsFlags,
+                            request_id: requestId,
+                            parent_turn_id: originalParentTurnId,
+                            turn_id: requestTurnInfo.turn_id,
+                            history_anchor_turn_id: requestTurnInfo.turn_id,
+                            message: firstContent
+                        };
+
+                        const requestMessages = carriedForward.map(entry => ({
+                            role: entry.role || 'user',
+                            content: Array.isArray(entry.content) ? entry.content : [{ type: 'text', text: entry.content }]
+                        }));
+
                         const requestDebugData = {
                             sequence: [
                                 {
-                                    type: "request_input",
+                                    type: "user_http_request",
                                     step: 1,
+                                    timestamp: new Date().toISOString(),
                                     data: {
-                                        requestQuery: {
-                                            message: firstContent,
-                                            chat_id: currentChatId,
-                                            timestamp: new Date().toISOString(),
-                                            message_length: Array.isArray(firstContent)
-                                                ? JSON.stringify(firstContent).length
-                                                : firstContent?.length || 0,
-                                            turn_number: retryTurnNumber,
-                                            is_multimodal: Array.isArray(firstContent)
-                                        },
-                                        tools: {
-                                            total: Object.keys(enabledToolsFlags).length,
-                                            flags: enabledToolsFlags
-                                        },
-                                        context: {
-                                            input_method: "edit_retry",
-                                            current_chat: currentChatId
+                                        requestBody: requestBody
+                                    }
+                                },
+                                {
+                                    type: "ai_http_request",
+                                    step: 2,
+                                    timestamp: new Date().toISOString(),
+                                    data: {
+                                        requestBody: {
+                                            messages: requestMessages
                                         }
-                                    },
-                                    timestamp: new Date().toISOString()
+                                    }
                                 }
                             ],
                             metadata: {
@@ -2168,26 +2177,13 @@ class ChatRenderer {
                                 timestamp: new Date().toISOString(),
                                 tools: Object.keys(enabledToolsFlags).length
                             },
-                            currentTurnNumber: retryTurnNumber
-                        };
-
-                        requestDebugData.sequence.push({
-                            type: "ai_http_request",
-                            step: requestDebugData.sequence.length + 1,
-                            timestamp: new Date().toISOString(),
-                            data: {
+                            currentTurnNumber: retryTurnNumber,
+                            apiRequest: {
+                                url: `${window.location.origin}/api/chat`,
+                                method: "POST",
                                 requestId: requestId,
-                                endpoint: "chat",
-                                message: firstContent,
-                                tools_enabled: Object.keys(enabledToolsFlags).length,
-                                turn_number: retryTurnNumber
+                                timestamp: new Date().toISOString()
                             }
-                        });
-                        requestDebugData.apiRequest = {
-                            url: `${window.location.origin}/api/chat`,
-                            method: "POST",
-                            requestId: requestId,
-                            timestamp: new Date().toISOString()
                         };
 
                         try {

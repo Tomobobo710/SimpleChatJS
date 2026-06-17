@@ -85,21 +85,3 @@ async function processImageFile(file) {
     };
 }
 
-/**
- * Convert blob to base64 string
- * @param {Blob} blob - Blob to convert
- * @returns {Promise<string>} Base64 string (without data URL prefix)
- */
-function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = reader.result;
-            // Remove the data:image/...;base64, prefix
-            const base64 = result.split(',')[1];
-            resolve(base64);
-        };
-        reader.onerror = () => reject(new Error('Failed to convert blob to base64'));
-        reader.readAsDataURL(blob);
-    });
-}

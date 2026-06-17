@@ -8,28 +8,4 @@ class Block {
         this.content = content;
         this.metadata = metadata;
     }
-
-    isChat() {
-        return this.type === 'chat';
-    }
-
-    isThinking() {
-        return this.type === 'thinking';
-    }
-
-    isTool() {
-        return this.type === 'tool';
-    }
-
-    isCode() {
-        return this.type === 'codeblock';
-    }
-
-    isError() {
-        return this.type === 'error';
-    }
-
-    static fromObject(obj) {
-        return new Block(obj);
-    }
 }

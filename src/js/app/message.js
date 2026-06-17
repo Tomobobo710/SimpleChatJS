@@ -62,38 +62,6 @@ class Message {
         return this.isUser() && this.editCount < 3;
     }
 
-    static fromApiData(data) {
-        const parsedToolCalls = data.tool_calls
-            ? (typeof data.tool_calls === 'string' ? JSON.parse(data.tool_calls) : data.tool_calls)
-            : null;
-
-        const parsedDebugData = data.debug_data
-            ? (typeof data.debug_data === 'string' ? JSON.parse(data.debug_data) : data.debug_data)
-            : null;
-
-        return new Message({
-            id: data.original_message_id || data.id || null,
-            role: data.role,
-            content: data.content,
-            turn_number: data.turn_number,
-            turn_id: data.turn_id ?? null,
-            parent_turn_id: data.parent_turn_id ?? null,
-            timestamp: data.timestamp,
-            tool_calls: parsedToolCalls,
-            tool_call_id: data.tool_call_id ?? null,
-            tool_name: data.tool_name ?? null,
-            tool_results: data.tool_results ?? null,
-            thinking: data.thinking ?? null,
-            reasoning: data.reasoning ?? null,
-            error_state: data.error_state ?? null,
-            debug_data: parsedDebugData,
-            edit_count: data.edit_count || 0,
-            edited_at: data.edited_at ?? null,
-            active_edit_version: data.active_edit_version ?? 0,
-            edit_history: data.edit_history ?? null,
-        });
-    }
-
     static fromObject(obj) {
         return new Message(obj);
     }

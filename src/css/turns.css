@@ -171,7 +171,7 @@ details div {
     cursor: pointer;
     display: flex;
     align-items: center;
-
+    font-family: Tahoma, Arial, sans-serif;
     gap: 8px;
     font-size: 13px;
     text-align: left;
@@ -193,6 +193,10 @@ details div {
     border-left: 3px solid #40c057;
 }
 
+details[open] .dropdown-content {
+    display: block;
+}
+
 .dropdown-content {
     display: none;
     border-top: 1px solid #555;
@@ -205,22 +209,25 @@ details div {
     font-family: 'Courier New', monospace;
 }
 
-.dropdown-content.expanded {
-    display: block;
-}
-
-.dropdown-arrow {
-    transition: transform 0.2s;
-}
-
 .dropdown-title {
     flex: 1;
     font-weight: 500;
     text-align: left;
 }
 
-.dropdown-arrow.expanded {
-    transform: rotate(180deg);
+/* ponytail: native <details> marker replaced with CSS indicator */
+.dropdown-toggle {
+    list-style: none;
+}
+.dropdown-toggle::-webkit-details-marker {
+    display: none;
+}
+.dropdown-toggle::before {
+    content: '▶';
+    transition: transform 0.2s;
+}
+details[open] .dropdown-toggle::before {
+    content: '▼';
 }
 
 /* Tool Content Formatting */

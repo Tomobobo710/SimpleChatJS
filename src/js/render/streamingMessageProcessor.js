@@ -221,15 +221,49 @@ class StreamingMessageProcessor {
             } else if (item.type === 'tool') {
                 blocks.push(item.ref);
             } else if (item.type === 'chat' && item.content.trim()) {
-                blocks.push(new Block({
-                    type: 'chat',
-                    content: item.content,
-                    metadata: {}
-                }));
+                this._splitIntoBlocks(item.content, blocks);
             }
         }
 
         return blocks;
+    }
+
+    _splitIntoBlocks(content, blocks) {
+        const regex = /```(\w*)\r?\n?/g;
+        let lastIndex = 0;
+        let match;
+
+        while ((match = regex.exec(content)) !== null) {
+            const textBefore = content.slice(lastIndex, match.index);
+            if (textBefore.trim()) {
+                blocks.push(new Block({ type: 'chat', content: textBefore, metadata: {} }));
+            }
+
+            const lang = match[1];
+            const rest = content.slice(match.index + match[0].length);
+
+            const closeMatch = rest.match(/\n```/) || rest.match(/```/);
+            if (closeMatch) {
+                const codeContent = rest.slice(0, closeMatch.index);
+                blocks.push(new Block({
+                    type: 'codeblock', content: codeContent,
+                    metadata: { language: lang, isStreaming: false }
+                }));
+                lastIndex = match.index + match[0].length + closeMatch.index + 4;
+                regex.lastIndex = lastIndex;
+            } else {
+                blocks.push(new Block({
+                    type: 'codeblock', content: rest,
+                    metadata: { language: lang, isStreaming: true }
+                }));
+                return;
+            }
+        }
+
+        const remaining = content.slice(lastIndex);
+        if (remaining.trim()) {
+            blocks.push(new Block({ type: 'chat', content: remaining, metadata: {} }));
+        }
     }
 
     getRawContent() {

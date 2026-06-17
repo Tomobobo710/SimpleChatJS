@@ -1,8 +1,8 @@
 // Debug routes - Handle debug data and tool events
 const express = require('express');
-const { handleToolEventsStream } = require('../services/toolEventService');
 const { db } = require('../config/database');
 const { log } = require('../utils/logger');
+const { handleToolEventsStream } = require('../services/toolEventService');
 
 const router = express.Router();
 
@@ -91,9 +91,6 @@ router.get('/debug/response/:chatId/:turnId', (req, res) => {
     }
 });
 
-// Tool events endpoint - Server-Sent Events for real-time tool data
-router.get('/tools/:requestId', handleToolEventsStream);
-
 // Logging endpoint for frontend
 router.post('/log', (req, res) => {
     try {
@@ -107,5 +104,7 @@ router.post('/log', (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+router.get('/tools/:requestId', handleToolEventsStream);
 
 module.exports = router;

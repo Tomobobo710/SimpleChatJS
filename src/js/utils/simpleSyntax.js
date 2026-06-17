@@ -143,48 +143,6 @@ class SimpleSyntax {
         return parts.join('');
     }
     
-    // Common operators (avoid matching inside HTML tags)
-    static highlightOperators(code) {
-        const operators = ['\\+', '\\*', '/', '%', '==', '===', '!=', '!==', '<=', '>=', '&&', '\\|\\|', '=>'];
-        operators.forEach(op => {
-            // Use negative lookbehind/lookahead to avoid matching inside HTML tags
-            const regex = new RegExp(`(?<!<[^>]*)(${op})(?![^<]*>)`, 'g');
-            code = code.replace(regex, '<span class="syntax-operator">$1</span>');
-        });
-        return code;
-    }
-    
-    // HTML tags: <tag>, </tag>, <tag/>
-    static highlightHtmlTags(code) {
-        return code
-            // Self-closing tags
-            .replace(/(&lt;)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^&gt;]*)?)\s*(\/?)(&gt;)/g, 
-                '<span class="syntax-tag">$1</span><span class="syntax-tag-name">$2</span>$3<span class="syntax-tag">$4$5</span>')
-            // Opening/closing tags
-            .replace(/(&lt;\/?)([a-zA-Z][a-zA-Z0-9-]*)([^&gt;]*)(&gt;)/g, 
-                '<span class="syntax-tag">$1</span><span class="syntax-tag-name">$2</span>$3<span class="syntax-tag">$4</span>');
-    }
-    
-    // CSS selectors and properties
-    static highlightCssSelectors(code) {
-        return code
-            // CSS properties (word followed by colon)
-            .replace(/\b([a-zA-Z-]+)\s*:/g, '<span class="syntax-property">$1</span>:')
-            // CSS selectors (. # [])
-            .replace(/([.#])[a-zA-Z_-][a-zA-Z0-9_-]*/g, '<span class="syntax-selector">$&</span>')
-            // CSS units
-            .replace(/\b(\d+(?:\.\d+)?)(px|em|rem|vh|vw|%|pt|pc|in|cm|mm|ex|ch|vmin|vmax|deg|rad|turn|s|ms)\b/g, 
-                '<span class="syntax-number">$1</span><span class="syntax-unit">$2</span>');
-    }
-    
-    // Variables and constants ($ prefix, ALL_CAPS, etc.)
-    static highlightVariables(code) {
-        return code
-            // Variables with $ prefix (PHP, shell)
-            .replace(/\$[a-zA-Z_][a-zA-Z0-9_]*/g, '<span class="syntax-variable">$&</span>')
-            // Constants (ALL_CAPS with underscores)
-            .replace(/\b[A-Z][A-Z0-9_]{2,}\b/g, '<span class="syntax-constant">$&</span>');
-    }
 }
 
 // Export for use in other files

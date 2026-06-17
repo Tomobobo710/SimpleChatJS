@@ -20,8 +20,22 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         const currentBlock = currentBlocks[i];
         const renderedBlock = tempContainer._renderedBlocks[i];
         
-        // If block content has changed, update just the content
-        if (currentBlock.content !== renderedBlock.content) {
+        // If block type changed, replace the entire element
+        if (currentBlock.type !== renderedBlock.type) {
+            const oldElement = tempContainer._blockElements[i];
+            if (oldElement) {
+                const newElement = liveRenderer.renderBlock(currentBlock);
+                oldElement.replaceWith(newElement);
+                tempContainer._blockElements[i] = newElement;
+                tempContainer._renderedBlocks[i] = { ...currentBlock };
+            }
+            continue;
+        }
+        
+        // If block content has changed (or codeblock streaming state changed), update
+        const contentChanged = currentBlock.content !== renderedBlock.content;
+        const streamingChanged = currentBlock.type === 'codeblock' && currentBlock.metadata?.isStreaming !== renderedBlock.metadata?.isStreaming;
+        if (contentChanged || streamingChanged) {
             const blockElement = tempContainer._blockElements[i];
             if (blockElement) {
                 logger.debug(`[LIVE-RENDER] Updating content for ${currentBlock.type} block ${i}`);
@@ -37,7 +51,7 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     const dropdownInner = blockElement.querySelector('.dropdown-inner');
                     if (dropdownInner) {
                         if (currentBlock.content.trim()) {
-                            dropdownInner.innerHTML = formatMessage(escapeHtml(currentBlock.content));
+                            dropdownInner.innerHTML = formatStreamingContent(currentBlock.content);
                         } else {
                             dropdownInner.innerHTML = '<em>Thinking...</em>';
                         }
@@ -84,9 +98,4 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         });
     }
     
-    // Remove existing temp content if any
-    const existingTemp = tempContainer.querySelector('.temp-streaming-content');
-    if (existingTemp) {
-        existingTemp.remove();
-    }
 }

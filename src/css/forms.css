@@ -55,20 +55,6 @@
 
 
 /* Button Color Variants */
-.btn.btn-success {
-    background: linear-gradient(to bottom, #2a5a2a, #1a4a1a);
-    border-color: #4a8a4a;
-}
-
-.btn.btn-success:hover {
-    background: linear-gradient(to bottom, #3a6a3a, #2a5a2a);
-}
-
-.btn.btn-success:active {
-    border: 1px inset #4a8a4a;
-    background: linear-gradient(to bottom, #1a4a1a, #2a5a2a);
-}
-
 .btn.btn-danger {
     background: linear-gradient(to bottom, #7a3a3a, #6a2a2a);
     border-color: #8a4a4a;
@@ -189,13 +175,23 @@
 }
 
 /* Dropdown and Select Styling */
+.model-selector-container {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
 .model-dropdown {
-    background: #2a2a2a;
-    border: 1px solid #555;
+    flex: 1;
+    background: #1e1e1e;
+    border: 1px inset #555;
     border-radius: 4px;
     color: #e0e0e0;
     font-size: 14px;
-    padding: 6px 10px;
+    padding: 6px;
+    font-family: Tahoma, Arial, sans-serif;
     min-width: 140px;
     cursor: pointer;
 }
@@ -203,32 +199,6 @@
 .model-dropdown:hover {
     border-color: #666;
     background: #333;
-}
-
-.model-dropdown:focus {
-    outline: none;
-    border-color: #4a9eff;
-    background: #333;
-}
-
-/* Model Selector Container */
-.model-selector-container {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    margin-bottom: 4px;
-    flex-wrap: wrap; /* Allow wrapping on small screens or high zoom */
-}
-
-.model-dropdown {
-    flex: 1;
-    background: #1e1e1e;
-    border: 1px inset #555;
-    padding: 6px;
-    font-family: Tahoma, Arial, sans-serif;
-    font-size: 14px;
-    color: #e0e0e0;
-    cursor: pointer;
 }
 
 .model-input {
