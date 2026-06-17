@@ -5,6 +5,7 @@
  */
 
 const BaseResponseAdapter = require('./BaseResponseAdapter');
+const { getProviderById } = require('./providerRegistry');
 
 class GoogleAdapter extends BaseResponseAdapter {
     constructor() {
@@ -12,11 +13,8 @@ class GoogleAdapter extends BaseResponseAdapter {
     }
 
     getEndpointUrl(settings) {
-        const cleanModelName = settings.modelName.startsWith('models/') 
-            ? settings.modelName.substring(7) 
-            : settings.modelName;
-        
-        return `${settings.apiUrl}/models/${cleanModelName}:streamGenerateContent?key=${settings.apiKey}`;
+        const base = getProviderById('google').getEndpointUrl(settings.apiUrl, settings.modelName);
+        return `${base}:streamGenerateContent?key=${settings.apiKey}`;
     }
 
     convertRequest(unifiedRequest, settings) {
@@ -196,88 +194,39 @@ class GoogleAdapter extends BaseResponseAdapter {
                     
                     const parts = candidate.content?.parts || [];
                     
-                    // Handle thinking mode for Google models
                     const isThinkingModel = this.supportsThinking(context.model || '');
                     const tc = context.thinkingConfig || {};
-                    const hasThoughts = parts.some(part => part.thought);
                     
-                    if (isThinkingModel && tc.enabled && tc.budget !== 0) {
-                        // Use thinking mode processing if thinking is enabled for this model
-                        // This handles both chunks with thoughts AND regular text in thinking conversations
-                        // Process each part according to Google's format
-                        for (const part of parts) {
-                            // Handle text content (thinking or regular)
-                            if (part.text) {
-                                // If this part has thought=true, it's thinking content - create structured reasoning block
-                                if (part.thought) {
-                                     const lines = part.text.split('\n');
-                                     const summaryLine = lines[0] || '';
-                                     const summary = summaryLine.replace(/\*\*/g, '').trim();
-                                     const detailedThoughts = lines.slice(2).join('\n').trim();
-
-                                     if (detailedThoughts) {
-                                         response.addReasoningBlock(detailedThoughts);
-                                     }
-                                 }
-                                // Otherwise it's the regular response
-                                else {
-                                    response.addContent(part.text);
+                    for (const part of parts) {
+                        if (part.text) {
+                            if (isThinkingModel && tc.enabled && tc.budget !== 0 && part.thought) {
+                                const lines = part.text.split('\n');
+                                const detailedThoughts = lines.slice(2).join('\n').trim();
+                                if (detailedThoughts) {
+                                    response.addReasoningBlock(detailedThoughts);
                                 }
-                            }
-                            
-                            // Handle function calls (can exist with or without text)
-                            if (part.functionCall) {
-                                const toolCall = {
-                                    id: `call_${Date.now()}_${response.toolCalls.length}`,
-                                    type: 'function',
-                                    function: {
-                                        name: part.functionCall.name,
-                                        arguments: JSON.stringify(part.functionCall.args || {})
-                                    }
-                                };
-                                
-                                response.addToolCall(toolCall);
-                                
-                                events.push({
-                                    type: 'tool_call_detected',
-                                    data: {
-                                        toolName: toolCall.function.name,
-                                        toolId: toolCall.id
-                                    }
-                                });
-                            }
-                        }
-                    } else {
-                        // Process all parts normally
-                        
-                        for (const part of parts) {
-                            // Handle text content
-                            if (part.text) {
+                            } else {
                                 response.addContent(part.text);
                             }
-                            
-                            // Handle function calls
-                            if (part.functionCall) {
-                                const toolCall = {
-                                    id: `call_${Date.now()}_${response.toolCalls.length}`,
-                                    type: 'function',
-                                    function: {
-                                        name: part.functionCall.name,
-                                        arguments: JSON.stringify(part.functionCall.args || {})
-                                    }
-                                };
-                                
-                                response.addToolCall(toolCall);
-                                
-                                // Emit tool call detected event
-                                events.push({
-                                    type: 'tool_call_detected',
-                                    data: {
-                                        toolName: toolCall.function.name,
-                                        toolId: toolCall.id
-                                    }
-                                });
-                            }
+                        }
+                        
+                        if (part.functionCall) {
+                            const toolCall = {
+                                id: `call_${Date.now()}_${response.toolCalls.length}`,
+                                type: 'function',
+                                function: {
+                                    name: part.functionCall.name,
+                                    arguments: JSON.stringify(part.functionCall.args || {})
+                                }
+                            };
+                            response.addToolCall(toolCall);
+                            events.push({
+                                type: 'tool_call_detected',
+                                data: {
+                                    toolName: toolCall.function.name,
+                                    toolId: toolCall.id
+                                }
+                            });
                         }
                     }
                     

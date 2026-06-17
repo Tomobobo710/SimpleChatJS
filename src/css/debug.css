@@ -111,23 +111,25 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    list-style: none;
 }
 
-.debug-dropdown-header:hover {
-    background: #444;
+.debug-dropdown-header::-webkit-details-marker {
+    display: none;
 }
 
-.dropdown-icon {
+.debug-dropdown-header::before {
+    content: '▶';
     transition: transform 0.2s;
     font-size: 10px;
 }
 
-.debug-dropdown.expanded .dropdown-icon {
-    transform: rotate(90deg);
+details[open] .debug-dropdown-header::before {
+    content: '▼';
 }
 
-.debug-dropdown.expanded .debug-dropdown-content {
-    display: block !important;
+.debug-dropdown-header:hover {
+    background: #444;
 }
 
 .dropdown-title {

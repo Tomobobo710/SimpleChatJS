@@ -1,7 +1,10 @@
 // Chat routes - Handle chat operations and messaging
 const express = require("express");
 const { db } = require("../config/database");
-const { processChatRequest, cancelInFlightRequest, saveTurnDebugData, getTurnDebugData } = require("../services/chatService");
+const { processChatRequest, cancelInFlightRequest } = require("../services/chatStreamService");
+const { saveMessage, getChatHistoryForAPI, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
+const { getCurrentTurnNumber, getTurnInfo, incrementTurnNumber, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
+const { buildSystemMessageIfEnabled } = require("../services/systemPromptService");
 const { log } = require("../utils/logger");
 
 const router = express.Router();
@@ -232,8 +235,6 @@ router.delete("/chat/:id", (req, res) => {
         const chatStmt = db.prepare("SELECT project_id FROM chats WHERE id = ?");
         const chat = chatStmt.get(chatId);
 
-        const { deleteBranchSelections } = require("../services/chatService");
-
         const tx = db.transaction(() => {
             db.prepare("DELETE FROM messages WHERE chat_id = ?").run(chatId);
             deleteBranchSelections(chatId);
@@ -287,7 +288,7 @@ router.post("/message", async (req, res) => {
         if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
 
         // Use the unified save function
-        const { saveCompleteMessageToDatabase, incrementTurnNumber, getTurnInfo, buildSystemMessageIfEnabled } = require("../services/chatService");
+
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
 
         if (role === "user") {
@@ -298,13 +299,13 @@ router.post("/message", async (req, res) => {
             if (existingSystemCount === 0) {
                 const systemMessage = buildSystemMessageIfEnabled();
                 if (systemMessage) {
-                    await saveCompleteMessageToDatabase(chat_id, systemMessage, 1, null, turnInfo);
+                    await saveMessage(chat_id, systemMessage, 1, null, turnInfo);
                 }
             }
         }
 
         // Use turn number provided by frontend
-        await saveCompleteMessageToDatabase(chat_id, completeMessage, turn_number, error_state || null, turnInfo);
+        await saveMessage(chat_id, completeMessage, turn_number, error_state || null, turnInfo);
 
         // Increment turn number when user sends a message (starts new conversation turn)
         if (role === "user") {
@@ -392,7 +393,6 @@ router.get("/chat/:id/api-history", (req, res) => {
     const chatId = req.params.id;
 
     try {
-        const { getChatHistoryForAPI } = require("../services/chatService");
         const apiHistory = getChatHistoryForAPI(chatId);
         res.json(apiHistory);
     } catch (err) {
@@ -406,7 +406,6 @@ router.get("/chat/:id/current-turn", (req, res) => {
     const { id: chatId } = req.params;
 
     try {
-        const { getCurrentTurnNumber } = require("../services/chatService");
         const turnNumber = getCurrentTurnNumber(chatId);
         res.json({ turn_number: turnNumber });
     } catch (err) {
@@ -420,7 +419,6 @@ router.get("/chat/:id/current-turn", (req, res) => {
 router.get("/chat/:id/branch-selections", (req, res) => {
     const { id: chatId } = req.params;
     try {
-        const { loadBranchSelections } = require("../services/chatService");
         const selections = loadBranchSelections(chatId);
         res.json(selections);
     } catch (err) {
@@ -436,7 +434,6 @@ router.post("/chat/:id/branch-selections", (req, res) => {
     try {
         const body = req.body || {};
         const selections = body.selections;
-        const { saveBranchSelections } = require("../services/chatService");
         const result = saveBranchSelections(chatId, selections);
         res.json({ success: true, ...result });
     } catch (err) {

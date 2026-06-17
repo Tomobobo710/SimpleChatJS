@@ -5,6 +5,7 @@
  */
 
 const BaseResponseAdapter = require('./BaseResponseAdapter');
+const { getProviderById } = require('./providerRegistry');
 
 class OpenAIAdapter extends BaseResponseAdapter {
     constructor() {
@@ -12,23 +13,11 @@ class OpenAIAdapter extends BaseResponseAdapter {
     }
 
     getEndpointUrl(settings) {
-        return `${settings.apiUrl}/chat/completions`;
+        return getProviderById('openai-compatible').getEndpointUrl(settings.apiUrl);
     }
 
     getHeaders(settings) {
-        const headers = super.getHeaders(settings);
-        
-        if (settings.apiKey) {
-            headers['Authorization'] = `Bearer ${settings.apiKey}`;
-        }
-        
-        // OpenRouter-specific headers
-        if (settings.apiUrl.includes('openrouter.ai')) {
-            headers['HTTP-Referer'] = 'https://simplechatjs.local';
-            headers['X-Title'] = 'SimpleChatJS';
-        }
-        
-        return headers;
+        return getProviderById('openai-compatible').getHeaders(settings.apiKey, settings.apiUrl);
     }
 
     convertRequest(unifiedRequest) {

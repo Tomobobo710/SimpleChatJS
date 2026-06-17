@@ -593,7 +593,7 @@
     margin-top: 8px;
 }
 
-.document-preview {
+.document-preview, .edit-document-preview {
     position: relative;
     display: flex;
     align-items: center;
@@ -605,7 +605,7 @@
     max-width: 300px;
 }
 
-.document-preview .doc-icon {
+.document-preview .doc-icon, .edit-document-preview .doc-icon {
     font-family: monospace;
     font-size: 12px;
     font-weight: bold;
@@ -614,12 +614,12 @@
     flex-shrink: 0;
 }
 
-.document-preview .doc-info {
+.document-preview .doc-info, .edit-document-preview .doc-info {
     flex: 1;
     min-width: 0;
 }
 
-.document-preview .doc-name {
+.document-preview .doc-name, .edit-document-preview .doc-name {
     font-size: 13px;
     font-weight: bold;
     color: #ffffff;
@@ -628,12 +628,12 @@
     text-overflow: ellipsis;
 }
 
-.document-preview .doc-size {
+.document-preview .doc-size, .edit-document-preview .doc-size {
     font-size: 11px;
     color: #999;
 }
 
-.document-preview .remove-btn {
+.document-preview .remove-btn, .edit-document-preview .remove-btn {
     position: absolute;
     top: 2px;
     right: 2px;
@@ -651,11 +651,11 @@
     line-height: 1;
 }
 
-.document-preview .remove-btn:hover {
+.document-preview .remove-btn:hover, .edit-document-preview .remove-btn:hover {
     background: rgba(255, 0, 0, 1);
 }
 
-.document-preview:hover {
+.document-preview:hover, .edit-document-preview:hover {
     border-color: #4a90e2;
     background: #333;
 }
@@ -680,72 +680,6 @@
     overflow-y: auto;
 }
 
-.edit-document-preview {
-    position: relative;
-    display: flex;
-    align-items: center;
-    background: #2c2c2c;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 8px;
-    min-width: 200px;
-    max-width: 300px;
-}
-
-.edit-document-preview .doc-icon {
-    font-family: monospace;
-    font-size: 12px;
-    font-weight: bold;
-    color: #4a90e2;
-    margin-right: 8px;
-    flex-shrink: 0;
-}
-
-.edit-document-preview .doc-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.edit-document-preview .doc-name {
-    font-size: 13px;
-    font-weight: bold;
-    color: #ffffff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.edit-document-preview .doc-size {
-    font-size: 11px;
-    color: #999;
-}
-
-.edit-document-preview .remove-btn {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 16px;
-    height: 16px;
-    background: rgba(255, 0, 0, 0.8);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    font-size: 10px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-}
-
-.edit-document-preview .remove-btn:hover {
-    background: rgba(255, 0, 0, 1);
-}
-
-.edit-document-preview:hover {
-    border-color: #4a90e2;
-    background: #333;
-}
 /* Drag and drop states */
 /* Removed image-area drag-over styles - now using messages-container */
 

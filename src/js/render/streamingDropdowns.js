@@ -145,6 +145,52 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
     return result;
 }
 
+// Format content with streaming code block support.
+// Renders completed code fences as formatted code blocks,
+// open (streaming) fences as code blocks with a blinking cursor.
+function formatStreamingContent(content) {
+    const regex = /```(\w*)\r?\n?/g;
+    let lastIndex = 0;
+    let match;
+    let html = '';
+
+    while ((match = regex.exec(content)) !== null) {
+        const textBefore = content.slice(lastIndex, match.index);
+        if (textBefore.trim()) {
+            html += formatMessage(escapeHtml(textBefore));
+        }
+
+        const lang = match[1];
+        const rest = content.slice(match.index + match[0].length);
+
+        // ponytail: prefer \n before closing fence (standard markdown),
+        // fallback matches ``` anywhere for models that omit the preceding newline
+        const closeMatch = rest.match(/\n```/) || rest.match(/```/);
+        if (closeMatch) {
+            const fenceLen = closeMatch[0].length;
+            const codeContent = rest.slice(0, closeMatch.index);
+            const langLabel = lang ? `<div class="code-lang">${lang}</div>` : '';
+            const highlighted = window.SimpleSyntax ? SimpleSyntax.highlight(codeContent, lang) : escapeHtml(codeContent);
+            html += `${langLabel}<pre><code class="language-${lang}">${highlighted}</code></pre>`;
+            lastIndex = match.index + match[0].length + closeMatch.index + fenceLen;
+            regex.lastIndex = lastIndex;
+        } else {
+            logger.debug(`[STREAMING-FMT] Open code fence (lang=${lang}), rest=${rest.slice(0, 80)}`);
+            const langLabel = lang ? `<div class="code-lang">${lang}</div>` : '';
+            html += `${langLabel}<pre><code class="streaming-code language-${lang}">${escapeHtml(rest)}<span class="code-cursor">|</span></code></pre>`;
+            lastIndex = content.length;
+            break;
+        }
+    }
+
+    const remaining = content.slice(lastIndex);
+    if (remaining.trim()) {
+        html += formatMessage(escapeHtml(remaining));
+    }
+
+    return html || formatMessage(escapeHtml(content));
+}
+
 class StreamingDropdown {
     constructor(id, title, type, isCollapsed = true) {
         this.id = id;
@@ -156,22 +202,22 @@ class StreamingDropdown {
     }
     
     createElement() {
-        const wrapper = document.createElement('div');
+        const wrapper = document.createElement('details');
         wrapper.className = `streaming-dropdown ${this.type}-dropdown`;
+        if (!this.isCollapsed) wrapper.open = true;
         wrapper.innerHTML = `
-            <button class="dropdown-toggle ${this.isCollapsed ? 'collapsed' : 'expanded'}" data-dropdown="${this.id}">
-                <span class="dropdown-arrow">${this.isCollapsed ? '▶' : '▼'}</span>
+            <summary class="dropdown-toggle">
                 <span class="dropdown-title">${this.title}</span>
-            </button>
-            <div class="dropdown-content${this.isCollapsed ? '' : ' expanded'}">
+            </summary>
+            <div class="dropdown-content">
                 <div class="dropdown-inner" id="dropdown-content-${this.id}"></div>
             </div>
         `;
         
-        // Add click handler
-        wrapper.querySelector('.dropdown-toggle').addEventListener('click', () => this.toggle());
+        wrapper.addEventListener('toggle', () => {
+            this.isCollapsed = !wrapper.open;
+        });
         
-        // Store reference to this instance on the DOM element for state restoration
         wrapper._streamingDropdownInstance = this;
         
         return wrapper;
@@ -192,6 +238,8 @@ class StreamingDropdown {
         if (contentDiv) {
             if (!this.content.trim()) {
                 contentDiv.innerHTML = '<em>No content yet...</em>';
+            } else if (this.type === 'thinking') {
+                contentDiv.innerHTML = formatStreamingContent(this.content);
             } else if (this.content.includes('<div class="tool-section">')) {
                 // Content is already formatted HTML (from formatToolContent)
                 contentDiv.innerHTML = this.content;
@@ -202,26 +250,6 @@ class StreamingDropdown {
         }
     }
     
-    toggle() {
-        this.isCollapsed = !this.isCollapsed;
-        const button = this.element.querySelector('.dropdown-toggle');
-        const content = this.element.querySelector('.dropdown-content');
-        const arrow = this.element.querySelector('.dropdown-arrow');
-        
-        if (button) {
-            button.className = `dropdown-toggle ${this.isCollapsed ? 'collapsed' : 'expanded'}`;
-        }
-        if (content) {
-            if (this.isCollapsed) {
-                content.classList.remove('expanded');
-            } else {
-                content.classList.add('expanded');
-            }
-        }
-        if (arrow) {
-            arrow.textContent = this.isCollapsed ? '▶' : '▼';
-        }
-    }
 }
 
 

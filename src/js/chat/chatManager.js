@@ -191,7 +191,7 @@ function formatChatDateTime(date) {
     }
 }
 
-function addChatToList(chatId, title, lastMessage, lastUpdated) {
+function createChatItemElement(chatId, title, lastMessage, lastUpdated) {
     const chatItem = document.createElement("div");
     chatItem.className = "chat-item";
     chatItem.dataset.chatId = chatId;
@@ -209,69 +209,33 @@ function addChatToList(chatId, title, lastMessage, lastUpdated) {
         </div>
     `;
 
-    // Add click handler for the main chat content (but not the header)
     const chatContent = chatItem.querySelector(".chat-item-content");
     chatContent.addEventListener("click", () => {
         switchToChat(chatId);
     });
 
-    // Also allow clicking the main chat item (but not header or delete button)
     chatItem.addEventListener("click", (e) => {
         if (!e.target.closest(".chat-item-header")) {
             switchToChat(chatId);
         }
     });
 
-    // Add click handler for the delete button
     const deleteBtn = chatItem.querySelector(".chat-delete-btn");
     deleteBtn.addEventListener("click", (e) => {
-        e.stopPropagation(); // Prevent chat selection
+        e.stopPropagation();
         handleDeleteChat(chatId, title);
     });
 
-    // Insert at the top (most recent first)
+    return chatItem;
+}
+
+function addChatToList(chatId, title, lastMessage, lastUpdated) {
+    const chatItem = createChatItemElement(chatId, title, lastMessage, lastUpdated);
     chatList.insertBefore(chatItem, chatList.firstChild);
 }
-// Add chat to the sidebar list at the end (for loading from database)
+
 function addChatToListAtEnd(chatId, title, lastMessage, lastUpdated) {
-    const chatItem = document.createElement("div");
-    chatItem.className = "chat-item";
-    chatItem.dataset.chatId = chatId;
-
-    const dateTimeStr = formatChatDateTime(lastUpdated);
-
-    chatItem.innerHTML = `
-        <div class="chat-item-header">
-            <div class="chat-item-datetime">${dateTimeStr}</div>
-            <button class="chat-delete-btn" title="Delete chat"><span class="x-icon"></span></button>
-        </div>
-        <div class="chat-item-content">
-            <div class="chat-item-title">${escapeHtml(title)}</div>
-            <div class="chat-item-preview">${escapeHtml(getPreviewText(lastMessage, 50))}</div>
-        </div>
-    `;
-
-    // Add click handler for the main chat content (but not the header)
-    const chatContent = chatItem.querySelector(".chat-item-content");
-    chatContent.addEventListener("click", () => {
-        switchToChat(chatId);
-    });
-
-    // Also allow clicking the main chat item (but not header or delete button)
-    chatItem.addEventListener("click", (e) => {
-        if (!e.target.closest(".chat-item-header")) {
-            switchToChat(chatId);
-        }
-    });
-
-    // Add click handler for the delete button
-    const deleteBtn = chatItem.querySelector(".chat-delete-btn");
-    deleteBtn.addEventListener("click", (e) => {
-        e.stopPropagation(); // Prevent chat selection
-        handleDeleteChat(chatId, title);
-    });
-
-    // Append at the end (maintain backend order)
+    const chatItem = createChatItemElement(chatId, title, lastMessage, lastUpdated);
     chatList.appendChild(chatItem);
 }
 

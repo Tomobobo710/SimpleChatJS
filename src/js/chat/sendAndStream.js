@@ -444,7 +444,6 @@ async function sendAndStream({
         }
     }
 
-    await loadEnabledToolsFromBackend();
     const enabledToolsFlags = loadEnabledTools();
 
     // For flows that saved a request message, derive the request's turn

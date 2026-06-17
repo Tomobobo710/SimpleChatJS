@@ -171,9 +171,7 @@ async function handleSaveSettings() {
         if (!settingsResponse.ok) throw new Error('Failed to save settings');
 
         // Save enabled tools to file storage
-        if (Object.keys(enabledTools).length > 0) {
-            await saveEnabledToolsToBackend(enabledTools);
-        }
+        await saveEnabledToolsToBackend(enabledTools);
 
         // Save SimpleTools config
         const simpleToolsConfig = {

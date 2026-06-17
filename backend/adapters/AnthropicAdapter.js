@@ -5,7 +5,7 @@
  */
 
 const BaseResponseAdapter = require('./BaseResponseAdapter');
-const { log } = require('../utils/logger');
+const { getProviderById } = require('./providerRegistry');
 
 class AnthropicAdapter extends BaseResponseAdapter {
     constructor() {
@@ -13,20 +13,11 @@ class AnthropicAdapter extends BaseResponseAdapter {
     }
 
    getEndpointUrl(settings) {
-        return `${settings.apiUrl}/messages`;
+        return getProviderById('anthropic').getEndpointUrl(settings.apiUrl);
     }
 
     getHeaders(settings) {
-        const headers = super.getHeaders(settings);
-        
-        if (settings.apiKey) {
-            headers['x-api-key'] = settings.apiKey;
-        }
-        
-        // Required Anthropic version header
-        headers['anthropic-version'] = '2023-06-01';
-        
-        return headers;
+        return getProviderById('anthropic').getHeaders(settings.apiKey);
     }
 
     convertRequest(unifiedRequest, settings) {

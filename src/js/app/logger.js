@@ -127,7 +127,3 @@ function setLogLevel(level) {
 window.logger = logger;
 window.setLogLevel = setLogLevel;
 
-
-function log(message, data = null) {
-    logger.info(message, data);
-}

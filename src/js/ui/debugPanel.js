@@ -259,12 +259,11 @@ class DebugPanel {
             const result = toolResults?.find(r => r.toolId === toolId);
             const hasResult = result && result.status === 'success';
 
-            html += `<div class="debug-dropdown" data-content-type="json">`;
-            html += `<div class="debug-dropdown-header" onclick="toggleDebugDropdown(this)">`;
-            html += `<span class="dropdown-icon">&#9654;</span>`;
+            html += `<details class="debug-dropdown" data-content-type="json">`;
+            html += `<summary class="debug-dropdown-header">`;
             html += `<span class="dropdown-title">${toolName} (${toolId})${hasResult ? ' &#10003;' : ''}</span>`;
-            html += `</div>`;
-            html += `<div class="debug-dropdown-content" style="display: none">`;
+            html += `</summary>`;
+            html += `<div class="debug-dropdown-content">`;
 
             const toolInfo = { id: toolId, name: toolName, arguments: args };
             if (result) {
@@ -274,7 +273,7 @@ class DebugPanel {
 
             html += `<pre>${JSON.stringify(toolInfo, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
             html += `</div>`;
-            html += `</div>`;
+            html += `</details>`;
         }
 
         html += '</div>';
@@ -282,19 +281,15 @@ class DebugPanel {
     }
 
     createDropdown(title, content, isExpanded = false, contentType = 'text') {
-        const expandedClass = isExpanded ? 'expanded' : '';
-        const displayStyle = isExpanded ? 'block' : 'none';
-
         return `
-            <div class="debug-dropdown ${expandedClass}" data-content-type="${contentType}">
-                <div class="debug-dropdown-header" onclick="toggleDebugDropdown(this)">
-                    <span class="dropdown-icon">&#9654;</span>
+            <details class="debug-dropdown" data-content-type="${contentType}"${isExpanded ? ' open' : ''}>
+                <summary class="debug-dropdown-header">
                     <span class="dropdown-title">${title}</span>
-                </div>
-                <div class="debug-dropdown-content" style="display: ${displayStyle}">
+                </summary>
+                <div class="debug-dropdown-content">
                     <pre>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
                 </div>
-            </div>
+            </details>
         `;
     }
 }
@@ -311,16 +306,4 @@ if (typeof module !== 'undefined' && module.exports) {
         createDebugPanelContent
     };
 }
-// Toggle debug dropdown function
-function toggleDebugDropdown(headerElement) {
-    const dropdown = headerElement.parentNode;
-    const content = dropdown.querySelector('.debug-dropdown-content');
-    const icon = headerElement.querySelector('.dropdown-icon');
 
-    if (dropdown && content && icon) {
-        const expanding = !dropdown.classList.contains('expanded');
-        dropdown.classList.toggle('expanded');
-        content.style.display = expanding ? 'block' : 'none';
-        icon.textContent = expanding ? '▼' : '▶';
-    }
-}
