@@ -74,6 +74,7 @@ function cancelInFlightRequest(requestId) {
                 try {
                     await pushTurnError(state.chatId, state.turnInfo, {
                         content: streamedSoFar,
+                        reasoning: reasoning || null,
                         toolCalls: toolCalls || [],
                         hasToolCalls: !!toolCalls,
                         status: null,

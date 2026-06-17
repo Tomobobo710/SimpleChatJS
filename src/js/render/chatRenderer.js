@@ -830,6 +830,20 @@ class ChatRenderer {
                     if (typeof updateChatPreview === "function") {
                         updateChatPreview(currentChatId, partialContent);
                     }
+
+                    // Persist branch selection so the cancelled retry's branch
+                    // survives a reload instead of falling back to the old branch.
+                    if (savedResponseTurn?.turn_id) {
+                        const parentKey = parentTurnId || "root";
+                        const scopeKey = `${currentChatId}::${parentKey}`;
+                        selectedSiblings[scopeKey] = savedResponseTurn.turn_id;
+                        const scopedMap = Object.fromEntries(
+                            Object.entries(selectedSiblings).filter(([k]) => k.startsWith(`${currentChatId}::`))
+                        );
+                        saveBranchSelections(currentChatId, scopedMap).catch((e) =>
+                            logger.warn("[RETRY] Failed to persist branch selection:", e)
+                        );
+                    }
                 },
             });
         } catch (error) {
@@ -2218,7 +2232,43 @@ class ChatRenderer {
                         // walks the active branch cleanly, rendering all
                         // carried-forward messages from the DB.
                         await loadChatHistory(currentChatId);
-                    }
+                    },
+
+                    onError: (error, processor, requestTurnInfo, savedResponseTurn) => {
+                        const errorType = error.name === 'AbortError' ? 'user_stopped' : (error.streamErrorType || 'api_error');
+                        const errorText = error.errorText || (error.name === 'AbortError' ? 'Generation stopped by user.' : '') || error.message || '';
+
+                        const responseTurnNumber = retryTurnNumber + 1;
+
+                        if (processor && typeof processor.finalize === "function") {
+                            processor.finalize();
+                        }
+
+                        const blocks = (processor && typeof processor.getBlocks === "function") ? processor.getBlocks() : [];
+                        const partialContent = (processor && typeof processor.getRawContent === "function") ? (processor.getRawContent() || "") : "";
+
+                        const errorBlock = new Block({
+                            type: 'error',
+                            content: errorText,
+                            metadata: { error_type: errorType }
+                        });
+                        blocks.push(errorBlock);
+
+                        const rto = new RenderableTurnObject({
+                            role: 'assistant',
+                            content: partialContent,
+                            blocks: blocks,
+                            turnNumber: responseTurnNumber,
+                            turnId: savedResponseTurn?.turn_id || null,
+                            parentTurnId: savedResponseTurn?.parent_turn_id || null,
+                            responseDebugData: error.responseDebugData || null,
+                        });
+                        this.renderTurn(rto, true);
+
+                        if (typeof updateChatPreview === "function") {
+                            updateChatPreview(currentChatId, partialContent);
+                        }
+                    },
                 });
             } else {
                 // Regular edit — reload chat. The render path reads
