@@ -59,7 +59,7 @@ class Turn {
     // accidentally fall through and render an empty chat block.
     hasRenderableResponseContent() {
         return this.assistantMessages.some(
-            (m) => m.content && (typeof m.content === 'string' ? m.content !== '' : true)
+            (m) => (m.content && (typeof m.content === 'string' ? m.content !== '' : true)) || m.reasoning
         );
     }
 
