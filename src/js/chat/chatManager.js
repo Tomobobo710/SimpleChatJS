@@ -315,15 +315,8 @@ async function switchToChat(chatId) {
     // Load chat history
     await loadChatHistory(chatId);
 
-    // If there's a live stream for this chat, re-attach its DOM
-    if (typeof reconnectStreaming === "function") {
-        reconnectStreaming(chatId);
-    }
-
-    // Reflect whether the chat we switched to is streaming (Stop) or not (Send).
-    if (typeof refreshSendButton === "function") {
-        refreshSendButton();
-    }
+    streamManager.reconnectStreaming(chatId);
+    streamManager.refreshSendButton();
 
     // Focus input
     messageInput.focus();
@@ -614,13 +607,7 @@ async function loadChatHistory(chatId) {
         logger.error("Error loading chat history:", error, true);
         showError(`Failed to load chat history: ${error.message}`);
     } finally {
-        // Don't force "Send": the chat being loaded (or another chat) may have
-        // an in-flight stream. Reflect the viewed chat's actual stream state.
-        if (typeof refreshSendButton === "function") {
-            refreshSendButton();
-        } else {
-            setLoading(false);
-        }
+        streamManager.refreshSendButton();
         isLoadingHistory = false;
     }
 }

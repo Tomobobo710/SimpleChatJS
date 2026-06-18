@@ -163,8 +163,7 @@ function stopStream() {
 // only that chat's request and leaves other concurrent streams running.
 // The button/indicator are refreshed by the stream's own abort handling.
 async function stopGeneration() {
-    if (typeof stopChatStream !== 'function') return;
-    const stopped = await stopChatStream(currentChatId);
+    const stopped = await streamManager.stopChatStream(currentChatId);
     if (stopped) {
         logger.info('Generation stopped by user');
         showNotification('Generation stopped', 'info');
