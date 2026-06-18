@@ -1,28 +1,8 @@
 // Turn Service - Turn management, branch navigation, and lineage traversal.
-// Handles turn numbering, ancestor chains, and branch selection persistence.
+// Handles ancestor chains, branch selection persistence, and turn_id generation.
 
 const crypto = require('crypto');
 const { log } = require('../utils/logger');
-
-// Get current turn number for a chat
-function getCurrentTurnNumber(chat_id) {
-    if (!chat_id) {
-        throw new Error("getCurrentTurnNumber: chat_id is required");
-    }
-
-    const { db } = require('../config/database');
-
-    try {
-        const stmt = db.prepare("SELECT turn_number FROM chats WHERE id = ?");
-        const result = stmt.get(chat_id);
-        const currentTurn = result ? result.turn_number || 0 : 0;
-        log(`[CURRENT-TURN] Chat ${chat_id}: current turn = ${currentTurn}`);
-        return currentTurn;
-    } catch (err) {
-        log("[CHAT-TURN] Error getting current turn:", err);
-        throw err;
-    }
-}
 
 function getTurnInfo(parentTurnId = null, turnId = null) {
     const resolvedTurnId = turnId || crypto.randomUUID();
@@ -31,29 +11,6 @@ function getTurnInfo(parentTurnId = null, turnId = null) {
     log(`[TURN-INFO] turn_id=${resolvedTurnId}, parent_turn_id=${resolvedParentTurnId}`);
 
     return { turn_id: resolvedTurnId, parent_turn_id: resolvedParentTurnId };
-}
-
-function incrementTurnNumber(chat_id) {
-    if (!chat_id) {
-        throw new Error("incrementTurnNumber: chat_id is required");
-    }
-
-    const { db } = require('../config/database');
-
-    try {
-        const stmt = db.prepare("UPDATE chats SET turn_number = turn_number + 1 WHERE id = ?");
-        const result = stmt.run(chat_id);
-
-        if (result.changes > 0) {
-            const newTurn = getCurrentTurnNumber(chat_id);
-            log(`[INCREMENT-TURN] Chat ${chat_id}: incremented to turn ${newTurn}`);
-        } else {
-            log(`[INCREMENT-TURN] Chat ${chat_id}: no chat found to increment`);
-        }
-    } catch (err) {
-        log("[INCREMENT-TURN] Error incrementing turn:", err);
-        throw err;
-    }
 }
 
 // Walk the parent_turn_id chain from a given turn_id up to the root.
@@ -178,9 +135,7 @@ function deleteBranchSelections(chatId) {
 }
 
 module.exports = {
-    getCurrentTurnNumber,
     getTurnInfo,
-    incrementTurnNumber,
     getAncestorTurnIds,
     saveBranchSelections,
     loadBranchSelections,

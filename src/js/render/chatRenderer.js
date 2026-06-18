@@ -630,7 +630,7 @@ class ChatRenderer {
         actionsContainer.appendChild(actionButtons);
 
         // Add branch navigation to both user and assistant turns (both can be branched)
-        if ((role === "user" || role === "assistant") && turnNumber) {
+        if ((role === "user" || role === "assistant") && turnId) {
             // Branch navigation container
             const branchNav = document.createElement("div");
             branchNav.className = "branch-nav";
@@ -681,8 +681,8 @@ class ChatRenderer {
 
     // Handle turn-level editing - show all messages in the turn
     async handleEditMessage(turnId, role, turnNumber, messageId) {
-        if (!turnNumber) {
-            showError("Cannot edit: Turn number not available");
+        if (!turnId) {
+            showError("Cannot edit: Turn ID not available");
             return;
         }
 
@@ -698,8 +698,8 @@ class ChatRenderer {
         }
 
         try {
-            // Get all messages for this turn
-            const response = await getTurnMessages(currentChatId, turnNumber);
+            // Get all messages for this turn by turn_id
+            const response = await getTurnMessages(currentChatId, turnId);
 
             if (!response || !response.messages) {
                 showError("Cannot edit: Invalid response from server");
@@ -707,8 +707,7 @@ class ChatRenderer {
                 return;
             }
 
-            // Filter to the active leaf's messages only — siblings share
-            // turn_number, so the unfiltered list contains all siblings.
+            // Filter to the active leaf's messages only
             const turnMessages = response.messages.filter((m) => m.turn_id === turnId);
 
             if (!Array.isArray(turnMessages) || turnMessages.length === 0) {
@@ -717,7 +716,7 @@ class ChatRenderer {
             }
 
             // Enter message-based edit mode
-            this.enterMessageEditMode(turnDiv, turnMessages, turnNumber);
+            this.enterMessageEditMode(turnDiv, turnMessages, 0);
         } catch (error) {
             console.error("[EDIT] Error getting turn messages:", error);
             showError(`Error loading turn for editing: ${error.message}`);
@@ -730,7 +729,7 @@ class ChatRenderer {
             return;
         }
 
-        if (!turnNumber) {
+        if (!turnId) {
             return;
         }
 
@@ -738,10 +737,7 @@ class ChatRenderer {
         const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (turnDiv) {
             turnDiv.dataset.shouldRetryAfterEdit = "true";
-            turnDiv.dataset.editRetryTurnNumber = turnNumber;
-            if (turnId) {
-                turnDiv.dataset.editRetryTurnId = turnId;
-            }
+            turnDiv.dataset.editRetryTurnId = turnId;
         }
 
         // Call the regular edit function - it will use the proper modal
@@ -750,7 +746,7 @@ class ChatRenderer {
 
     async handleRetryMessage(turnId, role, turnNumber, messageId) {
         if (role !== "assistant") return;
-        if (!turnNumber) return;
+        if (!turnId) return;
 
         const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (turnDiv) {
@@ -772,9 +768,7 @@ class ChatRenderer {
                 messages: [],
                 parentTurnId,
                 turnId: parentTurnId,
-                requestTurnNumber: turnNumber,
                 requestOrigin: "retry",
-                truncateFromTurnNumber: turnNumber,
                 truncateContainer: this.container,
                 chatId: currentChatId,
             });
@@ -1960,15 +1954,13 @@ class ChatRenderer {
         try {
             // Check if this was an Edit & Retry
             const shouldRetry = isEditRetry === true;
-            const retryTurnNumber = shouldRetry ? parseInt(turnDiv.dataset.editRetryTurnNumber) : null;
             const retryTurnId = shouldRetry ? (turnDiv.dataset.editRetryTurnId || null) : null;
 
             turnDiv.classList.remove("editing");
 
-            if (shouldRetry && retryTurnNumber) {
+            if (shouldRetry && retryTurnId) {
                 // Clear the retry flags
                 delete turnDiv.dataset.shouldRetryAfterEdit;
-                delete turnDiv.dataset.editRetryTurnNumber;
                 delete turnDiv.dataset.editRetryTurnId;
 
                 // The modal is the source of truth. Collect every container's
@@ -2021,7 +2013,7 @@ class ChatRenderer {
                 // Get the parent_turn_id from history for the new lineage
                 const history = await getChatHistory(currentChatId);
                 const requestMsg = (history.messages || []).find(
-                    (m) => m.role === "user" && m.turn_number === retryTurnNumber && m.turn_id === retryTurnId
+                    (m) => m.role === "user" && m.turn_id === retryTurnId
                 );
                 const originalParentTurnId = requestMsg?.parent_turn_id || null;
 
@@ -2029,9 +2021,7 @@ class ChatRenderer {
                     messages: carriedForward,
                     parentTurnId: originalParentTurnId,
                     turnId: retryTurnId,
-                    requestTurnNumber: retryTurnNumber,
                     requestOrigin: "edit_retry",
-                    truncateFromTurnNumber: retryTurnNumber,
                     truncateContainer: this.container,
                     chatId: currentChatId,
                 });
@@ -2082,7 +2072,7 @@ class ChatRenderer {
     // ===== BRANCH NAVIGATION SYSTEM =====
     // Update branch navigation
     async updateBranchNavigation(branchNavElement, turnNumber, turnData = null, branchMap = null) {
-        if (!currentChatId || !turnNumber) {
+        if (!currentChatId || !turnData?.turnId) {
             branchNavElement.style.display = "none";
             return;
         }
@@ -2118,7 +2108,7 @@ class ChatRenderer {
                 for (const msg of history.messages) {
                     if (msg.role === "system") continue;
                     if (msg.parent_turn_id === parentTurnId) {
-                        const key = `${msg.turn_number || 0}::${msg.turn_id || "unknown"}`;
+                        const key = msg.turn_id || "unknown";
                         if (!siblingTurns.has(key)) {
                             siblingTurns.set(key, []);
                         }
@@ -2126,11 +2116,7 @@ class ChatRenderer {
                     }
                 }
 
-                sortedSiblings = Array.from(siblingTurns.entries()).sort(([a], [b]) => {
-                    const [aTurn] = a.split("::");
-                    const [bTurn] = b.split("::");
-                    return parseInt(aTurn) - parseInt(bTurn);
-                });
+                sortedSiblings = Array.from(siblingTurns.entries());
             }
 
             if (sortedSiblings.length <= 1) {
@@ -2164,7 +2150,6 @@ class ChatRenderer {
             // Store sibling data for navigation
             branchNavElement._siblings = sortedSiblings;
             branchNavElement._currentIndex = currentIndex;
-            branchNavElement._turnNumber = turnNumber;
 
             // Show navigation
             branchNavElement.style.display = "flex";

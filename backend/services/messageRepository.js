@@ -8,7 +8,6 @@ const { parseDbRowToMessage, parseContent } = require('../utils/messageConversio
 async function saveMessage(chatId, messageData, turnNumber = null, errorState = null, turnInfo = null) {
     const { db } = require('../config/database');
     const { serializeMessageForDb } = require('../utils/messageConversions');
-    const { getCurrentTurnNumber } = require('./turnService');
 
     try {
         const serialized = serializeMessageForDb(messageData);
@@ -16,11 +15,8 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         const toolCallId = messageData.tool_call_id || null;
         const toolName = messageData.tool_name || null;
 
-        // Use turn number or get next
-        let finalTurnNumber = turnNumber;
-        if (finalTurnNumber === null) {
-            finalTurnNumber = getCurrentTurnNumber(chatId);
-        }
+        // Always store 0 — turn_number is vestigial, lineage (turn_id + parent_turn_id) is the source of truth
+        const finalTurnNumber = turnNumber ?? 0;
 
         // Extract turn info
         const turnId = turnInfo?.turn_id || null;

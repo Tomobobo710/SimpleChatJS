@@ -566,21 +566,6 @@ async function saveMCPConfig(configText) {
 }
 
 // Get current turn number for a chat
-async function getCurrentTurnNumber(chatId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/current-turn`);
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        logger.error("Error getting current turn number:", error);
-        throw error;
-    }
-}
-
 // Load persisted branch navigation selections for a chat. Returns a
 // { parentKey: selectedTurnId } map, or {} if none.
 async function loadBranchSelections(chatId) {
@@ -619,10 +604,10 @@ async function saveBranchSelections(chatId, selections) {
     }
 }
 
-// Get messages for a specific turn
-async function getTurnMessages(chatId, turnNumber) {
+// Get messages for a specific turn by turn_id
+async function getTurnMessages(chatId, turnId) {
     try {
-        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnNumber}`);
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnId}`);
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
