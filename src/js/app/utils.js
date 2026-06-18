@@ -163,8 +163,7 @@ function stopStream() {
 // only that chat's request and leaves other concurrent streams running.
 // The button/indicator are refreshed by the stream's own abort handling.
 async function stopGeneration() {
-    if (typeof stopChatStream !== 'function') return;
-    const stopped = await stopChatStream(currentChatId);
+    const stopped = await streamManager.stopChatStream(currentChatId);
     if (stopped) {
         logger.info('Generation stopped by user');
         showNotification('Generation stopped', 'info');
@@ -209,23 +208,6 @@ function showWarning(message) {
 }
 
 // Get clean conversation history for debug panel
-async function getCleanConversationHistory(chatId, message) {
-    try {
-        const response = await fetch(`${window.location.origin}/api/chat/${chatId}/api-history`);
-        if (response.ok) {
-            const apiHistory = await response.json();
-            // Add the new user message to show complete conversation state
-            return [...apiHistory, { role: 'user', content: message }];
-        } else {
-            // Fallback to just the user message
-            return [{ role: 'user', content: message }];
-        }
-    } catch (error) {
-        logger.warn('Failed to get clean conversation history for user debug data:', error);
-        return [{ role: 'user', content: message }];
-    }
-}
-
 // =====================================
 // MASTER IMAGE SIZE CONTROL
 // Change this one number to adjust all image limits!

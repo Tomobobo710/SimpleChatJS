@@ -98,15 +98,7 @@ async function initializeTurnTrackingForChat(chatId) {
 }
 
 // Handle sending a message
-async function handleSendMessage() {
-    const sendBtn = document.getElementById("sendBtn");
-
-    // Check if we're in stop mode
-    if (sendBtn.classList.contains("btn-stop")) {
-        stopGeneration();
-        return;
-    }
-
+async function onSubmitRequest() {
     const textMessage = messageInput.value; // Don't trim - preserve user's intentional whitespace
     const images = getSelectedImages();
     const documents = getSelectedDocuments();
@@ -168,28 +160,40 @@ async function handleSendMessage() {
     setLoading(true);
 
     try {
-        // Get clean conversation history once using our utility function
-        // Use text for logging, but we'll send the full messageContent
-        const logMessage = typeof messageContent === "string" ? messageContent : textMessage || "[Images only]";
-        const conversationHistory = await getCleanConversationHistory(currentChatId, logMessage);
+        const parentTurnId = await getActiveTerminalTurnId(currentChatId);
+        const requestTurnNumber = getNextTurnNumber();
 
-        // Resolve the active terminal turn so the new message continues
-        // the current branch (null for a fresh chat).
-        const activeParentTurnId = await getActiveTerminalTurnId(currentChatId);
+        let messages = [{ role: "user", content: messageContent }];
 
-        // Simple chat mode
-        await handleSimpleChat(messageContent, conversationHistory, activeParentTurnId);
-    } catch (error) {
-        if (error.name === "AbortError") {
-            logger.info("Message generation was stopped by user");
-        } else {
-            showError(`Failed to send message: ${error.message}`);
+        // If this chat has no messages yet, inject the system prompt
+        // as the first message in the request turn.
+        try {
+            const history = await getChatHistory(currentChatId);
+            if (!history || !history.messages || history.messages.length === 0) {
+                const settings = window.cachedSettings();
+                if (settings && settings.enableSystemPrompt && settings.systemPrompt?.trim()) {
+                    messages.unshift({ role: "system", content: settings.systemPrompt.trim() });
+                }
+            }
+        } catch (_) {
+            // If we can't check history, proceed without injecting — safer to
+            // skip the system prompt than to block the user's message.
         }
+
+        const turnRequest = new TurnRequest({
+            messages,
+            parentTurnId,
+            turnId: null,
+            requestTurnNumber,
+            requestOrigin: "send",
+            chatId: currentChatId,
+        });
+        await turnRequest.execute();
+    } catch (error) {
+        logger.error("Unexpected error in message submission:", error);
+        showError(`Failed to send message: ${error.message}`);
     } finally {
-        // Recompute the button from the viewed chat's stream state instead of
-        // forcing "Send": other chats may still be streaming, and if this send
-        // failed before a stream started this resets to "Send".
-        refreshSendButton();
+        streamManager.refreshSendButton();
         messageInput.focus();
     }
 }

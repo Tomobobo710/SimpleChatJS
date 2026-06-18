@@ -1,10 +1,9 @@
 // Chat routes - Handle chat operations and messaging
 const express = require("express");
 const { db } = require("../config/database");
-const { processChatRequest, cancelInFlightRequest } = require("../services/chatStreamService");
-const { saveMessage, getChatHistoryForAPI, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
+const { processRequest, cancelInFlightRequest } = require("../services/chatStreamService");
+const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
 const { getCurrentTurnNumber, getTurnInfo, incrementTurnNumber, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
-const { buildSystemMessageIfEnabled } = require("../services/systemPromptService");
 const { log } = require("../utils/logger");
 
 const router = express.Router();
@@ -291,19 +290,6 @@ router.post("/message", async (req, res) => {
 
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
 
-        if (role === "user") {
-            const existingSystemCount = db.prepare(
-                "SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND role = 'system' AND error_state IS NULL"
-            ).get(chat_id).count;
-
-            if (existingSystemCount === 0) {
-                const systemMessage = buildSystemMessageIfEnabled();
-                if (systemMessage) {
-                    await saveMessage(chat_id, systemMessage, 1, null, turnInfo);
-                }
-            }
-        }
-
         // Use turn number provided by frontend
         await saveMessage(chat_id, completeMessage, turn_number, error_state || null, turnInfo);
 
@@ -384,19 +370,6 @@ router.patch("/chat/:id/title", (req, res) => {
         res.json({ success: true, chat_id: chatId, title: title });
     } catch (err) {
         log("[CHAT] Error updating title:", err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Get clean chat history in API format (for user debug panels)
-router.get("/chat/:id/api-history", (req, res) => {
-    const chatId = req.params.id;
-
-    try {
-        const apiHistory = getChatHistoryForAPI(chatId);
-        res.json(apiHistory);
-    } catch (err) {
-        log("[API-HISTORY] Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -516,7 +489,7 @@ router.get("/chat/:id/turn/:turnNumber", (req, res) => {
 });
 
 // Main chat endpoint that frontend expects
-router.post("/chat", processChatRequest);
+router.post("/chat", processRequest);
 
 // Cancel an in-flight chat request. Marks it user_stopped, destroys the
 // upstream AI provider request, and persists the partial content as an
