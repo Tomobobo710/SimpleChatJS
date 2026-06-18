@@ -2244,6 +2244,13 @@ class ChatRenderer {
         // Re-render the chat history with the new sibling selected
         await loadChatHistory(currentChatId);
 
+        // Reconnect any active stream whose request turn is still present
+        // after loadChatHistory — loadChatHistory destroyed the live
+        // rendering elements, so recreate them only if the stream's lineage
+        // matches the branch we just navigated to.
+        streamManager.reconnectStreaming(currentChatId);
+        streamManager.refreshSendButton();
+
         // Scroll to the selected turn. The await on loadChatHistory
         // guarantees the DOM is ready.
         const targetTurn = document.querySelector(`[data-turn-id="${targetTurnId}"]`);

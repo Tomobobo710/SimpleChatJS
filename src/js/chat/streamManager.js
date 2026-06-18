@@ -70,6 +70,13 @@ class StreamManager {
         const ss = this.activeStreamState.get(chatId);
         if (!ss) return;
 
+        // Only reconnect if the stream's request turn is still in the DOM
+        // after loadChatHistory re-rendered. If the turn was pruned (branch
+        // navigation) or doesn't exist (chat switch), the DOM won't contain
+        // the request turn — skip reconnection to avoid splicing the live
+        // stream into an unrelated branch.
+        if (ss.requestTurnId && !turnsContainer.querySelector(`[data-turn-id="${ss.requestTurnId}"]`)) return;
+
         if (ss.responseTurnId) {
             const existingTurn = turnsContainer.querySelector(`[data-turn-id="${ss.responseTurnId}"]`);
             if (existingTurn) existingTurn.remove();
