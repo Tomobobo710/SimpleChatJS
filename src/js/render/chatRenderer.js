@@ -769,7 +769,7 @@ class ChatRenderer {
             const parentTurnId = retriedResponseTurn.parent_turn_id;
 
             const turnRequest = new TurnRequest({
-                message: null,
+                messages: [],
                 parentTurnId,
                 turnId: parentTurnId,
                 requestTurnNumber: turnNumber,
@@ -2026,7 +2026,7 @@ class ChatRenderer {
                 const originalParentTurnId = requestMsg?.parent_turn_id || null;
 
                 const turnRequest = new TurnRequest({
-                    message: null,
+                    messages: carriedForward,
                     parentTurnId: originalParentTurnId,
                     turnId: retryTurnId,
                     requestTurnNumber: retryTurnNumber,
@@ -2034,8 +2034,6 @@ class ChatRenderer {
                     truncateFromTurnNumber: retryTurnNumber,
                     truncateContainer: this.container,
                     chatId: currentChatId,
-                    carriedForward: carriedForward,
-                    originalParentTurnId: originalParentTurnId,
                 });
                 await turnRequest.execute();
             } else {

@@ -163,8 +163,25 @@ async function onSubmitRequest() {
         const parentTurnId = await getActiveTerminalTurnId(currentChatId);
         const requestTurnNumber = getNextTurnNumber();
 
+        let messages = [{ role: "user", content: messageContent }];
+
+        // If this chat has no messages yet, inject the system prompt
+        // as the first message in the request turn.
+        try {
+            const history = await getChatHistory(currentChatId);
+            if (!history || !history.messages || history.messages.length === 0) {
+                const settings = window.cachedSettings();
+                if (settings && settings.enableSystemPrompt && settings.systemPrompt?.trim()) {
+                    messages.unshift({ role: "system", content: settings.systemPrompt.trim() });
+                }
+            }
+        } catch (_) {
+            // If we can't check history, proceed without injecting — safer to
+            // skip the system prompt than to block the user's message.
+        }
+
         const turnRequest = new TurnRequest({
-            message: { content: messageContent },
+            messages,
             parentTurnId,
             turnId: null,
             requestTurnNumber,

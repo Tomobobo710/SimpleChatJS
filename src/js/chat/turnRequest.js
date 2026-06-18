@@ -1,6 +1,6 @@
 class TurnRequest {
     constructor({
-        message,
+        messages,
         parentTurnId = null,
         turnId = null,
         requestTurnNumber,
@@ -8,10 +8,8 @@ class TurnRequest {
         truncateFromTurnNumber = null,
         truncateContainer = null,
         chatId = null,
-        carriedForward = null,
-        originalParentTurnId = null,
     }) {
-        this.message = message;
+        this.messages = messages || [];
         this.parentTurnId = parentTurnId;
         this.turnId = turnId;
         this.requestTurnNumber = requestTurnNumber;
@@ -19,8 +17,6 @@ class TurnRequest {
         this.truncateFromTurnNumber = truncateFromTurnNumber;
         this.truncateContainer = truncateContainer;
         this.chatId = chatId || currentChatId;
-        this.carriedForward = carriedForward;
-        this.originalParentTurnId = originalParentTurnId;
     }
 
     static generateRequestId() {
@@ -40,63 +36,33 @@ class TurnRequest {
 
     async saveRequest(requestId) {
         if (this.requestOrigin === "retry") return null;
+        if (this.messages.length === 0) return null;
 
-        if (this.requestOrigin === "edit_retry" && this.carriedForward) {
-            return this._saveCarriedForward(requestId);
-        }
-
-        if (!this.message) return null;
-
-        const messageForSaving = { role: "user", content: this.message.content };
-        if (Array.isArray(this.message.content)) {
-            const filesPart = this.message.content.find((part) => part.type === "files");
-            if (filesPart && filesPart.files) {
-                messageForSaving.original_content = this.message.content;
-                messageForSaving.file_metadata = {
-                    hasFiles: true,
-                    fileCount: filesPart.files.length,
-                    imageCount: this.message.content.filter((part) => part.type === "image").length,
-                    files: filesPart.files,
-                };
-            }
-        }
-        const saveResult = await saveCompleteMessage(
-            this.chatId, messageForSaving, this.requestTurnNumber,
-            this.parentTurnId ? { parent_turn_id: this.parentTurnId } : null
-        );
-        if (!saveResult || !saveResult.turn_id) {
-            throw new Error("saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor");
-        }
-        return { turn_id: saveResult.turn_id, parent_turn_id: saveResult.parent_turn_id };
+        const { turn_id, parent_turn_id } = await this._saveMessages();
+        return { turn_id, parent_turn_id };
     }
 
-    async _saveCarriedForward(requestId) {
-        const first = this.carriedForward[0];
-        const parentTurnId = this.originalParentTurnId || this.parentTurnId;
-        const firstContentForSave = Array.isArray(first.content)
-            ? JSON.stringify(first.content)
-            : first.content;
-        const firstSave = await saveCompleteMessage(
-            this.chatId,
-            { role: first.role, content: firstContentForSave },
-            this.requestTurnNumber,
-            { parent_turn_id: parentTurnId }
-        );
-        if (!firstSave || !firstSave.turn_id) {
-            throw new Error("saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor");
+    async _saveMessages() {
+        let firstSave = null;
+
+        for (let i = 0; i < this.messages.length; i++) {
+            const msg = this.messages[i];
+            const contentForDb = Array.isArray(msg.content) ? JSON.stringify(msg.content) : msg.content;
+            const dbEntry = { role: msg.role, content: contentForDb };
+
+            const params = i === 0
+                ? (this.parentTurnId ? { parent_turn_id: this.parentTurnId } : null)
+                : { turn_id: firstSave.turn_id, parent_turn_id: firstSave.parent_turn_id };
+
+            const result = await saveCompleteMessage(this.chatId, dbEntry, this.requestTurnNumber, params);
+            if (i === 0) {
+                if (!result || !result.turn_id) {
+                    throw new Error("saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor");
+                }
+                firstSave = result;
+            }
         }
-        for (let i = 1; i < this.carriedForward.length; i++) {
-            const entry = this.carriedForward[i];
-            const contentForSave = Array.isArray(entry.content)
-                ? JSON.stringify(entry.content)
-                : entry.content;
-            await saveCompleteMessage(
-                this.chatId,
-                { role: entry.role, content: contentForSave },
-                this.requestTurnNumber,
-                { turn_id: firstSave.turn_id, parent_turn_id: firstSave.parent_turn_id }
-            );
-        }
+
         return { turn_id: firstSave.turn_id, parent_turn_id: firstSave.parent_turn_id };
     }
 
@@ -104,48 +70,21 @@ class TurnRequest {
         if (this.requestOrigin === "retry") return;
         if (!requestTurnInfo) return;
 
-        if (this.requestOrigin === "edit_retry" && this.carriedForward) {
-            await this._renderEditRetryTurn(requestTurnInfo, requestId);
-            return;
-        }
-
-        const requestMessage = new Message({
-            id: null,
-            role: "user",
-            content: this.message.content,
-            turn_number: this.requestTurnNumber,
-            turn_id: requestTurnInfo.turn_id,
-            parent_turn_id: requestTurnInfo.parent_turn_id,
-            edit_count: 0,
-        });
-
-        const requestTurn = new Turn(this.requestTurnNumber, [requestMessage], requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
-        const rto = requestTurn.renderable();
-        chatRenderer.renderTurn(rto, true);
-
-        const turnMessages = rto.turnMessages || [{ role: "user", content: this.message.content }];
-        this._listenForRequestDebug(requestId, this.requestTurnNumber, turnMessages);
-    }
-
-    async _renderEditRetryTurn(requestTurnInfo, requestId) {
-        const parentTurnId = this.originalParentTurnId || this.parentTurnId;
-        const enabledToolsFlags = loadEnabledTools();
-        const firstContent = this.carriedForward[0]?.content;
+        const parentTurnId = this.parentTurnId;
+        const requestMessages = this.messages.map(entry => ({
+            role: entry.role || 'user',
+            content: Array.isArray(entry.content) ? entry.content : [{ type: 'text', text: entry.content }]
+        }));
 
         const requestBody = {
             chat_id: this.chatId,
-            enabled_tools: enabledToolsFlags,
+            enabled_tools: loadEnabledTools(),
             request_id: requestId,
             parent_turn_id: parentTurnId,
             turn_id: requestTurnInfo.turn_id,
             history_anchor_turn_id: requestTurnInfo.turn_id,
-            message: firstContent
+            message: this.messages[0]?.content
         };
-
-        const requestMessages = this.carriedForward.map(entry => ({
-            role: entry.role || 'user',
-            content: Array.isArray(entry.content) ? entry.content : [{ type: 'text', text: entry.content }]
-        }));
 
         const requestDebugData = {
             sequence: [
@@ -153,7 +92,7 @@ class TurnRequest {
                     type: "user_http_request",
                     step: 1,
                     timestamp: new Date().toISOString(),
-                    data: { requestBody: requestBody }
+                    data: { requestBody }
                 },
                 {
                     type: "ai_http_request",
@@ -165,37 +104,49 @@ class TurnRequest {
             metadata: {
                 endpoint: "request_input_retry",
                 timestamp: new Date().toISOString(),
-                tools: Object.keys(enabledToolsFlags).length
+                tools: Object.keys(loadEnabledTools()).length
             },
             currentTurnNumber: this.requestTurnNumber,
             apiRequest: {
                 url: `${window.location.origin}/api/chat`,
                 method: "POST",
-                requestId: requestId,
+                requestId,
                 timestamp: new Date().toISOString()
             }
         };
-
         try {
             await saveTurnData(this.chatId, requestTurnInfo.turn_id, requestDebugData);
-            logger.info(`[EDIT-RETRY] Saved new request debug data for turn_id=${requestTurnInfo.turn_id}`);
-        } catch (error) {
-            logger.warn("[EDIT-RETRY] Failed to save new request turn debug data:", error);
-        }
+        } catch (e) { logger.warn("Failed to save turn debug data:", e); }
 
-        const branchParentKey = parentTurnId || "root";
-        const scopeKey = `${this.chatId}::${branchParentKey}`;
-        selectedSiblings[scopeKey] = requestTurnInfo.turn_id;
-        const scopedMap = Object.fromEntries(
-            Object.entries(selectedSiblings).filter(([k]) => k.startsWith(`${this.chatId}::`))
-        );
-        try {
-            await saveBranchSelections(this.chatId, scopedMap);
-        } catch (error) {
-            logger.warn("[EDIT-RETRY] Failed to persist branch selection:", error);
-        }
+        const messages = this.messages.map((msg, i) => new Message({
+            id: null,
+            role: msg.role,
+            content: msg.content,
+            turn_number: this.requestTurnNumber,
+            turn_id: requestTurnInfo.turn_id,
+            parent_turn_id: i === 0 ? requestTurnInfo.parent_turn_id : requestTurnInfo.turn_id,
+            edit_count: 0,
+        }));
 
-        await loadChatHistory(this.chatId);
+        const turn = new Turn(this.requestTurnNumber, messages, requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
+        chatRenderer.renderTurn(turn.renderable(), true);
+
+        const turnMessages = turn.renderable().turnMessages || this.messages;
+        this._listenForRequestDebug(requestId, this.requestTurnNumber, turnMessages);
+
+        if (this.requestOrigin === "edit_retry") {
+            const branchParentKey = parentTurnId || "root";
+            const scopeKey = `${this.chatId}::${branchParentKey}`;
+            selectedSiblings[scopeKey] = requestTurnInfo.turn_id;
+            const scopedMap = Object.fromEntries(
+                Object.entries(selectedSiblings).filter(([k]) => k.startsWith(`${this.chatId}::`))
+            );
+            try {
+                await saveBranchSelections(this.chatId, scopedMap);
+            } catch (e) { logger.warn("Failed to persist branch selection:", e); }
+
+            await loadChatHistory(this.chatId);
+        }
     }
 
     computeLineageIds(requestTurnInfo) {
@@ -456,8 +407,9 @@ class TurnRequest {
     }
 
     _updateChatTitleFromMessage() {
-        if (!this.message?.content) return;
-        const content = this.message.content;
+        const first = this.messages[0];
+        if (!first?.content) return;
+        const content = first.content;
         const currentTitle = document.getElementById('chatTitle').textContent;
         if (currentTitle !== 'New Chat' && currentTitle !== 'Chat') return;
         const textContent = typeof content === 'string'

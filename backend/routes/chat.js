@@ -4,7 +4,6 @@ const { db } = require("../config/database");
 const { processRequest, cancelInFlightRequest } = require("../services/chatStreamService");
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
 const { getCurrentTurnNumber, getTurnInfo, incrementTurnNumber, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
-const { buildSystemMessageIfEnabled } = require("../services/systemPromptService");
 const { log } = require("../utils/logger");
 
 const router = express.Router();
@@ -290,19 +289,6 @@ router.post("/message", async (req, res) => {
         // Use the unified save function
 
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
-
-        if (role === "user") {
-            const existingSystemCount = db.prepare(
-                "SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND role = 'system' AND error_state IS NULL"
-            ).get(chat_id).count;
-
-            if (existingSystemCount === 0) {
-                const systemMessage = buildSystemMessageIfEnabled();
-                if (systemMessage) {
-                    await saveMessage(chat_id, systemMessage, 1, null, turnInfo);
-                }
-            }
-        }
 
         // Use turn number provided by frontend
         await saveMessage(chat_id, completeMessage, turn_number, error_state || null, turnInfo);

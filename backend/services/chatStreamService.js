@@ -12,7 +12,6 @@ const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
 const { incrementTurnNumber, getTurnInfo, getCurrentTurnNumber } = require("./turnService");
-const { buildSystemMessageIfEnabled } = require("./systemPromptService");
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
 
