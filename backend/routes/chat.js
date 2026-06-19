@@ -194,7 +194,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Build query with optional error filtering
         let query = `
-            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history
+            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history, turn_type
             FROM messages
             WHERE chat_id = ?
         `;
@@ -263,7 +263,8 @@ router.post("/message", async (req, res) => {
         file_metadata,
         turn_id,
         parent_turn_id,
-        error_state
+        error_state,
+        turn_type
     } = req.body;
 
         if (!chat_id || !role || content === null || content === undefined) {
@@ -284,6 +285,9 @@ router.post("/message", async (req, res) => {
         // Add new file handling fields if present
         if (original_content !== undefined) completeMessage.originalContent = original_content;
         if (file_metadata !== undefined) completeMessage.fileMetadata = file_metadata;
+
+        // Forward turn_type if present
+        if (turn_type) completeMessage.turn_type = turn_type;
 
         // Use the unified save function
 

@@ -21,143 +21,146 @@ function resolveErrorBlockContent(errorMsg) {
 }
 
 class Turn {
-    constructor(messages = [], turnId = null, parentTurnId = null, responseDebugData = null) {
+    constructor(messages = [], turnId = null, parentTurnId = null, responseDebugData = null, identity = null) {
         this.messages = messages;
         this.turnId = turnId;
         this.parentTurnId = parentTurnId;
         this.responseDebugData = responseDebugData;
+        this.identity = identity;
     }
 
     get errorMessages() {
         return this.messages.filter(m => m.isError());
     }
 
-    get userMessages() {
-        return this.messages.filter(m => m.isUser());
-    }
-
-    get assistantMessages() {
-        return this.messages.filter(m => m.isAssistant());
-    }
-
     hasErrors() {
         return this.errorMessages.length > 0;
     }
 
-    hasRequestMessages() {
-        return this.userMessages.length > 0;
-    }
-
-    hasResponseMessages() {
-        return this.assistantMessages.length > 0;
-    }
-
-    // True if any assistant message carries non-empty content (i.e.
-    // there is real streamed text to render). Used to gate the
-    // "content + error" render branch so error-only messages don't
-    // accidentally fall through and render an empty chat block.
-    hasRenderableResponseContent() {
-        return this.assistantMessages.some(
+    // True if any message in this turn carries content worth rendering.
+    // Used to gate the "content + error" render branch so we don't
+    // render a chat block from an empty content field.
+    hasRenderableContent() {
+        return this.messages.some(
             (m) => (m.content && (typeof m.content === 'string' ? m.content !== '' : true)) || m.reasoning
         );
     }
 
     // Produce a RenderableTurnObject for this turn.
-    // Rendering priority: error-only turns show just the error block;
-    // user messages render directly; assistant messages are processed
-    // through StreamingMessageProcessor; if a turn has both assistant
-    // content and an error, the content is rendered with the error
-    // block appended at the end.
+    // Identity comes from the stored turn_type on messages (this.identity).
+    // Missing identity means the messages lack turn_type — fix your data.
     renderable(liveProcessor = null) {
-        // Errors alongside real streamed content: render the content +
-        // an error block at the end (so user-stopped, connection drops,
-        // etc. show what was streamed and what interrupted it).
-        if (
-            this.hasErrors() &&
-            this.hasResponseMessages() &&
-            this.hasRenderableResponseContent()
-        ) {
-            const responseRto = this._renderResponse(liveProcessor);
-            const errorMsg = this.errorMessages[0];
-            const errorBlock = new Block({
-                type: 'error',
-                content: resolveErrorBlockContent(errorMsg),
-                metadata: {
-                    error_type: errorMsg.errorState,
-                    debug_data: errorMsg.debugData
-                }
-            });
-            return new RenderableTurnObject({
-                identity: responseRto.identity,
-                content: responseRto.content,
-                blocks: [...(responseRto.blocks || []), errorBlock],
-                turnId: responseRto.turnId,
-                parentTurnId: responseRto.parentTurnId,
-                debugData: responseRto.debugData,
-                responseDebugData: this.responseDebugData,
-                editCount: responseRto.editCount,
-                activeEditVersion: responseRto.activeEditVersion,
-                dropdownStates: responseRto.dropdownStates,
-            });
+        if (!this.identity) {
+            throw new Error(
+                `Turn ${this.turnId} has no identity — messages missing turn_type. `
+                + `Found roles: [${[...new Set(this.messages.map(m => m.role))].join(', ')}]`
+            );
         }
 
-        // Error-only turn (no streamed content to show). Rendered as
-        // an assistant bubble with just the error block inside, so the
-        // background bubble + action bar are consistent with the
-        // "content + error" branch.
-        if (this.hasErrors()) {
-            const errorMsg = this.errorMessages[0];
-            return new RenderableTurnObject({
-                identity: 'response',
-                content: '',
-                blocks: [new Block({
+        if (this.identity === 'request') {
+            return this._renderRequest();
+        }
+
+        if (this.identity === 'response') {
+            // Errors alongside real streamed content
+            if (this.hasErrors() && this.hasRenderableContent()) {
+                const responseRto = this._renderResponse(liveProcessor);
+                const errorMsg = this.errorMessages[0];
+                const errorBlock = new Block({
                     type: 'error',
                     content: resolveErrorBlockContent(errorMsg),
                     metadata: {
                         error_type: errorMsg.errorState,
                         debug_data: errorMsg.debugData
                     }
-                })],
-                turnId: this.turnId,
-                parentTurnId: this.parentTurnId,
-                debugData: errorMsg.debugData,
-                responseDebugData: this.responseDebugData,
-                editCount: errorMsg.editCount,
-                activeEditVersion: errorMsg.activeEditVersion,
-            });
-        }
+                });
+                return new RenderableTurnObject({
+                    identity: 'response',
+                    content: responseRto.content,
+                    blocks: [...(responseRto.blocks || []), errorBlock],
+                    turnId: responseRto.turnId,
+                    parentTurnId: responseRto.parentTurnId,
+                    debugData: responseRto.debugData,
+                    responseDebugData: this.responseDebugData,
+                    editCount: responseRto.editCount,
+                    activeEditVersion: responseRto.activeEditVersion,
+                    dropdownStates: responseRto.dropdownStates,
+                });
+            }
 
-        // User messages render directly
-        if (this.hasRequestMessages()) {
-            return RenderableTurnObject.fromRequestMessage(this.userMessages[0]);
-        }
+            // Error-only turn
+            if (this.hasErrors()) {
+                const errorMsg = this.errorMessages[0];
+                return new RenderableTurnObject({
+                    identity: 'response',
+                    content: '',
+                    blocks: [new Block({
+                        type: 'error',
+                        content: resolveErrorBlockContent(errorMsg),
+                        metadata: {
+                            error_type: errorMsg.errorState,
+                            debug_data: errorMsg.debugData
+                        }
+                    })],
+                    turnId: this.turnId,
+                    parentTurnId: this.parentTurnId,
+                    debugData: errorMsg.debugData,
+                    responseDebugData: this.responseDebugData,
+                    editCount: errorMsg.editCount,
+                    activeEditVersion: errorMsg.activeEditVersion,
+                });
+            }
 
-        // Assistant messages: pure content path (no error attached).
-        if (this.hasResponseMessages()) {
             return this._renderResponse(liveProcessor);
         }
 
-        // Fallback: empty turn
+    }
+    // Build a request RTO from this turn's messages. Uses the same
+    // StreamingMessageProcessor as _renderResponse for consistency.
+    // System messages are skipped (not user-facing content).
+    _renderRequest() {
+        const renderable = this.messages.filter(m => m.role !== 'system');
+        const processor = new StreamingMessageProcessor();
+
+        for (const msg of renderable) {
+            if (!msg.content) continue;
+            const content = msg.content || '';
+            if (typeof content === 'string') {
+                processor.addChunk(content);
+            } else if (Array.isArray(content)) {
+                const textParts = content.filter(part => part.type === 'text');
+                textParts.forEach(part => {
+                    if (part.text) processor.addChunk(part.text);
+                });
+            }
+        }
+
+        processor.finalize();
+        const blocks = processor.getBlocks();
+        const primary = renderable.find(m => m.content) || renderable[0];
+
         return new RenderableTurnObject({
             identity: 'request',
-            content: '',
-            blocks: null,
+            content: processor.getRawContent() || '',
+            blocks,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
-            debugData: null,
-            responseDebugData: this.responseDebugData,
-            editCount: 0,
-            activeEditVersion: 0,
+            debugData: primary?.debugData || null,
+            turnMessages: this.messages.map(m => ({ id: m.id, role: m.role, content: m.content, editCount: m.editCount })),
+            editCount: primary?.editCount || 0,
+            activeEditVersion: primary?.activeEditVersion || 0,
         });
     }
+
     // Build a response RTO from this turn's messages, using the
     // liveProcessor if provided (live render) or rebuilding blocks
-    // from content (reload path). Shared by the pure-assistant and
-    // "content + error" branches in renderable().
+    // from content (reload path).
     _renderResponse(liveProcessor) {
-        const assistantMessages = this.assistantMessages;
-        // Primary message should be one with actual content (not just tool calls)
-        let primaryMessage = assistantMessages.find(m => m.content && m.content !== '') || assistantMessages[0];
+        // Prefer a message with non-empty string content as primary
+        // (tool result messages have toolCallId set, skip them)
+        let primaryMessage = this.messages.find(m => !m.toolCallId && m.content && typeof m.content === 'string' && m.content !== '')
+            || this.messages.find(m => !m.toolCallId && m.content)
+            || this.messages[0];
         let turnDebugData = null;
 
         if (liveProcessor && primaryMessage) {
@@ -175,17 +178,17 @@ class Turn {
 
         const processor = new StreamingMessageProcessor();
 
-        for (const msg of assistantMessages) {
-            if (!msg.content && !msg.toolCalls && !msg.reasoning) {
-                continue;
-            }
+        for (const msg of this.messages) {
+            // Tool result messages carry JSON content, not rendered text
+            if (msg.toolCallId) continue;
+            if (msg.role === 'system') continue;
+            if (!msg.content && !msg.toolCalls && !msg.reasoning) continue;
 
             if (!primaryMessage) {
                 primaryMessage = msg;
                 turnDebugData = msg.debugData;
             }
 
-            // Load reasoning from message if present
             if (msg.reasoning) {
                 processor.loadReasoning(msg.reasoning);
             }
@@ -213,15 +216,15 @@ class Turn {
                         args = { raw: toolCall.function?.arguments || '{}' };
                     }
 
-                    const toolMessage = this.messages.find(m =>
-                        m.role === 'tool' && m.toolCallId === toolId
+                    const toolResult = this.messages.find(m =>
+                        m.toolCallId === toolId
                     );
                     let resultContent = { content: 'No result available' };
-                    if (toolMessage) {
+                    if (toolResult) {
                         try {
-                            resultContent = JSON.parse(toolMessage.content);
+                            resultContent = JSON.parse(toolResult.content);
                         } catch (e) {
-                            resultContent = { content: toolMessage.content };
+                            resultContent = { content: toolResult.content };
                         }
                     }
 
@@ -245,7 +248,7 @@ class Turn {
 
         processor.finalize();
         const blocks = processor.getBlocks();
-        const primary = primaryMessage || this.assistantMessages[0];
+        const primary = primaryMessage || this.messages[0];
 
         // Collect debug data from all messages in this turn
         const turnDebugDataArray = this.messages

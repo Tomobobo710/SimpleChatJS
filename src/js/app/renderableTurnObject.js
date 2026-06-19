@@ -17,20 +17,6 @@ class RenderableTurnObject {
         this.dropdownStates = dropdownStates;
     }
 
-    static fromRequestMessage(message) {
-        return new RenderableTurnObject({
-            identity: 'request',
-            content: message.content,
-            blocks: null,
-            turnId: message.turnId,
-            parentTurnId: message.parentTurnId,
-            debugData: message.debugData,
-            turnMessages: [{ id: message.id, role: message.role, content: message.content, editCount: message.editCount }],
-            editCount: message.editCount,
-            activeEditVersion: message.activeEditVersion || 0,
-        });
-    }
-
     static fromStreamingProcessor({ processor, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, dropdownStates = {} }) {
         return new RenderableTurnObject({
             identity: 'response',

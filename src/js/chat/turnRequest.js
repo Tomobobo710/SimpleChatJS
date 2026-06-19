@@ -33,7 +33,7 @@ class TurnRequest {
         for (let i = 0; i < this.messages.length; i++) {
             const msg = this.messages[i];
             const contentForDb = Array.isArray(msg.content) ? JSON.stringify(msg.content) : msg.content;
-            const dbEntry = { role: msg.role, content: contentForDb };
+            const dbEntry = { role: msg.role, content: contentForDb, turn_type: 'request' };
 
             const params = i === 0
                 ? (this.parentTurnId ? { parent_turn_id: this.parentTurnId } : null)
@@ -111,7 +111,7 @@ class TurnRequest {
             edit_count: 0,
         }));
 
-       const turn = new Turn(messages, requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
+       const turn = new Turn(messages, requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id, null, 'request');
         chatRenderer.renderTurn(turn.renderable(), true);
 
         const turnMessages = turn.renderable().turnMessages || this.messages;
