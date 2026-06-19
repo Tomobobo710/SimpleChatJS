@@ -11,7 +11,7 @@ const simpleTools = require("./simpleToolsService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
-const { incrementTurnNumber, getTurnInfo, getCurrentTurnNumber } = require("./turnService");
+const { getTurnInfo } = require("./turnService");
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
 
@@ -66,7 +66,7 @@ function cancelInFlightRequest(requestId) {
         reasoning,
         tool_calls: toolCalls
     };
-    saveMessage(state.chatId, errorMessage, state.currentTurn, "user_stopped", state.turnInfo)
+    saveMessage(state.chatId, errorMessage, state.turnInfo, "user_stopped")
         .then(async () => {
             // Append error to responses array in turn_debug (with any streamed content)
             if (state.turnInfo) {
@@ -84,10 +84,9 @@ function cancelInFlightRequest(requestId) {
                 }
             }
             if (streamedSoFar && streamedSoFar.trim() !== "") {
-                await saveMessage(state.chatId, { role: "system", content: "Generation stopped by user." }, state.currentTurn, null, state.turnInfo);
+                await saveMessage(state.chatId, { role: "system", content: "Generation stopped by user." }, state.turnInfo);
             }
-            incrementTurnNumber(state.chatId);
-            log(`[CANCEL] Saved user_stopped and burned turn ${state.currentTurn} for requestId=${requestId}`);
+            log(`[CANCEL] Saved user_stopped for requestId=${requestId}`);
         })
         .catch((saveError) => {
             log(`[CANCEL] Failed to save user_stopped for requestId=${requestId}: ${saveError.message}`);
@@ -104,12 +103,11 @@ function cancelInFlightRequest(requestId) {
 
   // Build response debug entry for the turn_debug table.
   // This creates the structure that gets appended to the responses array.
-function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, currentTurn, targetUrl, requestData, apiRes, unifiedResponse, rawResponseBody }) {
+function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, targetUrl, requestData, apiRes, unifiedResponse, rawResponseBody }) {
     const data = {
         requestId,
         turnId,
-        parentTurnId,
-        currentTurnNumber: currentTurn
+        parentTurnId
     };
 
     if (targetUrl) {
@@ -230,14 +228,6 @@ async function executeStreamingLoop(
         }
     }
 
-    // Initialize turn number
-    let currentTurn;
-    if (debugData && debugData.currentTurn) {
-        currentTurn = debugData.currentTurn;
-    } else {
-        currentTurn = chatId ? getCurrentTurnNumber(chatId) + 1 : 1;
-    }
-
     // Get provider-specific URL and headers
     const targetUrl = adapter.getEndpointUrl(currentSettings);
     const headers = adapter.getHeaders(currentSettings);
@@ -302,7 +292,6 @@ async function executeStreamingLoop(
     const inFlightState = {
         apiReq: null,
         chatId,
-        currentTurn,
         turnInfo,
         unifiedResponse,
         cancelledByUser: false,
@@ -332,7 +321,7 @@ async function executeStreamingLoop(
             reasoning,
             tool_calls: toolCalls
         };
-        saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
+        saveMessage(chatId, errorMessage, turnInfo, "connection_error")
             .then(async () => {
                 // Append error to responses array in turn_debug
                 if (turnInfo) {
@@ -349,10 +338,9 @@ async function executeStreamingLoop(
                     }
                 }
                 if (streamedSoFar && streamedSoFar.trim() !== "") {
-                    await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
+                    await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, turnInfo);
                 }
-                incrementTurnNumber(chatId);
-                log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
+                log(`[ERROR-HANDLING] Saved connection error`);
             })
             .catch((saveError) => {
                 log(`[ERROR-HANDLING] Failed to save connection error: ${saveError.message}`);
@@ -391,8 +379,7 @@ async function executeStreamingLoop(
                     }
                 }
 
-                // Save error message and burn the turn.
-                if (chatId && currentTurn) {
+                if (chatId) {
                     const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? unifiedResponse.toolCalls : null;
                     const reasoning = (unifiedResponse && unifiedResponse.reasoning) || null;
                     const errorMessage = {
@@ -401,7 +388,7 @@ async function executeStreamingLoop(
                         reasoning,
                         tool_calls: toolCalls
                     };
-                    saveMessage(chatId, errorMessage, currentTurn, "api_error", turnInfo)
+                    saveMessage(chatId, errorMessage, turnInfo, "api_error")
                         .then(async () => {
                             // Append error to responses array in turn_debug
                             if (turnInfo) {
@@ -422,8 +409,7 @@ async function executeStreamingLoop(
                                     log(`[ERROR-HANDLING] Failed to save error debug data: ${debugError.message}`);
                                 }
                             }
-                            incrementTurnNumber(chatId);
-                            log(`[ERROR-HANDLING] Saved API error message and burned turn ${currentTurn}`);
+                            log(`[ERROR-HANDLING] Saved API error message`);
                         })
                         .catch((saveError) => {
                             log(`[ERROR-HANDLING] Failed to save error message: ${saveError.message}`);
@@ -537,7 +523,6 @@ async function executeStreamingLoop(
                     chatId,
                     unifiedResponse.content,
                     unifiedResponse.reasoning,
-                    currentTurn,
                     requestId,
                     turnInfo,
                     targetUrl,
@@ -546,25 +531,18 @@ async function executeStreamingLoop(
                     rawResponseBody
                 );
             } else {
-                // Increment turn number now that conversation is complete
-                if (chatId) {
-                    incrementTurnNumber(chatId);
-                }
-
                 // Save final assistant response to history
                 if (chatId && unifiedResponse.content) {
                     log(`[CHAT-SAVE] reasoning content: "${unifiedResponse.reasoning.substring(0, 100)}..."`);
                     log(`[CHAT-SAVE] Content length: ${unifiedResponse.content.length}`);
                     log(`[CHAT-SAVE] Content preview: "${unifiedResponse.content.substring(0, 200)}..."`);
-                    log(`[CHAT-SAVE] Turn number: ${currentTurn}`);
-
                     const finalResponseMessage = {
                         role: "assistant",
                         content: unifiedResponse.content,
                         reasoning: unifiedResponse.reasoning || null
                     };
                     try {
-                        const finalMsgId = await saveMessage(chatId, finalResponseMessage, currentTurn, null, turnInfo);
+                        const finalMsgId = await saveMessage(chatId, finalResponseMessage, turnInfo);
                         log(`[CHAT-SAVE] Successfully saved final response to history`);
 
                         // Build and store debug data for the final response
@@ -573,7 +551,6 @@ async function executeStreamingLoop(
                             chatId,
                             turnId: turnInfo?.turn_id,
                             parentTurnId: turnInfo?.parent_turn_id,
-                            currentTurn,
                             targetUrl,
                             requestData,
                             apiRes,
@@ -593,8 +570,7 @@ async function executeStreamingLoop(
                                 existingDebug.responses.push({
                                     response: debugPayload.response,
                                     turnId: debugPayload.turnId,
-                                    parentTurnId: debugPayload.parentTurnId,
-                                    currentTurnNumber: debugPayload.currentTurnNumber
+                                    parentTurnId: debugPayload.parentTurnId
                                 });
                                 
                                 await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
@@ -635,7 +611,7 @@ async function executeStreamingLoop(
         inFlightState.saved = true;
         if (requestId) inFlightRequests.delete(requestId);
 
-        if (chatId && currentTurn) {
+        if (chatId) {
             const streamedSoFar = inFlightState.streamedContent || "";
             const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? unifiedResponse.toolCalls : null;
             const reasoning = (unifiedResponse && unifiedResponse.reasoning) || null;
@@ -645,7 +621,7 @@ async function executeStreamingLoop(
                 reasoning,
                 tool_calls: toolCalls
             };
-            saveMessage(chatId, errorMessage, currentTurn, "connection_error", turnInfo)
+saveMessage(chatId, errorMessage, turnInfo, "connection_error")
                 .then(async () => {
                     // Append error to responses array in turn_debug
                     if (turnInfo) {
@@ -659,14 +635,13 @@ async function executeStreamingLoop(
                                 rawBody: inFlightState.rawResponseBody || ""
                             }, { type: "connection_error", message: error.message });
                         } catch (debugError) {
-                            log(`[ERROR-HANDLING] Failed to save connection error debug data: ${debugError.message}`);
+                            log(`[ERROR-HANDLING] Failed to save connection error debug data: ${error.message}`);
                         }
                     }
                     if (streamedSoFar && streamedSoFar.trim() !== "") {
-                        await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, currentTurn, null, turnInfo);
+                    await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, turnInfo);
                     }
-                    incrementTurnNumber(chatId);
-                    log(`[ERROR-HANDLING] Saved connection error and burned turn ${currentTurn}`);
+                    log(`[ERROR-HANDLING] Saved connection error`);
                 })
                 .catch((saveError) => {
                     log(`[ERROR-HANDLING] Failed to save connection error: ${saveError.message}`);
@@ -695,7 +670,6 @@ async function executeToolCallsAndContinue(
     chatId,
     assistantMessage,
     reasoning,
-    currentTurn,
     requestId,
     turnInfo = null,
     targetUrl = null,
@@ -715,7 +689,7 @@ async function executeToolCallsAndContinue(
 
     // Save assistant message with tool calls FIRST (before tool results)
     if (chatId) {
-        await saveMessage(chatId, assistantMessageWithTools, currentTurn, null, turnInfo);
+        await saveMessage(chatId, assistantMessageWithTools, turnInfo);
         log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
     }
 
@@ -751,7 +725,7 @@ async function executeToolCallsAndContinue(
 
             // Save tool message to database
             if (chatId) {
-                await saveMessage(chatId, toolMessage, currentTurn, null, turnInfo);
+                await saveMessage(chatId, toolMessage, turnInfo);
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
 
@@ -782,7 +756,7 @@ async function executeToolCallsAndContinue(
 
             // Save tool error message to database
             if (chatId) {
-                await saveMessage(chatId, errorMessage, currentTurn, null, turnInfo);
+                await saveMessage(chatId, errorMessage, turnInfo);
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
 
@@ -810,7 +784,6 @@ async function executeToolCallsAndContinue(
             chatId,
             turnId: turnInfo?.turn_id,
             parentTurnId: turnInfo?.parent_turn_id,
-            currentTurn,
             targetUrl,
             requestData,
             apiRes,
@@ -835,8 +808,7 @@ async function executeToolCallsAndContinue(
                 existingDebug.responses.push({
                     response: debugPayload.response,
                     turnId: debugPayload.turnId,
-                    parentTurnId: debugPayload.parentTurnId,
-                    currentTurnNumber: debugPayload.currentTurnNumber
+                    parentTurnId: debugPayload.parentTurnId
                 });
                 if (debugPayload.toolResults) {
                     existingDebug.toolResults = debugPayload.toolResults;
@@ -939,12 +911,11 @@ async function processRequest(req, res) {
 
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
         if (chat_id) {
-            const currentTurn = getCurrentTurnNumber(chat_id) + 1;
             const errorMessage = {
                 role: "assistant",
                 content: ""
             };
-            saveMessage(chat_id, errorMessage, currentTurn, "processing_error", turnInfo)
+            saveMessage(chat_id, errorMessage, turnInfo, "processing_error")
                 .then(async () => {
                     // Append error to responses array in turn_debug
                     if (turnInfo) {
@@ -960,8 +931,7 @@ async function processRequest(req, res) {
                             log(`[ERROR-HANDLING] Failed to save processing error debug data: ${debugError.message}`);
                         }
                     }
-                    incrementTurnNumber(chat_id);
-                    log(`[ERROR-HANDLING] Saved processing error and burned turn ${currentTurn}`);
+                    log(`[ERROR-HANDLING] Saved processing error`);
                 })
                 .catch((saveError) => {
                     log(`[ERROR-HANDLING] Failed to save processing error: ${saveError.message}`);

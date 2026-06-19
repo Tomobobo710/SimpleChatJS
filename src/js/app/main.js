@@ -21,7 +21,6 @@ let chatList, chatTitle, chatInfo;
 
 // Chat state
 let chatHistories = new Map(); // Store chat histories locally
-let currentTurnNumber = 0; // Track current turn number for active chat
 
 // Initialize the application
 document.addEventListener("DOMContentLoaded", function () {
@@ -71,32 +70,6 @@ async function getEnabledToolDefinitions() {
 
     return enabledToolDefinitions;
 }
-// Turn management functions
-function getNextTurnNumber() {
-    return ++currentTurnNumber;
-}
-
-function resetTurnTracking() {
-    currentTurnNumber = 0;
-}
-
-async function initializeTurnTrackingForChat(chatId) {
-    try {
-        if (!chatId) {
-            resetTurnTracking();
-            return;
-        }
-
-        // Get the highest turn number from this chat
-        const response = await getCurrentTurnNumber(chatId);
-        currentTurnNumber = response.turn_number || 0;
-        logger.debug(`[TURN] Initialized turn tracking for chat ${chatId}: currentTurnNumber=${currentTurnNumber}`);
-    } catch (error) {
-        logger.warn("[TURN] Failed to initialize turn tracking, starting from 0:", error);
-        resetTurnTracking();
-    }
-}
-
 // Handle sending a message
 async function onSubmitRequest() {
     const textMessage = messageInput.value; // Don't trim - preserve user's intentional whitespace
@@ -161,7 +134,6 @@ async function onSubmitRequest() {
 
     try {
         const parentTurnId = await getActiveTerminalTurnId(currentChatId);
-        const requestTurnNumber = getNextTurnNumber();
 
         let messages = [{ role: "user", content: messageContent }];
 
@@ -184,7 +156,6 @@ async function onSubmitRequest() {
             messages,
             parentTurnId,
             turnId: null,
-            requestTurnNumber,
             requestOrigin: "send",
             chatId: currentChatId,
         });

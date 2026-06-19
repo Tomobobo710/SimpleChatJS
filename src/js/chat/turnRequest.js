@@ -3,35 +3,20 @@ class TurnRequest {
         messages,
         parentTurnId = null,
         turnId = null,
-        requestTurnNumber,
         requestOrigin = "send",
-        truncateFromTurnNumber = null,
         truncateContainer = null,
         chatId = null,
     }) {
         this.messages = messages || [];
         this.parentTurnId = parentTurnId;
         this.turnId = turnId;
-        this.requestTurnNumber = requestTurnNumber;
         this.requestOrigin = requestOrigin;
-        this.truncateFromTurnNumber = truncateFromTurnNumber;
         this.truncateContainer = truncateContainer;
         this.chatId = chatId || currentChatId;
     }
 
     static generateRequestId() {
         return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    }
-
-    static truncateTurnsInContainer(container, fromTurnNumber) {
-        if (fromTurnNumber == null || !container) return;
-        const allTurns = container.querySelectorAll(".turn");
-        for (let i = allTurns.length - 1; i >= 0; i--) {
-            const turn = allTurns[i];
-            if (parseInt(turn.dataset.turnNumber) >= fromTurnNumber) {
-                turn.remove();
-            }
-        }
     }
 
     async saveRequest(requestId) {
@@ -54,7 +39,7 @@ class TurnRequest {
                 ? (this.parentTurnId ? { parent_turn_id: this.parentTurnId } : null)
                 : { turn_id: firstSave.turn_id, parent_turn_id: firstSave.parent_turn_id };
 
-            const result = await saveCompleteMessage(this.chatId, dbEntry, this.requestTurnNumber, params);
+            const result = await saveCompleteMessage(this.chatId, dbEntry, params);
             if (i === 0) {
                 if (!result || !result.turn_id) {
                     throw new Error("saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor");
@@ -106,7 +91,6 @@ class TurnRequest {
                 timestamp: new Date().toISOString(),
                 tools: Object.keys(loadEnabledTools()).length
             },
-            currentTurnNumber: this.requestTurnNumber,
             apiRequest: {
                 url: `${window.location.origin}/api/chat`,
                 method: "POST",
@@ -122,17 +106,16 @@ class TurnRequest {
             id: null,
             role: msg.role,
             content: msg.content,
-            turn_number: this.requestTurnNumber,
             turn_id: requestTurnInfo.turn_id,
             parent_turn_id: i === 0 ? requestTurnInfo.parent_turn_id : requestTurnInfo.turn_id,
             edit_count: 0,
         }));
 
-        const turn = new Turn(this.requestTurnNumber, messages, requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
+       const turn = new Turn(messages, requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
         chatRenderer.renderTurn(turn.renderable(), true);
 
         const turnMessages = turn.renderable().turnMessages || this.messages;
-        this._listenForRequestDebug(requestId, this.requestTurnNumber, turnMessages);
+        this._listenForRequestDebug(requestId, turnMessages);
 
         if (this.requestOrigin === "edit_retry") {
             const branchParentKey = parentTurnId || "root";
@@ -313,29 +296,9 @@ class TurnRequest {
             streamEntry.tempContainer.remove();
             streamEntry.responseTurnDiv.remove();
 
-            const responseTurnNumber = this.requestTurnNumber + 1;
-            if (responseDebugData && Array.isArray(responseDebugData)) {
-                for (const d of responseDebugData) d.currentTurnNumber = responseTurnNumber;
-            }
-
-            let dbTurnId = savedResponseTurn?.turn_id || null;
-            let dbParentTurnId = savedResponseTurn?.parent_turn_id || null;
-            try {
-                const dbData = await getTurnMessages(activeChatId, responseTurnNumber);
-                const expectedParent = savedResponseTurn?.parent_turn_id;
-                const assistantMsgs = (dbData?.messages || []).filter(
-                    m => m.role === "assistant" && m.parent_turn_id === expectedParent
-                );
-                if (assistantMsgs.length > 0) {
-                    const last = assistantMsgs[assistantMsgs.length - 1];
-                    dbTurnId = last.turn_id;
-                    dbParentTurnId = last.parent_turn_id;
-                }
-            } catch (_) {}
-
             const rto = RenderableTurnObject.fromStreamingProcessor({
-                processor, turnNumber: responseTurnNumber, turnId: dbTurnId,
-                parentTurnId: dbParentTurnId, responseDebugData, dropdownStates
+                processor, turnId: savedResponseTurn?.turn_id || null,
+                parentTurnId: savedResponseTurn?.parent_turn_id || null, responseDebugData, dropdownStates
             });
 
             if (currentChatId === activeChatId) chatRenderer.renderTurn(rto, true);
@@ -373,8 +336,6 @@ class TurnRequest {
 
         logger.error(`Turn request failed (${errorType}): ${errorText}`);
 
-        const responseTurnNumber = this.requestTurnNumber + 1;
-
         if (processor && typeof processor.finalize === "function") processor.finalize();
 
         const blocks = (processor && typeof processor.getBlocks === "function") ? processor.getBlocks() : [];
@@ -384,7 +345,7 @@ class TurnRequest {
         blocks.push(errorBlock);
 
         const rto = new RenderableTurnObject({
-            role: 'assistant', content: partialContent, blocks, turnNumber: responseTurnNumber,
+            role: 'assistant', content: partialContent, blocks,
             turnId: savedResponseTurn?.turn_id || null, parentTurnId: savedResponseTurn?.parent_turn_id || null,
             responseDebugData: responseDebugData || null,
         });
@@ -444,7 +405,7 @@ class TurnRequest {
         return { requestTurnInfo, responseTurnInfo, requestId };
     }
 
-    _listenForRequestDebug(requestId, requestTurnNumber, turnMessages) {
+    _listenForRequestDebug(requestId, turnMessages) {
         if (!requestId) return;
         let source;
         try { source = new EventSource(`${window.location.origin}/api/tools/${requestId}`); } catch (error) { logger.warn('Failed to open request-debug event stream:', error); return; }
@@ -454,13 +415,29 @@ class TurnRequest {
             if (evt.type !== 'request_debug') return;
             const requestDebugData = evt.data || {};
             requestDebugData.turnMessages = turnMessages;
-            this._attachRequestDebugPanel(requestTurnNumber, requestDebugData);
+            this._attachRequestDebugPanel(requestDebugData);
             source.close();
         };
         source.onerror = () => {};
     }
 
-    _attachRequestDebugPanel(requestTurnNumber, requestDebugData) {
+    _removeDescendantTurns(parentTurnId) {
+        const container = this.truncateContainer || turnsContainer;
+        const queue = [parentTurnId];
+        while (queue.length > 0) {
+            const currentParent = queue.shift();
+            const children = container.querySelectorAll(
+                `.turn[data-parent-turn-id="${currentParent}"]`
+            );
+            for (const child of children) {
+                const childTurnId = child.dataset.turnId;
+                child.remove();
+                if (childTurnId) queue.push(childTurnId);
+            }
+        }
+    }
+
+    _attachRequestDebugPanel(requestDebugData) {
         const requestMessages = turnsContainer.querySelectorAll('.turn.request-turn, .message.user');
         const lastRequestMessage = requestMessages[requestMessages.length - 1];
         if (!lastRequestMessage) return;
@@ -483,15 +460,33 @@ class TurnRequest {
             if (dp) { const h = dp.style.display === 'none'; dp.style.display = h ? 'block' : 'none'; debugToggle.innerHTML = h ? '−' : '+'; debugToggle.classList.toggle('active', h); }
         });
         lastRequestMessage.appendChild(debugToggle);
-        lastRequestMessage.appendChild(createDebugPanel(lastRequestMessage, messageId, requestDebugData, requestTurnNumber));
+        lastRequestMessage.appendChild(createDebugPanel(lastRequestMessage, messageId, requestDebugData, 0));
     }
 
     async execute() {
         const requestId = TurnRequest.generateRequestId();
         const requestTurnInfo = await this.saveRequest(requestId);
 
-        if (this.truncateFromTurnNumber != null) {
-            TurnRequest.truncateTurnsInContainer(this.truncateContainer, this.truncateFromTurnNumber);
+        // Remove previous turns for this lineage if retrying
+        if (this.truncateContainer && this.turnId) {
+            const oldResponse = this.truncateContainer.querySelector(
+                `.response-turn[data-parent-turn-id="${this.turnId}"]`
+            );
+            if (oldResponse) {
+                const removedTurnId = oldResponse.dataset.turnId;
+                oldResponse.remove();
+                // Remove all descendants of the old response (cascading branch removal)
+                if (removedTurnId) {
+                    this._removeDescendantTurns(removedTurnId);
+                }
+            }
+
+            if (this.requestOrigin === "edit_retry") {
+                const oldRequest = this.truncateContainer.querySelector(
+                    `.request-turn[data-turn-id="${this.turnId}"]`
+                );
+                if (oldRequest) oldRequest.remove();
+            }
         }
 
         await this.renderRequestTurn(requestTurnInfo, requestId);

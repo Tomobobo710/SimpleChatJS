@@ -273,7 +273,6 @@ async function performChatDeletion(chatId, title) {
                 await switchToChat(firstChatId);
             } else {
                 turnsContainer.innerHTML = "";
-                resetTurnTracking();
                 updateChatTitle("No chats yet");
                 chatInfo.textContent = "";
                 if (window.currentProjectId) {
@@ -322,26 +321,20 @@ async function switchToChat(chatId) {
     messageInput.focus();
 }
 
-// Group messages by turn_number into Turn instances
+// Group messages by turn_id into Turn instances
 function groupMessagesByTurn(messages) {
     const groups = new Map();
     for (const msg of messages) {
-        const key = `${msg.turn_id || "missing"}::${msg.turn_number || 0}::${msg.parent_turn_id || "root"}`;
+        const key = `${msg.turn_id || "missing"}::${msg.parent_turn_id || "root"}`;
         if (!groups.has(key)) {
             groups.set(key, []);
         }
         groups.get(key).push(msg);
     }
     return Array.from(groups.entries())
-        .sort(([a], [b]) => {
-            const [, aTurn] = a.split("::");
-            const [, bTurn] = b.split("::");
-            return parseInt(aTurn) - parseInt(bTurn);
-        })
         .map(([key, msgs]) => {
-            const [turnId, turnNumber, parentTurnId] = key.split("::");
+            const [turnId, parentTurnId] = key.split("::");
             return new Turn(
-                parseInt(turnNumber),
                 msgs.map((m) => Message.fromObject(m)),
                 turnId,
                 parentTurnId === "root" ? null : parentTurnId
@@ -388,10 +381,6 @@ function walkActiveBranch(allTurns, chatId) {
         childrenByParent.get(parentKey).push(turn);
     }
 
-    for (const children of childrenByParent.values()) {
-        children.sort((a, b) => a.turnNumber - b.turnNumber);
-    }
-
     const rendered = [];
     // `visited` guards against DB cycles: skip if a turn_id is revisited.
     const visited = new Set();
@@ -436,9 +425,6 @@ function buildBranchMap(allTurns, chatId) {
             childrenByParent.set(parentKey, []);
         }
         childrenByParent.get(parentKey).push(turn);
-    }
-    for (const children of childrenByParent.values()) {
-        children.sort((a, b) => a.turnNumber - b.turnNumber);
     }
 
     for (const [parentKey, children] of childrenByParent) {
@@ -508,7 +494,7 @@ async function loadChatHistory(chatId) {
         }
 
         const validMessages = history.messages.filter((msg) => {
-            if (!msg || !msg.role || msg.turn_number === undefined) {
+            if (!msg || !msg.role) {
                 console.warn("[LOAD-HISTORY] Skipping malformed message:", msg);
                 return false;
             }
@@ -541,8 +527,6 @@ async function loadChatHistory(chatId) {
                 `[LOAD-HISTORY] Restored ${Object.keys(persistedSelections).length} branch selection(s) for chat ${chatId}`
             );
         }
-
-        await initializeTurnTrackingForChat(chatId);
 
         turnsContainer.innerHTML = "";
         isUserAtBottom = true;
@@ -850,7 +834,6 @@ async function loadProjectChats(projectId) {
                 updateChatTitle("New Chat");
                 chatInfo.textContent = `Chat ID: ${currentChatId}`;
                 turnsContainer.innerHTML = "";
-                resetTurnTracking();
             } catch (error) {
                 logger.error("Failed to create initial project chat:", error, true);
                 chatList.innerHTML =
@@ -896,7 +879,6 @@ async function handleNewChat() {
 
         currentChatId = chatId;
         turnsContainer.innerHTML = "";
-        resetTurnTracking();
 
         updateChatTitle("New Chat");
         chatInfo.textContent = `Chat ID: ${chatId}`;

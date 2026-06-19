@@ -5,22 +5,15 @@ const { log } = require('../utils/logger');
 const { parseDbRowToMessage, parseContent } = require('../utils/messageConversions');
 
 // Save message to chat
-async function saveMessage(chatId, messageData, turnNumber = null, errorState = null, turnInfo = null) {
+async function saveMessage(chatId, messageData, turnInfo = null, errorState = null) {
     const { db } = require('../config/database');
     const { serializeMessageForDb } = require('../utils/messageConversions');
-    const { getCurrentTurnNumber } = require('./turnService');
 
     try {
         const serialized = serializeMessageForDb(messageData);
         const role = messageData.role;
         const toolCallId = messageData.tool_call_id || null;
         const toolName = messageData.tool_name || null;
-
-        // Use turn number or get next
-        let finalTurnNumber = turnNumber;
-        if (finalTurnNumber === null) {
-            finalTurnNumber = getCurrentTurnNumber(chatId);
-        }
 
         // Extract turn info
         const turnId = turnInfo?.turn_id || null;
@@ -30,15 +23,14 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
         // Insert message with turn info
         const insertStmt = db.prepare(`
             INSERT INTO messages 
-            (chat_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (chat_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = insertStmt.run(
             chatId,
             role,
             serialized.content,
-            finalTurnNumber,
             turnId,
             parentTurnId,
             serialized.toolCalls,
@@ -56,7 +48,7 @@ async function saveMessage(chatId, messageData, turnNumber = null, errorState = 
 
         const msgId = result.lastInsertRowid;
         log(
-            `[SAVE] Saved ${role} message to chat ${chatId} (id=${msgId}, turn ${finalTurnNumber}, turn_id=${turnId}, parent_turn_id=${parentTurnId})`
+            `[SAVE] Saved ${role} message to chat ${chatId} (id=${msgId}, turn_id=${turnId}, parent_turn_id=${parentTurnId})`
         );
         return msgId;
     } catch (error) {
@@ -88,7 +80,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             const turnIdPlaceholders = ancestorIds.map(() => "?").join(",");
 
             messagesStmt = db.prepare(`
-                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, active_edit_version, edit_history
+                SELECT id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, active_edit_version, edit_history
                 FROM messages
                 WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != '')) AND turn_id IN (${turnIdPlaceholders})
                 ORDER BY timestamp ASC
@@ -96,7 +88,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             chatMessages = messagesStmt.all(chat_id, ...ancestorIds);
         } else {
             messagesStmt = db.prepare(`
-                SELECT id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, active_edit_version, edit_history
+                SELECT id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, active_edit_version, edit_history
                 FROM messages
                 WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != ''))
                 ORDER BY timestamp ASC

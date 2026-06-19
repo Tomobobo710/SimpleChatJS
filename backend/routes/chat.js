@@ -3,7 +3,7 @@ const express = require("express");
 const { db } = require("../config/database");
 const { processRequest, cancelInFlightRequest } = require("../services/chatStreamService");
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
-const { getCurrentTurnNumber, getTurnInfo, incrementTurnNumber, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
+const { getTurnInfo, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
 const { log } = require("../utils/logger");
 
 const router = express.Router();
@@ -194,7 +194,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Build query with optional error filtering
         let query = `
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history
+            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history
             FROM messages
             WHERE chat_id = ?
         `;
@@ -256,7 +256,6 @@ router.post("/message", async (req, res) => {
         chat_id,
         role,
         content,
-        turn_number,
         tool_calls,
         tool_call_id,
         tool_name,
@@ -290,13 +289,7 @@ router.post("/message", async (req, res) => {
 
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
 
-        // Use turn number provided by frontend
-        await saveMessage(chat_id, completeMessage, turn_number, error_state || null, turnInfo);
-
-        // Increment turn number when user sends a message (starts new conversation turn)
-        if (role === "user") {
-            incrementTurnNumber(chat_id);
-        }
+        await saveMessage(chat_id, completeMessage, turnInfo, error_state || null);
 
         res.json({ success: true, turn_id: turnInfo.turn_id, parent_turn_id: turnInfo.parent_turn_id });
     } catch (error) {
@@ -374,19 +367,6 @@ router.patch("/chat/:id/title", (req, res) => {
     }
 });
 
-// Get current turn number for a chat
-router.get("/chat/:id/current-turn", (req, res) => {
-    const { id: chatId } = req.params;
-
-    try {
-        const turnNumber = getCurrentTurnNumber(chatId);
-        res.json({ turn_number: turnNumber });
-    } catch (err) {
-        log("[CURRENT-TURN] Error:", err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // Load persisted branch navigation selections for a chat. Returns a
 // { parentKey: selectedTurnId } map, or {} if none.
 router.get("/chat/:id/branch-selections", (req, res) => {
@@ -416,27 +396,26 @@ router.post("/chat/:id/branch-selections", (req, res) => {
 });
 
 // Get messages for a specific turn
-router.get("/chat/:id/turn/:turnNumber", (req, res) => {
+router.get("/chat/:id/turn/:turnId", (req, res) => {
     try {
-        const { id: chatId, turnNumber } = req.params;
-        const turnNum = parseInt(turnNumber, 10);
+        const { id: chatId, turnId } = req.params;
 
-        if (isNaN(turnNum)) {
-            return res.status(400).json({ error: "Invalid turn number" });
+        if (!turnId) {
+            return res.status(400).json({ error: "turnId is required" });
         }
 
         // Get all messages for this turn from the chat
-        log(`[TURN-MESSAGES] Getting messages for turn ${turnNum} in chat ${chatId}`);
-        const stmt = db.prepare(`
-            SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
+        log(`[TURN-MESSAGES] Getting messages for turn_id=${turnId} in chat ${chatId}`);
+const stmt = db.prepare(`
+            SELECT id, role, content, timestamp, turn_id, parent_turn_id,
                    edit_count, edited_at, reasoning, original_content, tool_calls, tool_call_id, edit_history, active_edit_version
-            FROM messages 
-            WHERE chat_id = ? AND turn_number = ? 
+             FROM messages 
+            WHERE chat_id = ? AND turn_id = ? 
             ORDER BY timestamp ASC
         `);
-        const messages = stmt.all(chatId, turnNum);
+        const messages = stmt.all(chatId, turnId);
 
-        log(`[TURN-MESSAGES] Found ${messages.length} messages for turn ${turnNum} in chat ${chatId}`);
+        log(`[TURN-MESSAGES] Found ${messages.length} messages for turn_id=${turnId} in chat ${chatId}`);
 
         // Parse multimodal content
         const processedMessages = messages.map((msg) => {
@@ -704,10 +683,10 @@ router.get("/message/:id", (req, res) => {
             return res.status(400).json({ error: "Invalid message ID" });
         }
 
-        const stmt = db.prepare(`
+const stmt = db.prepare(`
             SELECT id, chat_id, role, content, original_content, 
-                   edit_count, edited_at, timestamp, turn_number, edit_history, active_edit_version
-            FROM messages WHERE id = ?
+                   edit_count, edited_at, timestamp, edit_history, active_edit_version
+             FROM messages WHERE id = ?
         `);
         const message = stmt.get(messageId);
 
