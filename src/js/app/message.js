@@ -23,6 +23,7 @@ class Message {
         } else {
             this.debugData = rawDebug;
         }
+        this.turnType = data.turn_type ?? null;
         this.editCount = data.edit_count ?? 0;
         this.editedAt = data.edited_at ?? null;
         this.activeEditVersion = data.active_edit_version ?? 0;
@@ -35,14 +36,6 @@ class Message {
         } else {
             this.editHistory = Array.isArray(rawEditHistory) ? rawEditHistory : [];
         }
-    }
-
-    isUser() {
-        return this.role === 'user';
-    }
-
-    isAssistant() {
-        return this.role === 'assistant';
     }
 
     isError() {

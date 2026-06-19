@@ -334,10 +334,13 @@ function groupMessagesByTurn(messages) {
     return Array.from(groups.entries())
         .map(([key, msgs]) => {
             const [turnId, parentTurnId] = key.split("::");
+            const identity = msgs.length > 0 ? (msgs[0].turn_type || null) : null;
             return new Turn(
                 msgs.map((m) => Message.fromObject(m)),
                 turnId,
-                parentTurnId === "root" ? null : parentTurnId
+                parentTurnId === "root" ? null : parentTurnId,
+                null,
+                identity
             );
         });
 }
@@ -548,14 +551,14 @@ async function loadChatHistory(chatId) {
             if (turn.turnId) {
                 try {
                     // Request turns have request debug, response turns have response debug
-                    if (turn.hasRequestMessages()) {
+                    if (turn.identity === 'request') {
                         const requestResponse = await fetch(`${window.location.origin}/api/debug/request/${chatId}/${turn.turnId}`);
                         if (requestResponse.ok) {
                             const requestData = await requestResponse.json();
                             turnDebugMap.set(turn.turnId, { request: requestData, response: null });
                         }
                     }
-                    if (turn.hasResponseMessages()) {
+                    if (turn.identity === 'response') {
                         const responseResponse = await fetch(`${window.location.origin}/api/debug/response/${chatId}/${turn.turnId}`);
                         if (responseResponse.ok) {
                             const responseData = await responseResponse.json();

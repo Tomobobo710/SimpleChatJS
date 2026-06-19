@@ -46,6 +46,7 @@ function parseDbRowToMessage(row, options = {}) {
         edit_count: row.edit_count ?? 0,
         edited_at: row.edited_at,
         active_edit_version: row.active_edit_version ?? 0,
+        turn_type: row.turn_type || null,
     };
 
     // Edit history (JSON array)

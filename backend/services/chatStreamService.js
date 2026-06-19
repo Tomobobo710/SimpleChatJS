@@ -168,6 +168,7 @@ async function executeStreamingLoop(
     } else {
         turnInfo = getTurnInfo(null);
     }
+    turnInfo.turn_type = 'response';
 
     // Create unified request
     const unifiedRequest = responseAdapterFactory.createUnifiedRequest(messages, tools, currentSettings.modelName);
@@ -910,6 +911,7 @@ async function processRequest(req, res) {
         log("[CHAT] Error:", error);
 
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
+        turnInfo.turn_type = 'response';
         if (chat_id) {
             const errorMessage = {
                 role: "assistant",
