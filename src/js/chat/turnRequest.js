@@ -39,7 +39,7 @@ class TurnRequest {
                 ? (this.parentTurnId ? { parent_turn_id: this.parentTurnId } : null)
                 : { turn_id: firstSave.turn_id, parent_turn_id: firstSave.parent_turn_id };
 
-            const result = await saveCompleteMessage(this.chatId, dbEntry, null, params);
+            const result = await saveCompleteMessage(this.chatId, dbEntry, params);
             if (i === 0) {
                 if (!result || !result.turn_id) {
                     throw new Error("saveCompleteMessage returned no turn_id; cannot proceed without lineage anchor");
@@ -111,7 +111,7 @@ class TurnRequest {
             edit_count: 0,
         }));
 
-        const turn = new Turn(0, messages, requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
+       const turn = new Turn(messages, requestTurnInfo.turn_id, requestTurnInfo.parent_turn_id);
         chatRenderer.renderTurn(turn.renderable(), true);
 
         const turnMessages = turn.renderable().turnMessages || this.messages;
@@ -297,7 +297,7 @@ class TurnRequest {
             streamEntry.responseTurnDiv.remove();
 
             const rto = RenderableTurnObject.fromStreamingProcessor({
-                processor, turnNumber: 0, turnId: savedResponseTurn?.turn_id || null,
+                processor, turnId: savedResponseTurn?.turn_id || null,
                 parentTurnId: savedResponseTurn?.parent_turn_id || null, responseDebugData, dropdownStates
             });
 
@@ -345,7 +345,7 @@ class TurnRequest {
         blocks.push(errorBlock);
 
         const rto = new RenderableTurnObject({
-            role: 'assistant', content: partialContent, blocks, turnNumber: 0,
+            role: 'assistant', content: partialContent, blocks,
             turnId: savedResponseTurn?.turn_id || null, parentTurnId: savedResponseTurn?.parent_turn_id || null,
             responseDebugData: responseDebugData || null,
         });

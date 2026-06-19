@@ -18,7 +18,6 @@ class ChatRenderer {
                 turnMessages,
                 dropdownStates = {},
                 originalContent,
-                turnNumber,
                 turnId,
                 parentTurnId,
                 editCount,
@@ -27,8 +26,8 @@ class ChatRenderer {
             } = turnData;
 
             // Validate required data
-            if (!role || turnNumber === undefined) {
-                console.error("[RENDER-ERROR] Missing required turn data:", { role, turnNumber, turnData });
+            if (!role) {
+                console.error("[RENDER-ERROR] Missing required turn data:", { role, turnData });
                 return null;
             }
 
@@ -59,11 +58,8 @@ class ChatRenderer {
                 turnDiv.className = `turn ${role}-turn`; // Fallback for other roles
             }
 
-            if (id) {
+           if (id) {
                 turnDiv.dataset.messageId = id;
-            }
-            if (turnNumber) {
-                turnDiv.dataset.turnNumber = turnNumber;
             }
             if (turnId) {
                 turnDiv.dataset.turnId = turnId;
@@ -102,12 +98,12 @@ class ChatRenderer {
 
             turnDiv.appendChild(contentDiv);
 
-            // Add message actions bar (passing turn_id and parent_turn_id from RTO)
-            this.addMessageActions(turnDiv, role, turnNumber, id, turnId, parentTurnId, branchMap);
+           // Add message actions bar (passing turn_id and parent_turn_id from RTO)
+            this.addMessageActions(turnDiv, role, id, turnId, parentTurnId, branchMap);
 
             // Add debug toggle and panel if debug data provided
             if (debugData || responseDebugData) {
-                this.addDebugPanel(turnDiv, domId, { ...debugData, responseDebugData, turnMessages }, turnNumber);
+                this.addDebugPanel(turnDiv, domId, { ...debugData, responseDebugData, turnMessages });
             }
 
             // Edit badge: edit_count is incremented only by in-place edits
@@ -530,7 +526,7 @@ class ChatRenderer {
     }
 
     // Add debug panel to message
-    addDebugPanel(turnDiv, messageId, debugData, turnNumber = null) {
+    addDebugPanel(turnDiv, messageId, debugData) {
         const settings = loadSettings();
         turnDiv.classList.add("has-debug");
 
@@ -571,17 +567,12 @@ class ChatRenderer {
         // Add message ID
         debugData.messageId = messageId || "unknown";
 
-        // Add turn number if provided
-        if (turnNumber !== null && turnNumber !== undefined) {
-            debugData.currentTurnNumber = turnNumber;
-        }
-
-        const debugPanel = createDebugPanel(turnDiv, messageId, debugData, turnNumber);
+        const debugPanel = createDebugPanel(turnDiv, messageId, debugData);
         turnDiv.appendChild(debugPanel);
     }
 
     // Add message actions bar to turn
-    addMessageActions(turnDiv, role, turnNumber = null, messageId = null, turnId = null, parentTurnId = null, branchMap = null) {
+    addMessageActions(turnDiv, role, messageId = null, turnId = null, parentTurnId = null, branchMap = null) {
         const actionsContainer = document.createElement("div");
         actionsContainer.className = "message-actions";
         if (messageId) {
@@ -597,21 +588,21 @@ class ChatRenderer {
         editBtn.className = "action-btn edit-btn";
         editBtn.title = "Edit message";
         editBtn.textContent = "Edit";
-        editBtn.addEventListener("click", () => this.handleEditMessage(turnId, role, turnNumber, messageId));
+        editBtn.addEventListener("click", () => this.handleEditMessage(turnId, role, messageId));
 
         // Edit and retry button (for user messages)
         const editRetryBtn = document.createElement("button");
         editRetryBtn.className = "action-btn edit-retry-btn";
         editRetryBtn.title = "Edit your message and regenerate conversation from this point";
         editRetryBtn.textContent = "Edit & Retry";
-        editRetryBtn.addEventListener("click", () => this.handleEditAndRetry(turnId, role, turnNumber, messageId));
+        editRetryBtn.addEventListener("click", () => this.handleEditAndRetry(turnId, role, messageId));
 
         // Retry button (for assistant messages)
         const retryBtn = document.createElement("button");
         retryBtn.className = "action-btn retry-btn";
         retryBtn.title = "Generate a different response to the same prompt";
         retryBtn.textContent = "Retry";
-        retryBtn.addEventListener("click", () => this.handleRetryMessage(turnId, role, turnNumber, messageId));
+        retryBtn.addEventListener("click", () => this.handleRetryMessage(turnId, role, messageId));
 
         // Add buttons to container
         actionButtons.appendChild(editBtn);
@@ -659,8 +650,8 @@ class ChatRenderer {
             branchNav.appendChild(branchIndicator);
             branchNav.appendChild(nextBtn);
 
-            // Check if this turn should show branch navigation
-            this.updateBranchNavigation(branchNav, turnNumber, { turnId, parentTurnId, role }, branchMap).catch((error) => {
+           // Check if this turn should show branch navigation
+            this.updateBranchNavigation(branchNav, { turnId, parentTurnId, role }, branchMap).catch((error) => {
                 console.error("[BRANCH-NAV] Error loading branch info:", error);
                 // Hide navigation on error
                 branchNav.style.display = "none";
@@ -680,7 +671,7 @@ class ChatRenderer {
     }
 
     // Handle turn-level editing - show all messages in the turn
-    async handleEditMessage(turnId, role, turnNumber, messageId) {
+    async handleEditMessage(turnId, role, messageId) {
         if (!turnId) {
             showError("Cannot edit: Turn ID not available");
             return;
@@ -716,14 +707,14 @@ class ChatRenderer {
             }
 
             // Enter message-based edit mode
-            this.enterMessageEditMode(turnDiv, turnMessages, 0);
+            this.enterMessageEditMode(turnDiv, turnMessages);
         } catch (error) {
             console.error("[EDIT] Error getting turn messages:", error);
             showError(`Error loading turn for editing: ${error.message}`);
         }
     }
 
-    async handleEditAndRetry(turnId, role, turnNumber, messageId) {
+    async handleEditAndRetry(turnId, role, messageId) {
         // Only allow edit & retry for user messages
         if (role !== "user") {
             return;
@@ -741,10 +732,10 @@ class ChatRenderer {
         }
 
         // Call the regular edit function - it will use the proper modal
-        await this.handleEditMessage(turnId, role, turnNumber, messageId);
+        await this.handleEditMessage(turnId, role, messageId);
     }
 
-    async handleRetryMessage(turnId, role, turnNumber, messageId) {
+    async handleRetryMessage(turnId, role, messageId) {
         if (role !== "assistant") return;
         if (!turnId) return;
 
@@ -1018,36 +1009,6 @@ class ChatRenderer {
         } catch (error) {
             logger.error(`[VERSION-SWITCH] Error: ${error.message}`, true);
             showError(`Error switching version: ${error.message}`);
-        }
-    }
-
-    // Find message ID for a turn by looking it up in the database
-    async findMessageIdForTurn(turnNumber, role) {
-        try {
-            // Use global variables
-            const apiBase = window.location.origin;
-            const chatId = currentChatId; // Global variable from utils.js
-
-            if (!chatId) {
-                console.error("[EDIT] No current chat ID available");
-                return null;
-            }
-
-            // Get current chat history to find the message (exclude errors)
-            const response = await fetch(`${apiBase}/api/chat/${chatId}/history-complete?includeErrors=false`);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const history = await response.json();
-
-            // Find message with matching turn number and role
-            const message = history.messages.find((msg) => msg.turn_number === turnNumber && msg.role === role);
-
-            return message ? message.id : null;
-        } catch (error) {
-            console.error("[EDIT] Error finding message ID:", error);
-            return null;
         }
     }
 
@@ -1538,7 +1499,7 @@ class ChatRenderer {
         }
     }
 
-    enterMessageEditMode(turnDiv, messages, turnNumber) {
+    enterMessageEditMode(turnDiv, messages) {
         turnDiv.classList.add("editing");
 
         // Store original child elements
@@ -1552,7 +1513,7 @@ class ChatRenderer {
         // Add header
         const header = document.createElement("div");
         header.className = "edit-header";
-        header.innerHTML = `<h3>Edit Turn ${turnNumber} Messages</h3>`;
+        header.innerHTML = `<h3>Edit Turn Messages</h3>`;
         editContainer.appendChild(header);
 
         // Create edit form for each message
@@ -1809,8 +1770,8 @@ class ChatRenderer {
         const saveBtn = document.createElement("button");
         saveBtn.className = "btn btn-success edit-btn-save";
         saveBtn.textContent = "Save All Messages";
-        saveBtn.addEventListener("click", () => {
-            this.saveAllMessages(turnDiv, editContainer, turnNumber);
+       saveBtn.addEventListener("click", () => {
+            this.saveAllMessages(turnDiv, editContainer);
         });
 
         const cancelBtn = document.createElement("button");
@@ -1830,7 +1791,7 @@ class ChatRenderer {
     }
 
     // Save all edited messages
-    async saveAllMessages(turnDiv, editContainer, turnNumber) {
+    async saveAllMessages(turnDiv, editContainer) {
         const messageContainers = editContainer.querySelectorAll(".editable-message");
         const saveBtn = editContainer.querySelector(".edit-btn-save");
 
@@ -1922,11 +1883,11 @@ class ChatRenderer {
                 }
             }
 
-            // Exit edit mode. For edit-retry this carries the messages forward
+         // Exit edit mode. For edit-retry this carries the messages forward
             // into a new turn_id; for plain edit it just closes the editor.
             // The edit indicator is drawn by renderTurn from the DB's
             // edit_count, so reload/branch switch persist it.
-            await this.exitMessageEditMode(turnDiv, turnNumber, isEditRetry);
+            await this.exitMessageEditMode(turnDiv, isEditRetry);
         } catch (error) {
             console.error("[EDIT] Error saving messages:", error);
             showError(`Error saving messages: ${error.message}`);
@@ -1950,7 +1911,7 @@ class ChatRenderer {
     }
 
     // Exit edit mode and reload the turn with updated content
-    async exitMessageEditMode(turnDiv, turnNumber, isEditRetry = false) {
+    async exitMessageEditMode(turnDiv, isEditRetry = false) {
         try {
             // Check if this was an Edit & Retry
             const shouldRetry = isEditRetry === true;
@@ -2071,7 +2032,7 @@ class ChatRenderer {
 
     // ===== BRANCH NAVIGATION SYSTEM =====
     // Update branch navigation
-    async updateBranchNavigation(branchNavElement, turnNumber, turnData = null, branchMap = null) {
+    async updateBranchNavigation(branchNavElement, turnData = null, branchMap = null) {
         if (!currentChatId || !turnData?.turnId) {
             branchNavElement.style.display = "none";
             return;
@@ -2265,18 +2226,13 @@ if (document.readyState === "loading") {
 }
 
 // Create debug panel DOM element using sequential debug system
-function createDebugPanel(turnDiv, messageId, debugData, turnNumber = null) {
+function createDebugPanel(turnDiv, messageId, debugData) {
     const debugPanel = document.createElement("div");
     debugPanel.className = "debug-panel-container";
     debugPanel.dataset.messageId = messageId;
     debugPanel.style.display = "none"; // Initially hidden
     debugPanel.style.width = "100%";
     debugPanel.style.boxSizing = "border-box";
-
-    // Inject correct turn number and turn ID from frontend
-    if (turnNumber !== null && debugData) {
-        debugData.currentTurnNumber = turnNumber;
-    }
 
     // Add turn ID and message ID to debug data
     if (!debugData) {

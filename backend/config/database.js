@@ -27,7 +27,6 @@ function initializeDatabase() {
                 title TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                turn_number INTEGER DEFAULT 0,
                 project_id TEXT DEFAULT NULL
             )`);
 
@@ -49,7 +48,6 @@ function initializeDatabase() {
                 original_message_id INTEGER,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
-                turn_number INTEGER NOT NULL,
                 turn_id TEXT,
                 parent_turn_id TEXT,
                 tool_calls TEXT,

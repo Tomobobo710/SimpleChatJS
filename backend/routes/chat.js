@@ -194,7 +194,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Build query with optional error filtering
         let query = `
-            SELECT id, original_message_id, role, content, turn_number, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history
+            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history
             FROM messages
             WHERE chat_id = ?
         `;
@@ -256,7 +256,6 @@ router.post("/message", async (req, res) => {
         chat_id,
         role,
         content,
-        turn_number,
         tool_calls,
         tool_call_id,
         tool_name,
@@ -290,8 +289,7 @@ router.post("/message", async (req, res) => {
 
         const turnInfo = getTurnInfo(parent_turn_id, turn_id);
 
-        // turn_number is vestigial — always 0. Lineage (turn_id + parent_turn_id) is the source of truth.
-        await saveMessage(chat_id, completeMessage, turn_number, error_state || null, turnInfo);
+        await saveMessage(chat_id, completeMessage, turnInfo, error_state || null);
 
         res.json({ success: true, turn_id: turnInfo.turn_id, parent_turn_id: turnInfo.parent_turn_id });
     } catch (error) {
@@ -408,10 +406,10 @@ router.get("/chat/:id/turn/:turnId", (req, res) => {
 
         // Get all messages for this turn from the chat
         log(`[TURN-MESSAGES] Getting messages for turn_id=${turnId} in chat ${chatId}`);
-        const stmt = db.prepare(`
-            SELECT id, role, content, timestamp, turn_number, turn_id, parent_turn_id,
+const stmt = db.prepare(`
+            SELECT id, role, content, timestamp, turn_id, parent_turn_id,
                    edit_count, edited_at, reasoning, original_content, tool_calls, tool_call_id, edit_history, active_edit_version
-            FROM messages 
+             FROM messages 
             WHERE chat_id = ? AND turn_id = ? 
             ORDER BY timestamp ASC
         `);
@@ -685,10 +683,10 @@ router.get("/message/:id", (req, res) => {
             return res.status(400).json({ error: "Invalid message ID" });
         }
 
-        const stmt = db.prepare(`
+const stmt = db.prepare(`
             SELECT id, chat_id, role, content, original_content, 
-                   edit_count, edited_at, timestamp, turn_number, edit_history, active_edit_version
-            FROM messages WHERE id = ?
+                   edit_count, edited_at, timestamp, edit_history, active_edit_version
+             FROM messages WHERE id = ?
         `);
         const message = stmt.get(messageId);
 

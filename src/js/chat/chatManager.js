@@ -335,7 +335,6 @@ function groupMessagesByTurn(messages) {
         .map(([key, msgs]) => {
             const [turnId, parentTurnId] = key.split("::");
             return new Turn(
-                0,  // turn_number vestigial — use 0 for all turns
                 msgs.map((m) => Message.fromObject(m)),
                 turnId,
                 parentTurnId === "root" ? null : parentTurnId
@@ -495,7 +494,7 @@ async function loadChatHistory(chatId) {
         }
 
         const validMessages = history.messages.filter((msg) => {
-            if (!msg || !msg.role || msg.turn_number === undefined) {
+            if (!msg || !msg.role) {
                 console.warn("[LOAD-HISTORY] Skipping malformed message:", msg);
                 return false;
             }

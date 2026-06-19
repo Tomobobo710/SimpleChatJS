@@ -485,13 +485,12 @@ async function createNewChatInDatabase(chatId, title = "New Chat", projectId = n
 }
 
 // Save complete message using unified approach
-async function saveCompleteMessage(chatId, messageData, turnNumber = null, turnInfo = null) {
+async function saveCompleteMessage(chatId, messageData, turnInfo = null) {
     try {
         const requestData = {
             chat_id: chatId,
             role: messageData.role,
-            content: messageData.content,
-            turn_number: turnNumber
+            content: messageData.content
         };
 
         // Add tool-specific fields if present
@@ -565,7 +564,6 @@ async function saveMCPConfig(configText) {
     }
 }
 
-// Get current turn number for a chat
 // Load persisted branch navigation selections for a chat. Returns a
 // { parentKey: selectedTurnId } map, or {} if none.
 async function loadBranchSelections(chatId) {

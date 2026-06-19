@@ -41,7 +41,6 @@ function parseDbRowToMessage(row, options = {}) {
         role: row.role,
         content: parseContent(row.content),
         timestamp: row.timestamp,
-        turn_number: row.turn_number,
         turn_id: row.turn_id,
         parent_turn_id: row.parent_turn_id,
         edit_count: row.edit_count ?? 0,

@@ -66,7 +66,7 @@ function cancelInFlightRequest(requestId) {
         reasoning,
         tool_calls: toolCalls
     };
-    saveMessage(state.chatId, errorMessage, null, "user_stopped", state.turnInfo)
+    saveMessage(state.chatId, errorMessage, state.turnInfo, "user_stopped")
         .then(async () => {
             // Append error to responses array in turn_debug (with any streamed content)
             if (state.turnInfo) {
@@ -84,7 +84,7 @@ function cancelInFlightRequest(requestId) {
                 }
             }
             if (streamedSoFar && streamedSoFar.trim() !== "") {
-                await saveMessage(state.chatId, { role: "system", content: "Generation stopped by user." }, null, null, state.turnInfo);
+                await saveMessage(state.chatId, { role: "system", content: "Generation stopped by user." }, state.turnInfo);
             }
             log(`[CANCEL] Saved user_stopped for requestId=${requestId}`);
         })
@@ -321,7 +321,7 @@ async function executeStreamingLoop(
             reasoning,
             tool_calls: toolCalls
         };
-        saveMessage(chatId, errorMessage, null, "connection_error", turnInfo)
+        saveMessage(chatId, errorMessage, turnInfo, "connection_error")
             .then(async () => {
                 // Append error to responses array in turn_debug
                 if (turnInfo) {
@@ -338,7 +338,7 @@ async function executeStreamingLoop(
                     }
                 }
                 if (streamedSoFar && streamedSoFar.trim() !== "") {
-                    await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, null, null, turnInfo);
+                    await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, turnInfo);
                 }
                 log(`[ERROR-HANDLING] Saved connection error`);
             })
@@ -388,7 +388,7 @@ async function executeStreamingLoop(
                         reasoning,
                         tool_calls: toolCalls
                     };
-                    saveMessage(chatId, errorMessage, null, "api_error", turnInfo)
+                    saveMessage(chatId, errorMessage, turnInfo, "api_error")
                         .then(async () => {
                             // Append error to responses array in turn_debug
                             if (turnInfo) {
@@ -542,7 +542,7 @@ async function executeStreamingLoop(
                         reasoning: unifiedResponse.reasoning || null
                     };
                     try {
-                        const finalMsgId = await saveMessage(chatId, finalResponseMessage, null, null, turnInfo);
+                        const finalMsgId = await saveMessage(chatId, finalResponseMessage, turnInfo);
                         log(`[CHAT-SAVE] Successfully saved final response to history`);
 
                         // Build and store debug data for the final response
@@ -621,7 +621,7 @@ async function executeStreamingLoop(
                 reasoning,
                 tool_calls: toolCalls
             };
-            saveMessage(chatId, errorMessage, null, "connection_error", turnInfo)
+saveMessage(chatId, errorMessage, turnInfo, "connection_error")
                 .then(async () => {
                     // Append error to responses array in turn_debug
                     if (turnInfo) {
@@ -639,7 +639,7 @@ async function executeStreamingLoop(
                         }
                     }
                     if (streamedSoFar && streamedSoFar.trim() !== "") {
-                        await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, null, null, turnInfo);
+                    await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, turnInfo);
                     }
                     log(`[ERROR-HANDLING] Saved connection error`);
                 })
@@ -689,7 +689,7 @@ async function executeToolCallsAndContinue(
 
     // Save assistant message with tool calls FIRST (before tool results)
     if (chatId) {
-        await saveMessage(chatId, assistantMessageWithTools, null, null, turnInfo);
+        await saveMessage(chatId, assistantMessageWithTools, turnInfo);
         log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
     }
 
@@ -725,7 +725,7 @@ async function executeToolCallsAndContinue(
 
             // Save tool message to database
             if (chatId) {
-                await saveMessage(chatId, toolMessage, null, null, turnInfo);
+                await saveMessage(chatId, toolMessage, turnInfo);
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
 
@@ -756,7 +756,7 @@ async function executeToolCallsAndContinue(
 
             // Save tool error message to database
             if (chatId) {
-                await saveMessage(chatId, errorMessage, null, null, turnInfo);
+                await saveMessage(chatId, errorMessage, turnInfo);
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
 
@@ -915,7 +915,7 @@ async function processRequest(req, res) {
                 role: "assistant",
                 content: ""
             };
-            saveMessage(chat_id, errorMessage, null, "processing_error", turnInfo)
+            saveMessage(chat_id, errorMessage, turnInfo, "processing_error")
                 .then(async () => {
                     // Append error to responses array in turn_debug
                     if (turnInfo) {

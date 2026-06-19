@@ -5,8 +5,7 @@ class Message {
     constructor(data = {}) {
         this.id = data.id ?? null;
         this.role = data.role ?? 'other';
-        this.content = data.content ?? '';
-        this.turnNumber = data.turn_number ?? 0;
+      this.content = data.content ?? '';
         this.turnId = data.turn_id ?? null;
         this.parentTurnId = data.parent_turn_id ?? null;
         this.timestamp = data.timestamp ?? null;

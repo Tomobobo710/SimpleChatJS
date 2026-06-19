@@ -1,4 +1,4 @@
-// Turn - a first-class concept representing a collection of messages grouped by turn_number AND parent_turn_id.
+// Turn - a first-class concept representing a collection of messages grouped by turn_id + parent_turn_id.
 // Turns are never persisted — they are computed from Message source data.
 // Turns with the same parent_turn_id but different turn_id are siblings.
 
@@ -21,8 +21,7 @@ function resolveErrorBlockContent(errorMsg) {
 }
 
 class Turn {
-    constructor(turnNumber, messages = [], turnId = null, parentTurnId = null, responseDebugData = null) {
-        this.turnNumber = turnNumber;
+    constructor(messages = [], turnId = null, parentTurnId = null, responseDebugData = null) {
         this.messages = messages;
         this.turnId = turnId;
         this.parentTurnId = parentTurnId;
@@ -92,7 +91,6 @@ class Turn {
                 role: responseRto.role,
                 content: responseRto.content,
                 blocks: [...(responseRto.blocks || []), errorBlock],
-                turnNumber: responseRto.turnNumber,
                 turnId: responseRto.turnId,
                 parentTurnId: responseRto.parentTurnId,
                 debugData: responseRto.debugData,
@@ -120,7 +118,6 @@ class Turn {
                         debug_data: errorMsg.debugData
                     }
                 })],
-                turnNumber: errorMsg.turnNumber,
                 turnId: this.turnId,
                 parentTurnId: this.parentTurnId,
                 debugData: errorMsg.debugData,
@@ -145,7 +142,6 @@ class Turn {
             role: 'other',
             content: '',
             blocks: null,
-            turnNumber: this.turnNumber,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
             debugData: null,
@@ -166,11 +162,10 @@ class Turn {
         let turnDebugData = null;
 
         if (liveProcessor && primaryMessage) {
-            return new RenderableTurnObject({
+           return new RenderableTurnObject({
                 role: 'assistant',
                 content: liveProcessor.getRawContent() || '',
                 blocks: liveProcessor.getBlocks(),
-                turnNumber: primaryMessage.turnNumber,
                 turnId: this.turnId,
                 parentTurnId: this.parentTurnId,
                 debugData: primaryMessage.debugData,
@@ -262,7 +257,6 @@ class Turn {
             role: 'assistant',
             content: processor.getRawContent() || '',
             blocks: blocks,
-            turnNumber: primary.turnNumber,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
             debugData: primary?.debugData || null,
