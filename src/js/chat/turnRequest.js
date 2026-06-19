@@ -421,6 +421,22 @@ class TurnRequest {
         source.onerror = () => {};
     }
 
+    _removeDescendantTurns(parentTurnId) {
+        const container = this.truncateContainer || turnsContainer;
+        const queue = [parentTurnId];
+        while (queue.length > 0) {
+            const currentParent = queue.shift();
+            const children = container.querySelectorAll(
+                `.turn[data-parent-turn-id="${currentParent}"]`
+            );
+            for (const child of children) {
+                const childTurnId = child.dataset.turnId;
+                child.remove();
+                if (childTurnId) queue.push(childTurnId);
+            }
+        }
+    }
+
     _attachRequestDebugPanel(requestDebugData) {
         const requestMessages = turnsContainer.querySelectorAll('.turn.request-turn, .message.user');
         const lastRequestMessage = requestMessages[requestMessages.length - 1];
@@ -456,7 +472,14 @@ class TurnRequest {
             const oldResponse = this.truncateContainer.querySelector(
                 `.response-turn[data-parent-turn-id="${this.turnId}"]`
             );
-            if (oldResponse) oldResponse.remove();
+            if (oldResponse) {
+                const removedTurnId = oldResponse.dataset.turnId;
+                oldResponse.remove();
+                // Remove all descendants of the old response (cascading branch removal)
+                if (removedTurnId) {
+                    this._removeDescendantTurns(removedTurnId);
+                }
+            }
 
             if (this.requestOrigin === "edit_retry") {
                 const oldRequest = this.truncateContainer.querySelector(
