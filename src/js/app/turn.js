@@ -88,7 +88,7 @@ class Turn {
                 }
             });
             return new RenderableTurnObject({
-                role: responseRto.role,
+                identity: responseRto.identity,
                 content: responseRto.content,
                 blocks: [...(responseRto.blocks || []), errorBlock],
                 turnId: responseRto.turnId,
@@ -108,7 +108,7 @@ class Turn {
         if (this.hasErrors()) {
             const errorMsg = this.errorMessages[0];
             return new RenderableTurnObject({
-                role: 'assistant',
+                identity: 'response',
                 content: '',
                 blocks: [new Block({
                     type: 'error',
@@ -139,7 +139,7 @@ class Turn {
 
         // Fallback: empty turn
         return new RenderableTurnObject({
-            role: 'other',
+            identity: 'request',
             content: '',
             blocks: null,
             turnId: this.turnId,
@@ -150,8 +150,7 @@ class Turn {
             activeEditVersion: 0,
         });
     }
-
-    // Build an assistant RTO from this turn's messages, using the
+    // Build a response RTO from this turn's messages, using the
     // liveProcessor if provided (live render) or rebuilding blocks
     // from content (reload path). Shared by the pure-assistant and
     // "content + error" branches in renderable().
@@ -163,7 +162,7 @@ class Turn {
 
         if (liveProcessor && primaryMessage) {
            return new RenderableTurnObject({
-                role: 'assistant',
+                identity: 'response',
                 content: liveProcessor.getRawContent() || '',
                 blocks: liveProcessor.getBlocks(),
                 turnId: this.turnId,
@@ -254,7 +253,7 @@ class Turn {
             .filter(d => d && (d.response || d.error));
 
         return new RenderableTurnObject({
-            role: 'assistant',
+            identity: 'response',
             content: processor.getRawContent() || '',
             blocks: blocks,
             turnId: this.turnId,
@@ -267,5 +266,6 @@ class Turn {
         });
     }
 }
+
 
 

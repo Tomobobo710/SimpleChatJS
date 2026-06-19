@@ -57,11 +57,7 @@ class Message {
         return this.thinking !== null && this.thinking.length > 0;
     }
 
-    isEditable() {
-        return this.isUser() && this.editCount < 3;
-    }
-
-    static fromObject(obj) {
+     static fromObject(obj) {
         return new Message(obj);
     }
 }

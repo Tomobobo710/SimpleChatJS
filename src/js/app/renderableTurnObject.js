@@ -3,8 +3,8 @@
 // The UI renders directly from this object.
 
 class RenderableTurnObject {
-    constructor({ role = 'other', content = '', blocks = null, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, editCount = 0, activeEditVersion = 0, dropdownStates = {} } = {}) {
-        this.role = role;
+    constructor({ identity = 'request', content = '', blocks = null, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, editCount = 0, activeEditVersion = 0, dropdownStates = {} } = {}) {
+        this.identity = identity;
         this.content = content;
         this.blocks = blocks;
         this.turnId = turnId;
@@ -17,21 +17,9 @@ class RenderableTurnObject {
         this.dropdownStates = dropdownStates;
     }
 
-    isUser() {
-        return this.role === 'user';
-    }
-
-    isAssistant() {
-        return this.role === 'assistant';
-    }
-
-    isError() {
-        return this.role === 'error';
-    }
-
     static fromRequestMessage(message) {
         return new RenderableTurnObject({
-            role: 'user',
+            identity: 'request',
             content: message.content,
             blocks: null,
             turnId: message.turnId,
@@ -45,7 +33,7 @@ class RenderableTurnObject {
 
     static fromStreamingProcessor({ processor, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, dropdownStates = {} }) {
         return new RenderableTurnObject({
-            role: 'assistant',
+            identity: 'response',
             content: processor.getRawContent() || '',
             blocks: processor.getBlocks(),
             turnId,
