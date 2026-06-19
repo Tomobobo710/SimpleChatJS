@@ -168,6 +168,8 @@ class ChatRenderer {
                 return this.renderPhaseMarkerBlock(content, metadata);
             case "error":
                 return this.renderErrorBlock(content, metadata);
+            case "system":
+                return this.renderSystemBlock(content);
 
             case "chat":
             default:
@@ -322,6 +324,18 @@ class ChatRenderer {
             .catch((err) => {
                 console.error("Failed to copy code:", err);
             });
+    }
+
+    // Render system block — black background, grey text, system label
+    renderSystemBlock(content) {
+        const div = document.createElement("div");
+        div.className = "system-block";
+        const settings = loadSettings();
+        if (!settings.showSystemBlocks) {
+            div.style.display = "none";
+        }
+        div.innerHTML = `<div class="system-label">System</div><div class="system-content">${escapeHtml(content)}</div>`;
+        return div;
     }
 
     // Render regular chat content

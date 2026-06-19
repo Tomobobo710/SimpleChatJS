@@ -26,6 +26,7 @@ function getDefaultProfileSettings() {
         apiKey: '',
         modelName: '',
         debugPanels: true,
+        showSystemBlocks: true,
         
         logLevel: 'INFO',
         enableThinkingAnthropic: true,

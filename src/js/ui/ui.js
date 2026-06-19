@@ -36,6 +36,7 @@ function initializeElements() {
     refreshModelsBtn = document.getElementById('refreshModelsBtn');
     saveSettingsBtn = document.getElementById('saveSettings');
     debugPanelsInput = document.getElementById('debugPanels');
+    systemBlocksInput = document.getElementById('systemBlocks');
     testConnectionBtn = document.getElementById('testConnectionBtn');
     
     // Old thinking mode elements (removed - now handled in settings.js)
@@ -119,6 +120,16 @@ function setupEventListeners() {
             toggle.style.display = show ? 'block' : 'none';
         });
         logger.info(`Debug panels ${show ? 'enabled' : 'disabled'} - ${debugToggles.length} toggles updated`);
+    });
+    
+    // System blocks toggle - show/hide system message blocks immediately
+    systemBlocksInput.addEventListener('change', () => {
+        const show = systemBlocksInput.checked;
+        const systemBlocks = document.querySelectorAll('.system-block');
+        systemBlocks.forEach(block => {
+            block.style.display = show ? 'block' : 'none';
+        });
+        logger.info(`System blocks ${show ? 'enabled' : 'disabled'} - ${systemBlocks.length} blocks toggled`);
     });
     
     // Thinking mode controls are now handled in settings.js

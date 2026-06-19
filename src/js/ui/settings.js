@@ -78,6 +78,7 @@ async function loadSettingsIntoModal() {
         apiKeyInput.value = settings.apiKey;
         modelNameInput.value = settings.modelName;
         debugPanelsInput.checked = settings.debugPanels;
+        systemBlocksInput.checked = settings.showSystemBlocks;
         
         // Provider-specific thinking mode settings
         loadProviderThinkingSettings(settings);
@@ -110,6 +111,7 @@ async function loadSettingsIntoModal() {
             apiKey: apiKeyInput.value.length > 0 ? '[SET]' : '[EMPTY]',
             modelName: modelNameInput.value,
             debugPanels: debugPanelsInput.checked,
+            showSystemBlocks: systemBlocksInput.checked,
 
         });
         
@@ -132,6 +134,7 @@ async function handleSaveSettings() {
         apiKey: apiKeyInput.value.trim(),
         modelName: modelNameInput.value.trim(),
         debugPanels: debugPanelsInput.checked,
+        showSystemBlocks: systemBlocksInput.checked,
         // Provider-specific thinking settings
         enableThinkingAnthropic: enableThinkingAnthropic.checked,
         thinkingBudgetAnthropic: parseInt(thinkingBudgetAnthropic.value),

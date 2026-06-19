@@ -308,6 +308,37 @@ details[open] .dropdown-toggle::before {
     border-color: #ff4444;
 }
 
+/* System block styling — black background, grey text, system label */
+.system-block {
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    margin: 4px 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.system-label {
+    background: #000;
+    color: #888;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 4px 10px;
+    border-bottom: 1px solid #3a3a3a;
+}
+
+.system-content {
+    padding: 10px;
+    color: #aaa;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Courier New', monospace;
+}
+
 /* Error debug information styling */
 .error-debug {
     background: #4a2a2a;
