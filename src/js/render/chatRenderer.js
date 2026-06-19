@@ -586,9 +586,9 @@ class ChatRenderer {
         // Edit button
         const editBtn = document.createElement("button");
         editBtn.className = "action-btn edit-btn";
-        editBtn.title = "Edit message";
+        editBtn.title = "Edit turn";
         editBtn.textContent = "Edit";
-        editBtn.addEventListener("click", () => this.handleEditMessage(turnId, role, messageId));
+        editBtn.addEventListener("click", () => this.handleEditTurn(turnId, role, messageId));
 
         // Edit and retry button (for user messages)
         const editRetryBtn = document.createElement("button");
@@ -671,7 +671,7 @@ class ChatRenderer {
     }
 
     // Handle turn-level editing - show all messages in the turn
-    async handleEditMessage(turnId, role, messageId) {
+    async handleEditTurn(turnId, role, messageId) {
         if (!turnId) {
             showError("Cannot edit: Turn ID not available");
             return;
@@ -706,8 +706,8 @@ class ChatRenderer {
                 return;
             }
 
-            // Enter message-based edit mode
-            this.enterMessageEditMode(turnDiv, turnMessages);
+            // Enter turn edit mode
+            this.enterTurnEditMode(turnDiv, turnMessages);
         } catch (error) {
             console.error("[EDIT] Error getting turn messages:", error);
             showError(`Error loading turn for editing: ${error.message}`);
@@ -731,8 +731,8 @@ class ChatRenderer {
             turnDiv.dataset.editRetryTurnId = turnId;
         }
 
-        // Call the regular edit function - it will use the proper modal
-        await this.handleEditMessage(turnId, role, messageId);
+        // Call the regular edit function
+        await this.handleEditTurn(turnId, role, messageId);
     }
 
     async handleRetryMessage(turnId, role, messageId) {
@@ -772,114 +772,6 @@ class ChatRenderer {
                 if (retryBtn) { retryBtn.textContent = "Retry"; retryBtn.disabled = false; }
             }
         }
-    }
-
-    // Enter edit mode for a message
-    enterEditMode(turnDiv, chatBlock, messageData, messageId) {
-        // Mark as editing
-        turnDiv.classList.add("editing");
-
-        // Store original content
-        const originalHtml = chatBlock.innerHTML;
-
-        // Create edit container
-        const editContainer = document.createElement("div");
-        editContainer.className = "edit-container";
-
-        // Create textarea with current content
-        const textarea = document.createElement("textarea");
-        textarea.className = "edit-textarea";
-        textarea.value = messageData.content;
-        textarea.rows = Math.max(3, messageData.content.split("\n").length + 1);
-
-        // Create edit controls
-        const editControls = document.createElement("div");
-        editControls.className = "edit-controls";
-
-        const saveBtn = document.createElement("button");
-        saveBtn.className = "btn btn-success edit-btn-save";
-        saveBtn.textContent = "Save";
-
-        const cancelBtn = document.createElement("button");
-        cancelBtn.className = "btn btn-danger edit-btn-cancel";
-        cancelBtn.textContent = "Cancel";
-
-        // Add event handlers
-        saveBtn.addEventListener("click", () => {
-            this.saveEdit(turnDiv, chatBlock, textarea.value, messageId, originalHtml);
-        });
-
-        cancelBtn.addEventListener("click", () => {
-            this.cancelEdit(turnDiv, chatBlock, originalHtml);
-        });
-
-        // Handle Escape key to cancel
-        textarea.addEventListener("keydown", (e) => {
-            if (e.key === "Escape") {
-                this.cancelEdit(turnDiv, chatBlock, originalHtml);
-            }
-            // Ctrl+Enter to save
-            if (e.key === "Enter" && e.ctrlKey) {
-                this.saveEdit(turnDiv, chatBlock, textarea.value, messageId, originalHtml);
-            }
-        });
-
-        // Assemble edit UI
-        editControls.appendChild(saveBtn);
-        editControls.appendChild(cancelBtn);
-        editContainer.appendChild(textarea);
-        editContainer.appendChild(editControls);
-
-        // Replace chat block content with edit UI
-        chatBlock.innerHTML = "";
-        chatBlock.appendChild(editContainer);
-
-        // Focus the textarea
-        textarea.focus();
-        textarea.select();
-    }
-
-    // Save the edited message
-    async saveEdit(turnDiv, chatBlock, newContent, messageId, originalHtml) {
-        if (!newContent.trim()) {
-            showError("Message cannot be empty");
-            return;
-        }
-
-        try {
-            // Show loading state
-            const saveBtn = turnDiv.querySelector(".edit-btn-save");
-            const originalSaveText = saveBtn.textContent;
-            saveBtn.textContent = "Saving...";
-            saveBtn.disabled = true;
-
-            // Call API to update message
-            const result = await editMessage(messageId, newContent.trim());
-
-            // Update the UI with new content
-            chatBlock.innerHTML = formatMessage(escapeHtml(newContent.trim()));
-
-            // Exit edit mode
-            turnDiv.classList.remove("editing");
-
-            // Show edit indicator if this was edited
-            if (result.edit_count > 0) {
-                this.addEditIndicator(turnDiv, result.edit_count, result.active_edit_version, messageId);
-            }
-        } catch (error) {
-            console.error("[EDIT] Error saving message:", error);
-            showError(`Error saving message: ${error.message}`);
-
-            // Restore original content on error
-            chatBlock.innerHTML = originalHtml;
-            turnDiv.classList.remove("editing");
-        }
-    }
-
-    // Cancel editing and restore original content
-    cancelEdit(turnDiv, chatBlock, originalHtml) {
-        chatBlock.innerHTML = originalHtml;
-        turnDiv.classList.remove("editing");
     }
 
     // Add visual indicator that message was edited with version navigation
@@ -1010,11 +902,6 @@ class ChatRenderer {
             logger.error(`[VERSION-SWITCH] Error: ${error.message}`, true);
             showError(`Error switching version: ${error.message}`);
         }
-    }
-
-    // Legacy function - removed, use enterMessageEditMode instead
-    enterTurnEditMode() {
-        throw new Error("This function has been replaced by enterMessageEditMode");
     }
 
     // ===== UTILITY METHODS =====
@@ -1499,7 +1386,7 @@ class ChatRenderer {
         }
     }
 
-    enterMessageEditMode(turnDiv, messages) {
+    enterTurnEditMode(turnDiv, messages) {
         turnDiv.classList.add("editing");
 
         // Store original child elements
@@ -1771,14 +1658,14 @@ class ChatRenderer {
         saveBtn.className = "btn btn-success edit-btn-save";
         saveBtn.textContent = "Save All Messages";
        saveBtn.addEventListener("click", () => {
-            this.saveAllMessages(turnDiv, editContainer);
+            this.saveTurnEdits(turnDiv, editContainer);
         });
 
         const cancelBtn = document.createElement("button");
         cancelBtn.className = "btn btn-danger edit-btn-cancel";
         cancelBtn.textContent = "Cancel";
         cancelBtn.addEventListener("click", () => {
-            this.cancelMessageEdit(turnDiv);
+            this.cancelTurnEdit(turnDiv);
         });
 
         buttonContainer.appendChild(saveBtn);
@@ -1790,8 +1677,8 @@ class ChatRenderer {
         turnDiv.appendChild(editContainer);
     }
 
-    // Save all edited messages
-    async saveAllMessages(turnDiv, editContainer) {
+    // Save all edited messages in the turn
+    async saveTurnEdits(turnDiv, editContainer) {
         const messageContainers = editContainer.querySelectorAll(".editable-message");
         const saveBtn = editContainer.querySelector(".edit-btn-save");
 
@@ -1800,7 +1687,7 @@ class ChatRenderer {
             saveBtn.disabled = true;
 
             // Check if this is an "Edit & Retry" - if so, do not PATCH the
-            // originals; the carry-forward in exitMessageEditMode is the edit.
+            // originals; the carry-forward in exitTurnEditMode is the edit.
             const isEditRetry = turnDiv.dataset.shouldRetryAfterEdit === "true";
 
             if (!isEditRetry) {
@@ -1887,7 +1774,7 @@ class ChatRenderer {
             // into a new turn_id; for plain edit it just closes the editor.
             // The edit indicator is drawn by renderTurn from the DB's
             // edit_count, so reload/branch switch persist it.
-            await this.exitMessageEditMode(turnDiv, isEditRetry);
+            await this.exitTurnEditMode(turnDiv, isEditRetry);
         } catch (error) {
             console.error("[EDIT] Error saving messages:", error);
             showError(`Error saving messages: ${error.message}`);
@@ -1897,8 +1784,8 @@ class ChatRenderer {
         }
     }
 
-    // Cancel message editing
-    cancelMessageEdit(turnDiv) {
+    // Cancel turn editing
+    cancelTurnEdit(turnDiv) {
         // Restore original elements
         turnDiv.innerHTML = "";
         if (turnDiv._originalElements) {
@@ -1910,8 +1797,8 @@ class ChatRenderer {
         turnDiv.classList.remove("editing");
     }
 
-    // Exit edit mode and reload the turn with updated content
-    async exitMessageEditMode(turnDiv, isEditRetry = false) {
+     // Exit turn edit mode and reload the turn with updated content
+    async exitTurnEditMode(turnDiv, isEditRetry = false) {
         try {
             // Check if this was an Edit & Retry
             const shouldRetry = isEditRetry === true;
@@ -1924,7 +1811,7 @@ class ChatRenderer {
                 delete turnDiv.dataset.shouldRetryAfterEdit;
                 delete turnDiv.dataset.editRetryTurnId;
 
-                // The modal is the source of truth. Collect every container's
+                // The edit UI is the source of truth. Collect every container's
                 // content + role and carry all of them forward to the new
                 // turn_id as sibling rows. No "first" / no role assumption.
                 const messageContainers = turnDiv.querySelectorAll(".editable-message");
@@ -1995,7 +1882,7 @@ class ChatRenderer {
                 await loadChatHistory(currentChatId);
             }
         } catch (error) {
-            console.error("[EDIT] Error in exitMessageEditMode:", error);
+            console.error("[EDIT] Error in exitTurnEditMode:", error);
             // Surface save failures to the user.
             showError(`Edit & retry failed: ${error.message}`);
         }

@@ -617,7 +617,7 @@ async function getTurnMessages(chatId, turnId) {
         throw error;
     }
 }
-// Edit messages — accepts an array of edits for every message in the turn.
+// Edit all messages in a turn — accepts an array of edits for every message in the turn.
 // The messageId is any message in the turn (used only to find the turn_id).
 async function editMessage(messageId, allMessageEdits) {
     try {
