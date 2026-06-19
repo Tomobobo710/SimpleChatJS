@@ -345,7 +345,7 @@ class TurnRequest {
         blocks.push(errorBlock);
 
         const rto = new RenderableTurnObject({
-            role: 'assistant', content: partialContent, blocks,
+            identity: 'response', content: partialContent, blocks,
             turnId: savedResponseTurn?.turn_id || null, parentTurnId: savedResponseTurn?.parent_turn_id || null,
             responseDebugData: responseDebugData || null,
         });

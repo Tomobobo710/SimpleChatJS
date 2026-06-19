@@ -115,18 +115,16 @@ class Turn {
         }
 
     }
-    // Build a request RTO from this turn's messages. System messages
-    // produce a system block; all others go through the processor.
     _renderRequest() {
-        const systemBlocks = this.messages
-            .filter(m => m.role === 'system' && m.content)
-            .map(m => new Block({ type: 'system', content: m.content, metadata: {} }));
-        const renderable = this.messages.filter(m => m.role !== 'system');
         const processor = new StreamingMessageProcessor();
 
-        for (const msg of renderable) {
+        for (const msg of this.messages) {
             if (!msg.content) continue;
-            const content = msg.content || '';
+            if (msg.role === 'system') {
+                processor.addSystemContent(msg.content);
+                continue;
+            }
+            const content = msg.content;
             if (typeof content === 'string') {
                 processor.addChunk(content);
             } else if (Array.isArray(content)) {
@@ -138,8 +136,8 @@ class Turn {
         }
 
         processor.finalize();
-        const blocks = [...systemBlocks, ...(processor.getBlocks() || [])];
-        const primary = renderable.find(m => m.content) || renderable[0];
+        const blocks = processor.getBlocks() || [];
+        const primary = this.messages.find(m => m.content && m.role !== 'system') || this.messages.find(m => m.content) || this.messages[0];
 
         return new RenderableTurnObject({
             identity: 'request',
@@ -178,15 +176,14 @@ class Turn {
             });
         }
 
-        const systemBlocks = this.messages
-            .filter(m => m.role === 'system' && m.content)
-            .map(m => new Block({ type: 'system', content: m.content, metadata: {} }));
         const processor = new StreamingMessageProcessor();
 
         for (const msg of this.messages) {
-            // Tool result messages carry JSON content, not rendered text
             if (msg.toolCallId) continue;
-            if (msg.role === 'system') continue;
+            if (msg.role === 'system' && msg.content) {
+                processor.addSystemContent(msg.content);
+                continue;
+            }
             if (!msg.content && !msg.toolCalls && !msg.reasoning) continue;
 
             if (!primaryMessage) {
@@ -252,7 +249,7 @@ class Turn {
         }
 
         processor.finalize();
-        const blocks = [...systemBlocks, ...(processor.getBlocks() || [])];
+        const blocks = processor.getBlocks() || [];
         const primary = primaryMessage || this.messages[0];
 
         // Collect debug data from all messages in this turn
