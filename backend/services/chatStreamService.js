@@ -6,7 +6,7 @@ const http = require("http");
 const crypto = require("crypto");
 const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
-const { executeMCPTool, getAvailableToolsForChat, isMcpTool } = require("./mcpService");
+const { executeMCPTool, getAvailableToolsForChat, findMcpToolByPublicName } = require("./mcpService");
 const simpleTools = require("./simpleToolsService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
@@ -140,7 +140,8 @@ async function executeStreamingLoop(
     requestId = null,
     existingDebugData = null,
     parentTurnId = null,
-    requestTurnId = null
+    requestTurnId = null,
+    enabledToolsFilter = null
 ) {
     const currentSettings = getCurrentSettings();
 
@@ -529,7 +530,8 @@ async function executeStreamingLoop(
                     targetUrl,
                     requestData,
                     apiRes,
-                    rawResponseBody
+                    rawResponseBody,
+                    enabledToolsFilter
                 );
             } else {
                 // Save final assistant response to history
@@ -676,7 +678,8 @@ async function executeToolCallsAndContinue(
     targetUrl = null,
     requestData = null,
     apiRes = null,
-    rawResponseBody = ""
+    rawResponseBody = "",
+    enabledToolsFilter = null
 ) {
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
@@ -710,7 +713,18 @@ async function executeToolCallsAndContinue(
             const toolArgs = JSON.parse(toolCall.function.arguments);
 
             let toolResult;
-            if (isMcpTool(toolCall.function.name)) {
+            // Route to MCP only when an MCP tool by this name is actually ENABLED.
+            // This must mirror getAvailableToolsForChat(): when no enabled_tools
+            // filter is provided, all MCP tools are disabled-by-default, so a
+            // same-named SimpleTool must take over instead of silently routing to
+            // a connected-but-unenabled MCP server.
+            const isToolEnabledForMcp = (name) => {
+                const mt = findMcpToolByPublicName(name);
+                if (!mt) return false;
+                if (!enabledToolsFilter) return false;
+                return enabledToolsFilter[`${mt.serverName}.${mt.name}`] === true;
+            };
+            if (isToolEnabledForMcp(toolCall.function.name)) {
                 toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
             } else {
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
@@ -835,7 +849,8 @@ async function executeToolCallsAndContinue(
         requestId,
         null,  // existingDebugData
         turnInfo?.parent_turn_id,
-        turnInfo?.turn_id
+        turnInfo?.turn_id,
+        enabledToolsFilter
     );
 }
 
@@ -905,7 +920,8 @@ async function processRequest(req, res) {
             requestId,
             null,
             parent_turn_id,
-            turn_id
+            turn_id,
+            enabled_tools
         );
     } catch (error) {
         log("[CHAT] Error:", error);
