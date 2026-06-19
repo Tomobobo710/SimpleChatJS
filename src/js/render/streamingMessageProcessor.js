@@ -98,6 +98,12 @@ class StreamingMessageProcessor {
         }
     }
 
+    // Add system content block (inserted at natural position in sequence)
+    addSystemContent(content) {
+        if (!content || (typeof content === 'string' && !content.trim())) return;
+        this._blockSequence.push({ type: 'system', content: '' + content });
+    }
+
     // Add content delta to chat
     addContentDelta(text) {
         // Finish any active reasoning block before adding content
@@ -220,6 +226,8 @@ class StreamingMessageProcessor {
                 blocks.push(item.ref);
             } else if (item.type === 'tool') {
                 blocks.push(item.ref);
+            } else if (item.type === 'system' && item.content.trim()) {
+                blocks.push(new Block({ type: 'system', content: item.content, metadata: {} }));
             } else if (item.type === 'chat' && item.content.trim()) {
                 this._splitIntoBlocks(item.content, blocks);
             }
