@@ -6,7 +6,7 @@ const http = require("http");
 const crypto = require("crypto");
 const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
-const { executeMCPTool, getAvailableToolsForChat, findMcpToolByPublicName } = require("./mcpService");
+const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
 const simpleTools = require("./simpleToolsService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
@@ -713,18 +713,7 @@ async function executeToolCallsAndContinue(
             const toolArgs = JSON.parse(toolCall.function.arguments);
 
             let toolResult;
-            // Route to MCP only when an MCP tool by this name is actually ENABLED.
-            // This must mirror getAvailableToolsForChat(): when no enabled_tools
-            // filter is provided, all MCP tools are disabled-by-default, so a
-            // same-named SimpleTool must take over instead of silently routing to
-            // a connected-but-unenabled MCP server.
-            const isToolEnabledForMcp = (name) => {
-                const mt = findMcpToolByPublicName(name);
-                if (!mt) return false;
-                if (!enabledToolsFilter) return false;
-                return enabledToolsFilter[`${mt.serverName}.${mt.name}`] === true;
-            };
-            if (isToolEnabledForMcp(toolCall.function.name)) {
+            if (toolCall.function.name.startsWith('mcp__')) {
                 toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
             } else {
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
