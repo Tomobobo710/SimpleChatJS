@@ -115,10 +115,12 @@ class Turn {
         }
 
     }
-    // Build a request RTO from this turn's messages. Uses the same
-    // StreamingMessageProcessor as _renderResponse for consistency.
-    // System messages are skipped (not user-facing content).
+    // Build a request RTO from this turn's messages. System messages
+    // produce a system block; all others go through the processor.
     _renderRequest() {
+        const systemBlocks = this.messages
+            .filter(m => m.role === 'system' && m.content)
+            .map(m => new Block({ type: 'system', content: m.content, metadata: {} }));
         const renderable = this.messages.filter(m => m.role !== 'system');
         const processor = new StreamingMessageProcessor();
 
@@ -136,7 +138,7 @@ class Turn {
         }
 
         processor.finalize();
-        const blocks = processor.getBlocks();
+        const blocks = [...systemBlocks, ...(processor.getBlocks() || [])];
         const primary = renderable.find(m => m.content) || renderable[0];
 
         return new RenderableTurnObject({
@@ -176,6 +178,9 @@ class Turn {
             });
         }
 
+        const systemBlocks = this.messages
+            .filter(m => m.role === 'system' && m.content)
+            .map(m => new Block({ type: 'system', content: m.content, metadata: {} }));
         const processor = new StreamingMessageProcessor();
 
         for (const msg of this.messages) {
@@ -247,7 +252,7 @@ class Turn {
         }
 
         processor.finalize();
-        const blocks = processor.getBlocks();
+        const blocks = [...systemBlocks, ...(processor.getBlocks() || [])];
         const primary = primaryMessage || this.messages[0];
 
         // Collect debug data from all messages in this turn

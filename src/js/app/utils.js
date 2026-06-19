@@ -22,6 +22,7 @@ function loadSettings() {
         apiKey: '',
         modelName: '',
         debugPanels: false,
+        showSystemBlocks: true,
         logLevel: 'INFO'
     };
 }

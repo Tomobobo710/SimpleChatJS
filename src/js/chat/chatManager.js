@@ -465,11 +465,9 @@ async function getActiveTerminalTurnId(chatId) {
     const history = await getChatHistory(chatId);
     if (!history?.messages || !Array.isArray(history.messages)) return null;
 
-    // System messages are meta-only; filter them out here too.
-    const renderableMessages = history.messages.filter((msg) => msg.role !== "system");
-    if (renderableMessages.length === 0) return null;
+    if (history.messages.length === 0) return null;
 
-    const allTurns = groupMessagesByTurn(renderableMessages);
+    const allTurns = groupMessagesByTurn(history.messages);
     const active = walkActiveBranch(allTurns, chatId);
     if (active.length === 0) return null;
     return active[active.length - 1].turnId || null;
@@ -510,14 +508,7 @@ async function loadChatHistory(chatId) {
             );
         }
 
-        // System prompts are meta-only — filter them out of the render walk.
-        const renderableMessages = validMessages.filter((msg) => msg.role !== "system");
-        if (renderableMessages.length !== validMessages.length) {
-            console.log(
-                `[LOAD-HISTORY] Excluded ${validMessages.length - renderableMessages.length} system message(s) from rendering`
-            );
-        }
-        history.messages = renderableMessages;
+        history.messages = validMessages;
 
        // Load persisted branch selections and seed the selection map.
         // loadBranchSelections returns scoped keys already; errors throw.

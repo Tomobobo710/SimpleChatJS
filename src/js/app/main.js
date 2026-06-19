@@ -11,6 +11,7 @@ let apiUrlInput,
     refreshModelsBtn,
     saveSettingsBtn,
     debugPanelsInput,
+    systemBlocksInput,
     testConnectionBtn;
 // File upload elements
 let fileInput, addFileBtn, imagePreviews, documentPreviews, imageArea;
