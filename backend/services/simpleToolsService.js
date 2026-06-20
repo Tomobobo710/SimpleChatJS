@@ -13,7 +13,7 @@ function getConfigPath() {
 const DEFAULT_CONFIG = {
     read_file: true,
     write_file: true,
-    edit: true,
+    edit_file: true,
     bash_run: true
 };
 
@@ -81,7 +81,7 @@ function getToolDefinitions() {
             }
         },
         {
-            name: 'edit',
+            name: 'edit_file',
             description: 'Replace the first occurrence of old_string with new_string in an existing file. The old_string must match exactly (including whitespace). Use for: targeted code modifications. Required: path, old_string, new_string.',
             input_schema: {
                 type: 'object',
@@ -120,7 +120,7 @@ async function executeSimpleTool(toolName, args) {
             return doReadFile(args);
         case 'write_file':
             return doWriteFile(args);
-        case 'edit':
+        case 'edit_file':
             return doEdit(args);
         case 'bash_run':
             return doBashRun(args);

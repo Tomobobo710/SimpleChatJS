@@ -100,7 +100,7 @@ async function loadSettingsIntoModal() {
         const simpleConfig = await loadSimpleToolsConfig();
         document.getElementById('st-read-file').checked = simpleConfig.read_file !== false;
         document.getElementById('st-write-file').checked = simpleConfig.write_file !== false;
-        document.getElementById('st-edit').checked = simpleConfig.edit !== false;
+        document.getElementById('st-edit-file').checked = simpleConfig.edit_file !== false;
         document.getElementById('st-bash-run').checked = simpleConfig.bash_run !== false;
 
         // Fetch models - fail hard if this doesn't work
@@ -180,7 +180,7 @@ async function handleSaveSettings() {
         const simpleToolsConfig = {
             read_file: document.getElementById('st-read-file').checked,
             write_file: document.getElementById('st-write-file').checked,
-            edit: document.getElementById('st-edit').checked,
+            edit_file: document.getElementById('st-edit-file').checked,
             bash_run: document.getElementById('st-bash-run').checked
         };
         await saveSimpleToolsConfig(simpleToolsConfig);
