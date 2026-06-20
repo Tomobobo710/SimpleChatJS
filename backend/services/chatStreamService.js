@@ -44,6 +44,23 @@ function writeSSEEvent(res, eventType, data) {
     res.write(`event: ${eventType}\ndata: ${jsonData}\n\n`);
 }
 
+// Validate tool call arguments — strip any tool call whose arguments
+// are not valid JSON (incomplete/truncated from cancellation/error).
+function validateToolCalls(toolCalls) {
+    if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) return null;
+    const valid = toolCalls.filter(tc => {
+        if (!tc.function || typeof tc.function.arguments !== 'string') return false;
+        try {
+            JSON.parse(tc.function.arguments);
+            return true;
+        } catch (_) {
+            log(`[VALIDATE-TOOL] Stripping tool call "${tc.function.name}" with invalid JSON arguments`);
+            return false;
+        }
+    });
+    return valid.length > 0 ? valid : null;
+}
+
 // Cancel an in-flight chat request by requestId.
 function cancelInFlightRequest(requestId) {
     const state = inFlightRequests.get(requestId);
@@ -59,7 +76,7 @@ function cancelInFlightRequest(requestId) {
 
     const streamedSoFar = state.streamedContent || "";
     const ur = state.unifiedResponse;
-    const toolCalls = (ur && ur.toolCalls && ur.toolCalls.length > 0) ? ur.toolCalls : null;
+    const toolCalls = (ur && ur.toolCalls && ur.toolCalls.length > 0) ? validateToolCalls(ur.toolCalls) : null;
     const reasoning = (ur && ur.reasoning) || null;
     const errorMessage = {
         role: "assistant",
@@ -317,7 +334,7 @@ async function executeStreamingLoop(
             try { inFlightState.apiReq.destroy(); } catch (_) {}
         }
         const streamedSoFar = inFlightState.streamedContent || "";
-        const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? unifiedResponse.toolCalls : null;
+        const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? validateToolCalls(unifiedResponse.toolCalls) : null;
         const reasoning = (unifiedResponse && unifiedResponse.reasoning) || null;
         const errorMessage = {
             role: "assistant",
@@ -619,7 +636,7 @@ async function executeStreamingLoop(
 
         if (chatId) {
             const streamedSoFar = inFlightState.streamedContent || "";
-            const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? unifiedResponse.toolCalls : null;
+            const toolCalls = (unifiedResponse && unifiedResponse.toolCalls && unifiedResponse.toolCalls.length > 0) ? validateToolCalls(unifiedResponse.toolCalls) : null;
             const reasoning = (unifiedResponse && unifiedResponse.reasoning) || null;
             const errorMessage = {
                 role: "assistant",
@@ -706,15 +723,44 @@ async function executeToolCallsAndContinue(
     for (const toolCall of toolCalls) {
         log(`[TOOL-EXECUTION] Executing tool: ${toolCall.function.name}`);
 
+        let toolArgs;
+        try {
+            toolArgs = JSON.parse(toolCall.function.arguments);
+        } catch (parseError) {
+            log(`[TOOL-EXECUTION] Invalid arguments for tool ${toolCall.function.name}: ${parseError.message}`);
+            const errorMessage = {
+                role: "tool",
+                tool_call_id: toolCall.id,
+                tool_name: toolCall.function.name,
+                content: JSON.stringify({ error: `Invalid tool call arguments: ${parseError.message}` })
+            };
+            messages.push(errorMessage);
+            if (chatId) {
+                await saveMessage(chatId, errorMessage, turnInfo);
+            }
+            toolResults.push({
+                toolId: toolCall.id,
+                toolName: toolCall.function.name,
+                status: "error",
+                error: parseError.message
+            });
+            if (requestId) {
+                addToolEvent(requestId, {
+                    type: "tool_execution_complete",
+                    data: { name: toolCall.function.name, id: toolCall.id, status: "error", error: parseError.message }
+                });
+            }
+            continue;
+        }
+
         if (requestId) {
             addToolEvent(requestId, {
                 type: "tool_execution_start",
-                data: { name: toolCall.function.name, id: toolCall.id, arguments: JSON.parse(toolCall.function.arguments) }
+                data: { name: toolCall.function.name, id: toolCall.id, arguments: toolArgs }
             });
         }
 
         try {
-            const toolArgs = JSON.parse(toolCall.function.arguments);
 
             let toolResult;
             if (toolCall.function.name.startsWith('mcp__')) {
