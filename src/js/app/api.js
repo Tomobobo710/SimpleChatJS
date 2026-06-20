@@ -222,6 +222,21 @@ async function resetShell() {
     return shellConfig.detected?.name || "bash";
 }
 
+
+// Get the project path for a chat (if project-scoped).
+// Returns { projectId, projectPath } or null on failure.
+async function getChatProjectPath(chatId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/project`);
+        if (response.ok) {
+            const data = await response.json();
+            return data.projectPath || null;
+        }
+    } catch (error) {
+        logger.warn("Failed to get chat project path:", error);
+    }
+    return null;
+}
 // Stream response reader
 async function* streamResponse(response) {
     const reader = response.body.getReader();

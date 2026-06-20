@@ -153,7 +153,17 @@ async function onSubmitRequest() {
                         contextParts.push(`Platform: ${window.electronAPI?.getPlatform?.() || 'win32'}`);
                     }
                     if (envToggles.cwd) {
-                        const cwd = settings.defaultCwd || window.electronAPI?.getHomeDir?.() || 'C:\\Users\\Tom';
+                        // Priority: project path > user defaultCwd > home dir fallback
+                        let cwd = null;
+                        try {
+                            const projectPath = await getChatProjectPath(currentChatId);
+                            if (projectPath) {
+                                cwd = projectPath;
+                            }
+                        } catch (_) { /* ignore */ }
+                        if (!cwd) {
+                            cwd = settings.defaultCwd || window.electronAPI?.getHomeDir?.();
+                        }
                         contextParts.push(`Working directory: ${cwd}`);
                     }
                     if (envToggles.shell && settings.shell) {
