@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { log } = require('../utils/logger');
@@ -54,83 +55,66 @@ function isToolEnabled(toolName, config) {
     return config[key] === true;
 }
 
-// Madlibs-style description templates. Placeholders are filled at request time
-// based on the detected shell binary name. Every tool description states the
-// OS and shell, with a concrete example path so the AI uses the right path
-// format (prevents /home/Tom/... being written to C:\home\Tom\... on Windows).
-const READ_FILE_TPL = 'Read the contents of a file at the given path.\nYou are on {os_name} using {shell_name}.\nFile path example: {example_path}\nOutput is capped at 12KB. Required: path.';
-const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name} using {shell_name}.\nFile path example: {example_path}\nRequired: path, content.';
-const EDIT_FILE_TPL = 'Replace text in a file. Specify the file path, exact text to find, and replacement text.\nYou are on {os_name} using {shell_name}.\nFile path example: {example_path}\nRequired: path, old_string, new_string.';
+// Description templates. Placeholders are filled at request time from the OS
+// (os_name, example_path) and the detected shell (shell_name, shell_syntax).
+// File tools use Node fs and don't touch the shell, so they only mention the OS
+// and a native example path. Only shell_run names the shell and its syntax.
+const READ_FILE_TPL = 'Read the contents of a file at the given path.\nYou are on {os_name}.\nFile path example: {example_path}\nOutput is capped at 12KB. Required: path.';
+const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, content.';
+const EDIT_FILE_TPL = 'Replace text in a file. Specify the file path, exact text to find, and replacement text.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, old_string, new_string.';
 const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nOutput is capped at 12KB. Required: command.';
 
-// Per-binary template values. Keyed by the binary basename returned from
-// shellService.getPreferredShell().
-const SHELL_TEMPLATES = {
-    bash: {
-        osName: 'Windows',
-        shellName: 'bash',
-        examplePath: '/home/Tom/Desktop/file.txt',
-        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
-    },
-    sh: {
-        osName: 'Linux/macOS',
-        shellName: 'sh',
-        examplePath: '/home/user/file.txt',
-        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
-    },
-    zsh: {
-        osName: 'Linux/macOS',
-        shellName: 'zsh',
-        examplePath: '/home/user/file.txt',
-        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
-    },
-    ksh: {
-        osName: 'Linux/macOS',
-        shellName: 'ksh',
-        examplePath: '/home/user/file.txt',
-        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
-    },
-    dash: {
-        osName: 'Linux/macOS',
-        shellName: 'dash',
-        examplePath: '/home/user/file.txt',
-        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
-    },
-    pwsh: {
-        osName: 'Windows',
-        shellName: 'PowerShell 7+',
-        examplePath: 'C:\\Users\\Tom\\Desktop\\file.txt',
-        shellSyntax: 'Use && to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.'
-    },
-    powershell: {
-        osName: 'Windows',
-        shellName: 'PowerShell 5.1',
-        examplePath: 'C:\\Users\\Tom\\Desktop\\file.txt',
-        shellSyntax: 'Use ; to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.'
-    },
-    cmd: {
-        osName: 'Windows',
-        shellName: 'cmd.exe',
-        examplePath: 'C:\\Users\\Tom\\Desktop\\file.txt',
-        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces. Use %VAR% for environment variables.'
-    }
+// OS display names keyed by process.platform.
+const OS_NAMES = {
+    win32: 'Windows',
+    linux: 'Linux',
+    darwin: 'macOS'
 };
 
-// Resolve template values for a shell binary name, falling back to cmd on
+// Build an OS-appropriate example file path from the real home directory of the
+// machine running this. File tools use Node fs, which speaks the native OS path
+// format regardless of which shell is selected, so the example must come from
+// the OS, not the shell. On Windows we use forward slashes (e.g. C:/Users/...),
+// which work in both Node fs and Git Bash, avoiding the POSIX-path trap.
+function getOsValues() {
+    const osName = OS_NAMES[process.platform] || 'Linux';
+    let home = os.homedir() || (process.platform === 'win32' ? 'C:\\Users\\user' : '/home/user');
+    if (process.platform === 'win32') {
+        home = home.replace(/\\/g, '/');
+    }
+    const examplePath = `${home}/file.txt`;
+    return { osName, examplePath };
+}
+
+// Shell-derived template values. Keyed by the binary basename returned from
+// shellService.getPreferredShell(). These decide the shell display name and the
+// command syntax used only by shell_run.
+const SHELL_TEMPLATES = {
+    bash: { shellName: 'bash', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    sh: { shellName: 'sh', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    zsh: { shellName: 'zsh', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    ksh: { shellName: 'ksh', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    dash: { shellName: 'dash', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    pwsh: { shellName: 'PowerShell 7+', shellSyntax: 'Use && to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.' },
+    powershell: { shellName: 'PowerShell 5.1', shellSyntax: 'Use ; to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.' },
+    cmd: { shellName: 'cmd.exe', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces. Use %VAR% for environment variables.' }
+};
+
+// Resolve shell template values for a shell binary name, falling back to cmd on
 // Windows / sh on Unix when the name is unknown.
-function getTemplateValues(shellName) {
+function getShellValues(shellName) {
     if (SHELL_TEMPLATES[shellName]) return SHELL_TEMPLATES[shellName];
-    const fallback = process.platform === 'win32' ? SHELL_TEMPLATES.cmd : SHELL_TEMPLATES.sh;
-    return fallback;
+    return process.platform === 'win32' ? SHELL_TEMPLATES.cmd : SHELL_TEMPLATES.sh;
 }
 
 function fillTemplate(tpl, shellName) {
-    const v = getTemplateValues(shellName);
+    const os = getOsValues();
+    const shell = getShellValues(shellName);
     return tpl
-        .replace('{os_name}', v.osName)
-        .replace('{shell_name}', v.shellName)
-        .replace('{example_path}', v.examplePath)
-        .replace('{shell_syntax}', v.shellSyntax);
+        .replaceAll('{os_name}', os.osName)
+        .replaceAll('{example_path}', os.examplePath)
+        .replaceAll('{shell_name}', shell.shellName)
+        .replaceAll('{shell_syntax}', shell.shellSyntax);
 }
 
 function getToolDefinitions(shellInfo) {
