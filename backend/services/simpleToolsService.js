@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
     read_file: true,
     write_file: true,
     edit_file: true,
-    bash_run: true
+    shell_run: true
 };
 
 function loadConfig() {
@@ -95,7 +95,7 @@ function getToolDefinitions() {
             }
         },
         {
-            name: 'bash_run',
+            name: 'shell_run',
             description: 'Run a shell command and return its output. Use for: executing commands, scripts, build tools, git operations. Output is capped at 12KB. Required: command.',
             input_schema: {
                 type: 'object',
@@ -122,7 +122,7 @@ async function executeSimpleTool(toolName, args) {
             return doWriteFile(args);
         case 'edit_file':
             return doEdit(args);
-        case 'bash_run':
+        case 'shell_run':
             return doBashRun(args);
         default:
             throw new Error(`Unknown SimpleTool: ${toolName}`);
