@@ -8,6 +8,7 @@ const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
 const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
 const simpleTools = require("./simpleToolsService");
+const shellService = require("./shellService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
@@ -141,7 +142,8 @@ async function executeStreamingLoop(
     existingDebugData = null,
     parentTurnId = null,
     requestTurnId = null,
-    enabledToolsFilter = null
+    enabledToolsFilter = null,
+    shellInfo = null
 ) {
     const currentSettings = getCurrentSettings();
 
@@ -531,7 +533,8 @@ async function executeStreamingLoop(
                     requestData,
                     apiRes,
                     rawResponseBody,
-                    enabledToolsFilter
+                    enabledToolsFilter,
+                    shellInfo
                 );
             } else {
                 // Save final assistant response to history
@@ -679,7 +682,8 @@ async function executeToolCallsAndContinue(
     requestData = null,
     apiRes = null,
     rawResponseBody = "",
-    enabledToolsFilter = null
+    enabledToolsFilter = null,
+    shellInfo = null
 ) {
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
@@ -715,6 +719,8 @@ async function executeToolCallsAndContinue(
             let toolResult;
             if (toolCall.function.name.startsWith('mcp__')) {
                 toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
+            } else if (toolCall.function.name === 'shell_run') {
+                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo });
             } else {
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
             }
@@ -839,7 +845,8 @@ async function executeToolCallsAndContinue(
         null,  // existingDebugData
         turnInfo?.parent_turn_id,
         turnInfo?.turn_id,
-        enabledToolsFilter
+        enabledToolsFilter,
+        shellInfo
     );
 }
 
@@ -877,9 +884,14 @@ async function processRequest(req, res) {
 
         const tools = getAvailableToolsForChat(enabled_tools);
 
+        // Resolve shell from settings (always a concrete binary name after
+        // init-time detection) for shell-aware tool descriptions + execution.
+        const currentSettings = getCurrentSettings();
+        const shellInfo = shellService.getPreferredShell(currentSettings.shell);
+
         // Merge SimpleTools definitions
         const simpleConfig = simpleTools.loadConfig();
-        const simpleDefs = simpleTools.getToolDefinitions();
+        const simpleDefs = simpleTools.getToolDefinitions(shellInfo);
         for (const def of simpleDefs) {
             if (simpleTools.isToolEnabled(def.name, simpleConfig)) {
                 tools.push({
@@ -910,7 +922,8 @@ async function processRequest(req, res) {
             null,
             parent_turn_id,
             turn_id,
-            enabled_tools
+            enabled_tools,
+            shellInfo
         );
     } catch (error) {
         log("[CHAT] Error:", error);

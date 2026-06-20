@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const { log } = require('../utils/logger');
 const { getUserdataPath } = require('../utils/pathUtils');
+const shellService = require('./shellService');
 
 const CONFIG_FILE = 'simple_tools_config.json';
 
@@ -53,11 +54,91 @@ function isToolEnabled(toolName, config) {
     return config[key] === true;
 }
 
-function getToolDefinitions() {
+// Madlibs-style description templates. Placeholders are filled at request time
+// based on the detected shell binary name. Every tool description states the
+// OS and shell, with a concrete example path so the AI uses the right path
+// format (prevents /home/Tom/... being written to C:\home\Tom\... on Windows).
+const READ_FILE_TPL = 'Read the contents of a file at the given path.\nYou are on {os_name} using {shell_name}.\nFile path example: {example_path}\nOutput is capped at 12KB. Required: path.';
+const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name} using {shell_name}.\nFile path example: {example_path}\nRequired: path, content.';
+const EDIT_FILE_TPL = 'Replace text in a file. Specify the file path, exact text to find, and replacement text.\nYou are on {os_name} using {shell_name}.\nFile path example: {example_path}\nRequired: path, old_string, new_string.';
+const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nOutput is capped at 12KB. Required: command.';
+
+// Per-binary template values. Keyed by the binary basename returned from
+// shellService.getPreferredShell().
+const SHELL_TEMPLATES = {
+    bash: {
+        osName: 'Windows',
+        shellName: 'bash',
+        examplePath: '/home/Tom/Desktop/file.txt',
+        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
+    },
+    sh: {
+        osName: 'Linux/macOS',
+        shellName: 'sh',
+        examplePath: '/home/user/file.txt',
+        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
+    },
+    zsh: {
+        osName: 'Linux/macOS',
+        shellName: 'zsh',
+        examplePath: '/home/user/file.txt',
+        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
+    },
+    ksh: {
+        osName: 'Linux/macOS',
+        shellName: 'ksh',
+        examplePath: '/home/user/file.txt',
+        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
+    },
+    dash: {
+        osName: 'Linux/macOS',
+        shellName: 'dash',
+        examplePath: '/home/user/file.txt',
+        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.'
+    },
+    pwsh: {
+        osName: 'Windows',
+        shellName: 'PowerShell 7+',
+        examplePath: 'C:\\Users\\Tom\\Desktop\\file.txt',
+        shellSyntax: 'Use && to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.'
+    },
+    powershell: {
+        osName: 'Windows',
+        shellName: 'PowerShell 5.1',
+        examplePath: 'C:\\Users\\Tom\\Desktop\\file.txt',
+        shellSyntax: 'Use ; to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.'
+    },
+    cmd: {
+        osName: 'Windows',
+        shellName: 'cmd.exe',
+        examplePath: 'C:\\Users\\Tom\\Desktop\\file.txt',
+        shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces. Use %VAR% for environment variables.'
+    }
+};
+
+// Resolve template values for a shell binary name, falling back to cmd on
+// Windows / sh on Unix when the name is unknown.
+function getTemplateValues(shellName) {
+    if (SHELL_TEMPLATES[shellName]) return SHELL_TEMPLATES[shellName];
+    const fallback = process.platform === 'win32' ? SHELL_TEMPLATES.cmd : SHELL_TEMPLATES.sh;
+    return fallback;
+}
+
+function fillTemplate(tpl, shellName) {
+    const v = getTemplateValues(shellName);
+    return tpl
+        .replace('{os_name}', v.osName)
+        .replace('{shell_name}', v.shellName)
+        .replace('{example_path}', v.examplePath)
+        .replace('{shell_syntax}', v.shellSyntax);
+}
+
+function getToolDefinitions(shellInfo) {
+    const shellName = shellInfo && shellInfo.name ? shellInfo.name : 'cmd';
     return [
         {
             name: 'read_file',
-            description: 'Read a UTF-8 text file and return its content. Use for: viewing files, reading code, inspecting configs. Required: path (absolute or relative to workspace).',
+            description: fillTemplate(READ_FILE_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -69,7 +150,7 @@ function getToolDefinitions() {
         },
         {
             name: 'write_file',
-            description: 'Create a new file or overwrite an existing file with the given content. Use for: creating files, replacing entire file content. Required: path, content.',
+            description: fillTemplate(WRITE_FILE_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -82,7 +163,7 @@ function getToolDefinitions() {
         },
         {
             name: 'edit_file',
-            description: 'Replace the first occurrence of old_string with new_string in an existing file. The old_string must match exactly (including whitespace). Use for: targeted code modifications. Required: path, old_string, new_string.',
+            description: fillTemplate(EDIT_FILE_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -96,7 +177,7 @@ function getToolDefinitions() {
         },
         {
             name: 'shell_run',
-            description: 'Run a shell command and return its output. Use for: executing commands, scripts, build tools, git operations. Output is capped at 12KB. Required: command.',
+            description: fillTemplate(SHELL_RUN_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -109,7 +190,7 @@ function getToolDefinitions() {
     ];
 }
 
-async function executeSimpleTool(toolName, args) {
+async function executeSimpleTool(toolName, args, opts = {}) {
     const config = loadConfig();
     if (!isToolEnabled(toolName, config)) {
         throw new Error(`SimpleTool '${toolName}' is disabled. Enable it in Settings > Tools.`);
@@ -123,7 +204,7 @@ async function executeSimpleTool(toolName, args) {
         case 'edit_file':
             return doEdit(args);
         case 'shell_run':
-            return doBashRun(args);
+            return doShellRun(args, opts);
         default:
             throw new Error(`Unknown SimpleTool: ${toolName}`);
     }
@@ -241,59 +322,68 @@ async function doEdit(args) {
     }
 }
 
-async function doBashRun(args) {
+async function doShellRun(args, opts = {}) {
     const command = args?.command;
     if (!command) {
         throw new Error('Missing required field: command');
     }
 
+    const shellInfo = opts.shellInfo || shellService.getPreferredShell('auto');
+    const shellArgs = shellService.getShellArgs(shellInfo, command);
+
     try {
-        const shell = process.platform === 'win32' ? 'cmd' : 'sh';
-        const shellArg = process.platform === 'win32' ? '/C' : '-c';
-        const result = execSync(`${shell} ${shellArg} "${command.replace(/"/g, '\\"')}"`, {
+        // spawnSync passes args as an array — no shell interpolation, no
+        // double-quoting of the command by an outer shell.
+        const result = spawnSync(shellArgs.shell, shellArgs.args, {
             encoding: 'utf8',
             maxBuffer: 12_000 * 2,
-            windowsHide: true
+            windowsHide: true,
+            cwd: process.cwd()
         });
 
-        const output = result || '';
-        const exitCode = 0;
+        const stdout = result.stdout || '';
+        const stderr = result.stderr || '';
+        const exitCode = result.status ?? 0;
+        const failed = result.status !== 0 || result.error;
 
-        if (output.length > 12_000) {
+        if (failed) {
+            const errResult = {
+                success: false,
+                output: stdout,
+                exit_code: exitCode,
+                error: stderr || (result.error ? result.error.message : 'Command failed')
+            };
+            if (stdout.length > 12_000) {
+                errResult.output = stdout.substring(0, 12_000);
+                errResult.truncated = true;
+                errResult.total_output_size = stdout.length;
+            }
+            return errResult;
+        }
+
+        if (stdout.length > 12_000) {
             return {
                 success: true,
-                output: output.substring(0, 12_000),
+                output: stdout.substring(0, 12_000),
                 truncated: true,
-                total_output_size: output.length,
+                total_output_size: stdout.length,
                 exit_code: exitCode,
                 error: null
             };
         }
         return {
             success: true,
-            output,
+            output: stdout,
             exit_code: exitCode,
             error: null
         };
     } catch (error) {
-        const stdout = error.stdout?.toString() || '';
-        const stderr = error.stderr?.toString() || '';
-        const exitCode = error.status ?? 1;
-
-        const result = {
+        return {
             success: false,
-            output: stdout,
-            exit_code: exitCode,
-            error: stderr || error.message
+            output: '',
+            exit_code: 1,
+            error: error.message
         };
-
-        if (stdout.length > 12_000) {
-            result.output = stdout.substring(0, 12_000);
-            result.truncated = true;
-            result.total_output_size = stdout.length;
-        }
-
-        return result;
     }
 }
 

@@ -103,6 +103,38 @@ async function loadSettingsIntoModal() {
         document.getElementById('st-edit-file').checked = simpleConfig.edit_file !== false;
         document.getElementById('st-shell-run').checked = simpleConfig.shell_run !== false;
 
+        // Load shell config (separate from main settings)
+        const shellConfig = await loadShellConfig();
+        // The select shows 'auto' only if the saved value isn't one of the
+        // concrete names (saved value is always concrete after init).
+        const concreteNames = ['bash', 'pwsh', 'powershell', 'cmd'];
+        document.getElementById('shellSelect').value =
+            concreteNames.includes(shellConfig.shell) ? shellConfig.shell : 'auto';
+        if (shellConfig.detected) {
+            document.getElementById('shellInfo').textContent =
+                `Detected: ${shellConfig.detected.name} (${shellConfig.detected.path})`;
+        }
+
+        // Load env toggles + defaultCwd from settings
+        const envToggles = settings.envToggles || {};
+        document.getElementById('envTogglePlatform').checked = envToggles.platform !== false;
+        document.getElementById('envToggleCwd').checked = envToggles.cwd !== false;
+        document.getElementById('envToggleShell').checked = envToggles.shell !== false;
+        document.getElementById('envToggleDate').checked = envToggles.date !== false;
+        document.getElementById('defaultCwdInput').value = settings.defaultCwd || '';
+
+        // Hook up the Detect button (idempotent — safe to re-bind each load)
+        const detectBtn = document.getElementById('detectShellBtn');
+        if (detectBtn && !detectBtn.dataset.bound) {
+            detectBtn.dataset.bound = '1';
+            detectBtn.addEventListener('click', async () => {
+                const cfg = await loadShellConfig();
+                const detected = cfg.detected || { name: 'unknown', path: '' };
+                document.getElementById('shellInfo').textContent =
+                    `Detected: ${detected.name} (${detected.path})`;
+            });
+        }
+
         // Fetch models - fail hard if this doesn't work
         await fetchAvailableModels(settings.apiUrl, settings.apiKey);
         
@@ -143,8 +175,29 @@ async function handleSaveSettings() {
         
         // System prompt settings
         enableSystemPrompt: document.getElementById('enableSystemPrompt').checked,
-        systemPrompt: document.getElementById('systemPrompt').value.trim()
+        systemPrompt: document.getElementById('systemPrompt').value.trim(),
+
+        // Env context toggles + freeform working directory
+        envToggles: {
+            platform: document.getElementById('envTogglePlatform').checked,
+            cwd: document.getElementById('envToggleCwd').checked,
+            shell: document.getElementById('envToggleShell').checked,
+            date: document.getElementById('envToggleDate').checked
+        },
+        defaultCwd: document.getElementById('defaultCwdInput').value.trim()
     };
+
+    // Resolve shell: 'auto' becomes a concrete name before saving; concrete
+    // names save directly. Settings always stores a concrete binary name.
+    const selectedShell = document.getElementById('shellSelect').value;
+    let shellToSave;
+    if (selectedShell === 'auto') {
+        const shellConfig = await loadShellConfig();
+        shellToSave = shellConfig.detected?.name || 'bash';
+    } else {
+        shellToSave = selectedShell;
+    }
+    settings.shell = shellToSave;
     
     logger.info('Attempting to save settings:', settings);
     

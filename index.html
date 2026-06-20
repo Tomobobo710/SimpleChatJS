@@ -177,6 +177,30 @@
                             <textarea id="systemPrompt" rows="4" placeholder="Enter system instructions..."></textarea>
                             <p class="setting-description">This prompt will be automatically added to the beginning of new conversations with all AI providers.</p>
                         </div>
+
+                        <div class="context-toggles-group">
+                            <h4>Context toggles</h4>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="envTogglePlatform" checked />
+                                <label for="envTogglePlatform">Show platform</label>
+                            </div>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="envToggleCwd" checked />
+                                <label for="envToggleCwd">Show working directory</label>
+                            </div>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="envToggleShell" checked />
+                                <label for="envToggleShell">Show shell info</label>
+                            </div>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="envToggleDate" checked />
+                                <label for="envToggleDate">Show date</label>
+                            </div>
+                            <p class="setting-description">Appends environment info (platform, working directory, shell, date) to the system prompt. The working directory only affects freeform chats — project chats use the project root.</p>
+
+                            <label for="defaultCwdInput">Working directory (freeform chats):</label>
+                            <input type="text" id="defaultCwdInput" placeholder="Leave blank to use user home directory" />
+                        </div>
                     </div>
                     
                     <!-- Anthropic Thinking Section -->
@@ -267,6 +291,22 @@
                                     <span class="simple-tool-desc">Run a shell command and return output</span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Shell</h3>
+                        <p class="setting-description">Select the shell for shell_run. "Auto" detects the best available shell on save.</p>
+                        <div class="shell-selector">
+                            <select id="shellSelect">
+                                <option value="auto">Auto-detect (recommended)</option>
+                                <option value="bash">bash</option>
+                                <option value="pwsh">PowerShell 7+</option>
+                                <option value="powershell">Windows PowerShell 5.1</option>
+                                <option value="cmd">cmd.exe</option>
+                            </select>
+                            <div id="shellInfo" class="shell-info"></div>
+                            <button id="detectShellBtn" class="btn-secondary" type="button">Detect</button>
                         </div>
                     </div>
                 </div>
