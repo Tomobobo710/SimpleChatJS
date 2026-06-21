@@ -160,6 +160,7 @@ async function loadChatList() {
             selectChat(currentChatId);
             loadChatHistory(currentChatId);
         }
+        streamManager.reapplyIndicators();
     } catch (error) {
         logger.error("Error loading chat list:", error, true);
         chatList.innerHTML =
@@ -839,6 +840,7 @@ async function loadProjectChats(projectId) {
         chats.forEach((chat) => {
             addChatToListAtEnd(chat.chat_id, chat.title, chat.last_message, new Date(chat.last_updated));
         });
+        streamManager.reapplyIndicators();
     } catch (error) {
         logger.error("Error loading project chats:", error);
         const chatList = document.getElementById("chatList");

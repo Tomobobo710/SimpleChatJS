@@ -66,6 +66,13 @@ class StreamManager {
         }
     }
 
+    reapplyIndicators() {
+        for (const chatId of this.activeStreamState.keys()) {
+            this.updateStreamIndicator(chatId, true);
+        }
+        this.refreshSendButton();
+    }
+
     reconnectStreaming(chatId) {
         const ss = this.activeStreamState.get(chatId);
         if (!ss) return;
