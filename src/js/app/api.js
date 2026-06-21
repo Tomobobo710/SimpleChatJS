@@ -31,7 +31,8 @@ function initiateMessageRequest(
     requestId = null,
     parentTurnId = null,
     turnId = null,
-    historyAnchorTurnId = null
+    historyAnchorTurnId = null,
+    responseTurnId = null
 ) {
     try {
         // Require a requestId; missing requestId is a programmer error.
@@ -46,7 +47,10 @@ function initiateMessageRequest(
             request_id: generatedRequestId,
             parent_turn_id: parentTurnId,
             turn_id: turnId,
-            history_anchor_turn_id: historyAnchorTurnId
+            history_anchor_turn_id: historyAnchorTurnId,
+            // Pre-allocated response turn_id (steering needs the response's id
+            // known before it's saved). Backend uses it for the round-1 response.
+            response_turn_id: responseTurnId
         };
 
         // Create abort controller for this request
@@ -690,6 +694,17 @@ async function editMessage(messageId, allMessageEdits) {
     } catch (error) {
         logger.error("Error editing message:", error);
         throw error;
+    }
+}
+
+// Ask an in-flight request to end at its next message boundary (steering).
+// Fire-and-forget: if it fails, the steer still drains at the terminal `done`.
+async function requestSteerBreak(requestId) {
+    if (!requestId) return;
+    try {
+        await fetch(`${API_BASE}/api/chat/steer/${requestId}`, { method: "POST" });
+    } catch (error) {
+        logger.warn("[STEER] Failed to signal steer break:", error);
     }
 }
 

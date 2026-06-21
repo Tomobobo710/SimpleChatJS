@@ -1786,6 +1786,12 @@ class ChatRenderer {
                 // the backend only uses it to look up the turn_id.
                 if (allEdits.length > 0) {
                     await editMessage(allEdits[0].id, allEdits);
+                    // If this turn is a queued steer, keep its cached content in
+                    // sync so the continuation's debug view matches (the model's
+                    // content comes from the DB regardless).
+                    if (typeof streamManager !== "undefined" && typeof streamManager.updateSteerContent === "function") {
+                        streamManager.updateSteerContent(turnDiv.dataset.turnId, allEdits[0].content);
+                    }
                 }
             }
 
@@ -1814,6 +1820,31 @@ class ChatRenderer {
             delete turnDiv._originalElements;
         }
         turnDiv.classList.remove("editing");
+    }
+
+    // Re-render a single turn in place from its current DB rows, without a full
+    // loadChatHistory. Used while a stream is active for the chat — a full reload
+    // would destroy the live-stream DOM (§5.6). Returns true on success.
+    async rerenderTurnInPlace(turnId) {
+        try {
+            const oldEl = this.container.querySelector(`.turn[data-turn-id="${turnId}"]`);
+            if (!oldEl) return false;
+            const history = await getChatHistory(currentChatId);
+            const msgs = (history && history.messages) || [];
+            const turn = groupMessagesByTurn(msgs).find((t) => t.turnId === turnId);
+            if (!turn) return false;
+            const newEl = this.renderTurn(turn.renderable(), false);
+            if (!newEl) return false;
+            // renderTurn appended newEl at the bottom; splice it into the old
+            // turn's slot and drop the old node. Preserve the queued-steer marker
+            // so an un-drained steer keeps Edit & Retry hidden.
+            if (oldEl.classList.contains("steer-pending")) newEl.classList.add("steer-pending");
+            oldEl.replaceWith(newEl);
+            return true;
+        } catch (e) {
+            logger.warn("[EDIT] In-place turn re-render failed:", e);
+            return false;
+        }
     }
 
      // Exit turn edit mode and reload the turn with updated content
@@ -1894,11 +1925,18 @@ class ChatRenderer {
                 });
                 await turnRequest.execute();
             } else {
-                // Regular edit — reload chat. The render path reads
-                // edit_count from the DB and adds the edit indicator on
-                // the freshly-rendered turn, so no explicit addEditIndicator
-                // call is needed here.
-                await loadChatHistory(currentChatId);
+                // Regular edit. While a stream is active for this chat, a full
+                // loadChatHistory would destroy the live-stream DOM (§5.6) — and a
+                // queued steer can be edited at any time during that stream — so
+                // re-render just this turn in place instead. The render path reads
+                // edit_count from the DB and redraws the edit indicator either way.
+                const turnId = turnDiv.dataset.turnId;
+                const streaming = typeof streamManager !== "undefined" && streamManager.isStreaming(currentChatId);
+                if (streaming && turnId && await this.rerenderTurnInPlace(turnId)) {
+                    // done in place
+                } else {
+                    await loadChatHistory(currentChatId);
+                }
             }
         } catch (error) {
             console.error("[EDIT] Error in exitTurnEditMode:", error);

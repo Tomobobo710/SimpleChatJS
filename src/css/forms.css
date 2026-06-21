@@ -85,6 +85,26 @@
     color: #aaa;
 }
 
+/* Steer state — distinct from Stop so the user can tell they'll queue a
+   message (not cancel) while a response streams. */
+.btn.btn-steer {
+    background: #1d3a5f;
+    color: #cfe3ff;
+    border: 1px outset #2f5d96;
+}
+
+.btn.btn-steer:hover {
+    background: #244a78;
+    color: #eaf3ff;
+}
+
+/* A queued (not-yet-answered) steer hides only "Edit & Retry" — there's no
+   response to that steer yet, so retry has nothing to regenerate. Plain Edit
+   stays available (the steer may sit queued for a long time). */
+.turn.steer-pending .edit-retry-btn {
+    display: none;
+}
+
 /* Tab Button Variant */
 .btn.btn-tab {
     border-bottom: none;

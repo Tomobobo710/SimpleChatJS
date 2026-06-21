@@ -71,14 +71,15 @@ async function getEnabledToolDefinitions() {
 
     return enabledToolDefinitions;
 }
-// Handle sending a message
-async function onSubmitRequest() {
+// Build a message-content payload from the current input (text + files).
+// Returns null when there's nothing to send. Shared by send and steer.
+function buildMessageContentFromInput() {
     const textMessage = messageInput.value; // Don't trim - preserve user's intentional whitespace
     const images = getSelectedImages();
     const documents = getSelectedDocuments();
 
     // Need either text, images, or documents
-    if (!textMessage && images.length === 0 && documents.length === 0) return;
+    if (!textMessage && images.length === 0 && documents.length === 0) return null;
 
     // Create separated file content (no frontend concatenation)
     let messageContent;
@@ -120,12 +121,20 @@ async function onSubmitRequest() {
         if (textMessage) parts.push("text");
         if (documents.length > 0) parts.push(`${documents.length} file(s)`);
         if (images.length > 0) parts.push(`${images.length} image(s)`);
-        logger.info(`Sending separated multimodal message: ${parts.join(" + ")}`);
+        logger.info(`Built separated multimodal message: ${parts.join(" + ")}`);
     } else {
         // Text-only content
         messageContent = textMessage || "";
-        logger.info("Sending text-only message");
+        logger.info("Built text-only message");
     }
+
+    return messageContent;
+}
+
+// Handle sending a message
+async function onSubmitRequest() {
+    const messageContent = buildMessageContentFromInput();
+    if (messageContent === null) return;
 
     // Clear input and files, show loading
     messageInput.value = "";
@@ -193,6 +202,78 @@ async function onSubmitRequest() {
     } catch (error) {
         logger.error("Unexpected error in message submission:", error);
         showError(`Failed to send message: ${error.message}`);
+    } finally {
+        streamManager.refreshSendButton();
+        messageInput.focus();
+    }
+}
+
+// Queue a steer for the currently-viewed chat. The message is persisted with its
+// correct parent (§3.1) and rendered immediately as a request turn; it's picked
+// up at the next stream break (see TurnRequest._maybeContinueSteering), which
+// fires a single continuation request — no reparenting needed.
+async function enqueueSteer() {
+    const messageContent = buildMessageContentFromInput();
+    if (messageContent === null) return;
+
+    const chatId = currentChatId;
+
+    // Clear input immediately so the user can type the next steer.
+    messageInput.value = "";
+    clearSelectedImages();
+    clearSelectedDocuments();
+    streamManager.refreshSendButton();
+
+    // Pre-generate the steer's turn_id and record it in the queue SYNCHRONOUSLY,
+    // before any await. Correct parent at save time (§3.1): chain onto the
+    // previous queued steer, or — for the first steer — onto the in-flight
+    // response's pre-allocated turn_id. Doing this before the await is what makes
+    // two rapid steers chain (steerB → steerA) instead of both parenting to the
+    // response (which would make them siblings).
+    const turnId = TurnRequest.generateTurnId();
+    const queue = streamManager.steeringQueue.get(chatId) || [];
+    const stream = streamManager.getStream(chatId);
+    const parentTurnId = queue.length
+        ? queue[queue.length - 1].turnId
+        : ((stream && stream.responseTurnId) || null);
+    streamManager.enqueueSteer(chatId, { turnId, parentTurnId, content: messageContent });
+
+    // Ask the in-flight response to end at its next message boundary (tool-round
+    // boundary) so this steer becomes the next request, rather than waiting for
+    // the whole agentic run to finish. Fire-and-forget.
+    if (stream && stream.requestId) {
+        requestSteerBreak(stream.requestId);
+    }
+
+    try {
+        const messages = [{ role: "user", content: messageContent }];
+        const turnRequest = new TurnRequest({
+            messages,
+            parentTurnId,
+            turnId,
+            requestOrigin: "steer",
+            chatId,
+        });
+        const saved = await turnRequest.saveAndRender();
+        if (!saved || !saved.turn_id) {
+            throw new Error("steer save returned no turn_id");
+        }
+
+        // Mark the rendered turn so its Edit & Retry action stays hidden while it
+        // is queued (there's no response to that steer yet to regenerate).
+        const steerEl = turnsContainer.querySelector(`.request-turn[data-turn-id="${turnId}"]`);
+        if (steerEl) steerEl.classList.add("steer-pending");
+
+        logger.info(`[STEER] Queued steer for chat ${chatId} (turn ${turnId})`);
+    } catch (error) {
+        logger.error("[STEER] Failed to enqueue steer:", error);
+        showError(`Failed to steer: ${error.message}`);
+        // Roll back the optimistic queue entry so a failed save isn't sent.
+        const q = streamManager.steeringQueue.get(chatId);
+        if (q) {
+            const idx = q.findIndex((e) => e.turnId === turnId);
+            if (idx !== -1) q.splice(idx, 1);
+        }
     } finally {
         streamManager.refreshSendButton();
         messageInput.focus();

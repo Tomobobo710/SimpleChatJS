@@ -27,6 +27,20 @@ async function pushTurnError(chatId, turnInfo, responsePayload, errorPayload) {
 // In-flight chat requests, keyed by requestId.
 const inFlightRequests = new Map();
 
+// requestIds for which the user has steered and asked the agentic loop to stop
+// at its next message boundary (tool-round boundary). Keyed by requestId because
+// the requestId is stable across all rounds of one response, whereas the
+// per-round in-flight state is recreated/deleted each round.
+const steerBreakRequested = new Set();
+
+// Flag an in-flight request to end at its next tool-round boundary (steering).
+function flagSteerBreak(requestId) {
+    if (!requestId) return { found: false };
+    steerBreakRequested.add(requestId);
+    log(`[STEER] Break requested at next boundary for requestId=${requestId}`);
+    return { found: true };
+}
+
 // Debug data structure stored in turn_debug table (keyed by chat_id + turn_id):
 // {
 //   sequence: [ ... ],           // Request debug sequence
@@ -74,6 +88,7 @@ function cancelInFlightRequest(requestId) {
     state.cancelledByUser = true;
     state.saved = true;
     inFlightRequests.delete(requestId);
+    steerBreakRequested.delete(requestId);
 
     const streamedSoFar = state.streamedContent || "";
     const ur = state.unifiedResponse;
@@ -162,7 +177,8 @@ async function executeStreamingLoop(
     requestTurnId = null,
     enabledToolsFilter = null,
     shellInfo = null,
-    cwd = null
+    cwd = null,
+    responseTurnId = null
 ) {
     const currentSettings = getCurrentSettings();
 
@@ -181,14 +197,19 @@ async function executeStreamingLoop(
         }
     });
 
-    // Generate turn info for this conversation turn
+    // Generate turn info for this conversation turn.
+    // Round 1 uses the frontend's pre-allocated response turn_id when provided
+    // (steering needs the response's turn_id to be known before the response is
+    // saved, so steers can parent to it at save time). Tool rounds
+    // (responseCounter > 1) inherit that same turn_id via the recursion's
+    // `turnInfo`, so they don't need the override.
     let turnInfo;
     if (responseCounter > 1 && requestTurnId) {
         turnInfo = getTurnInfo(parentTurnId, requestTurnId);
     } else if (requestTurnId) {
-        turnInfo = getTurnInfo(requestTurnId);
+        turnInfo = getTurnInfo(requestTurnId, responseTurnId);
     } else {
-        turnInfo = getTurnInfo(null);
+        turnInfo = getTurnInfo(null, responseTurnId);
     }
     turnInfo.turn_type = 'response';
 
@@ -622,6 +643,10 @@ async function executeStreamingLoop(
                 // Emit done event with complete response
                 writeSSEEvent(res, 'done', unifiedResponse.toJSON());
 
+                // The turn reached its natural end; drop any steer-break flag
+                // (the queued steer will drain on this terminal `done` anyway).
+                if (requestId) steerBreakRequested.delete(requestId);
+
                 // Finish response
                 res.end();
             }
@@ -882,6 +907,19 @@ async function executeToolCallsAndContinue(
         }
     }
 
+    // Steering break: if the user steered during this round, end the turn at this
+    // message boundary instead of continuing the agentic loop. The round's tools
+    // have already run and been saved, so the conversation is in a valid state
+    // (every tool_use has its tool_result) — a safe place to hand the turn over
+    // to the queued steer(s).
+    if (steerBreakRequested.has(requestId)) {
+        steerBreakRequested.delete(requestId);
+        log(`[STEER] Breaking at tool-round boundary for requestId=${requestId}`);
+        writeSSEEvent(res, 'done', { content: assistantMessage || "" });
+        res.end();
+        return;
+    }
+
     // Continue conversation with tool results — same turn as the tool-call response
     await executeStreamingLoop(
         req,
@@ -904,7 +942,7 @@ async function executeToolCallsAndContinue(
 // Process chat request (entry point from routes)
 async function processRequest(req, res) {
     const { db } = require("../config/database");
-    const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, history_anchor_turn_id } = req.body || {};
+    const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, history_anchor_turn_id, response_turn_id } = req.body || {};
     try {
 
         // Build messages for API from chat history.
@@ -980,12 +1018,15 @@ async function processRequest(req, res) {
             turn_id,
             enabled_tools,
             shellInfo,
-            cwd
+            cwd,
+            response_turn_id
         );
     } catch (error) {
         log("[CHAT] Error:", error);
 
-        const turnInfo = getTurnInfo(parent_turn_id, turn_id);
+        // Use the pre-allocated response turn_id so an errored response keeps its
+        // own identity (and never collides with the request/steer turn_id).
+        const turnInfo = getTurnInfo(parent_turn_id, response_turn_id || turn_id);
         turnInfo.turn_type = 'response';
         if (chat_id) {
             const errorMessage = {
@@ -1031,5 +1072,6 @@ module.exports = {
     executeStreamingLoop,
     cancelInFlightRequest,
     executeToolCallsAndContinue,
-    processRequest
+    processRequest,
+    flagSteerBreak
 };
