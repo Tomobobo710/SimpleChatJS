@@ -749,6 +749,7 @@ function renderProjects() {
 
         container.appendChild(projectItem);
     });
+    streamManager.reapplyIndicators();
 }
 
 // Open a project's chat list

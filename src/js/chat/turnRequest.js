@@ -165,6 +165,7 @@ class TurnRequest {
         responseTurnDiv.appendChild(tempContainer);
 
         const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, parentTurnId: expectedParentTurnId, requestTurnId: requestTurnInfo?.turn_id || null, abortController, requestId };
+        streamEntry.projectId = window.currentProjectId || null;
         streamManager.register(activeChatId, streamEntry);
 
         let toolEventSource = null;
