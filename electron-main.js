@@ -232,6 +232,11 @@ app.whenReady().then(() => {
         };
     });
 
+    // Handle home directory IPC
+    ipcMain.handle("get-home-dir", () => {
+        return app.getPath("home");
+    });
+
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();

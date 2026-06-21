@@ -173,7 +173,9 @@ function getShellArgs(shellInfo, command) {
         case 'zsh':
         case 'ksh':
         case 'dash':
-            return { shell: shellPath, args: ['-l', '-c', command] };
+            // Non-login (-c only). A login shell (-l) sources the profile,
+            // which in git-bash runs `cd $HOME` and clobbers the cwd we set.
+            return { shell: shellPath, args: ['-c', command] };
         case 'pwsh':
         case 'powershell':
             return { shell: shellPath, args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command] };

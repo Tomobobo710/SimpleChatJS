@@ -9,6 +9,7 @@ const { getCurrentSettings } = require("./settingsService");
 const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
 const simpleTools = require("./simpleToolsService");
 const shellService = require("./shellService");
+const projectService = require("./projectService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
@@ -160,7 +161,8 @@ async function executeStreamingLoop(
     parentTurnId = null,
     requestTurnId = null,
     enabledToolsFilter = null,
-    shellInfo = null
+    shellInfo = null,
+    cwd = null
 ) {
     const currentSettings = getCurrentSettings();
 
@@ -551,7 +553,8 @@ async function executeStreamingLoop(
                     apiRes,
                     rawResponseBody,
                     enabledToolsFilter,
-                    shellInfo
+                    shellInfo,
+                    cwd
                 );
             } else {
                 // Save final assistant response to history
@@ -700,7 +703,8 @@ async function executeToolCallsAndContinue(
     apiRes = null,
     rawResponseBody = "",
     enabledToolsFilter = null,
-    shellInfo = null
+    shellInfo = null,
+    cwd = null
 ) {
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
@@ -766,7 +770,7 @@ async function executeToolCallsAndContinue(
             if (toolCall.function.name.startsWith('mcp__')) {
                 toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
             } else if (toolCall.function.name === 'shell_run') {
-                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo });
+                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd });
             } else {
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
             }
@@ -892,7 +896,8 @@ async function executeToolCallsAndContinue(
         turnInfo?.parent_turn_id,
         turnInfo?.turn_id,
         enabledToolsFilter,
-        shellInfo
+        shellInfo,
+        cwd
     );
 }
 
@@ -935,6 +940,11 @@ async function processRequest(req, res) {
         const currentSettings = getCurrentSettings();
         const shellInfo = shellService.getPreferredShell(currentSettings.shell);
 
+        // Resolve the working directory for shell_run on a per-chat basis.
+        // Priority: project dir (project-scoped chat) -> defaultCwd -> home.
+        // process.cwd() is never considered.
+        const cwd = projectService.resolveCwdForChat(chat_id, currentSettings);
+
         // Merge SimpleTools definitions
         const simpleConfig = simpleTools.loadConfig();
         const simpleDefs = simpleTools.getToolDefinitions(shellInfo);
@@ -969,7 +979,8 @@ async function processRequest(req, res) {
             parent_turn_id,
             turn_id,
             enabled_tools,
-            shellInfo
+            shellInfo,
+            cwd
         );
     } catch (error) {
         log("[CHAT] Error:", error);

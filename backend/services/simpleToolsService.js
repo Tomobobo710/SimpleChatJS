@@ -314,6 +314,11 @@ async function doShellRun(args, opts = {}) {
 
     const shellInfo = opts.shellInfo || shellService.getPreferredShell('auto');
     const shellArgs = shellService.getShellArgs(shellInfo, command);
+    // cwd is resolved per-chat by the caller (project dir / defaultCwd / home).
+    // Never fall back to process.cwd() — it reflects how the app was launched,
+    // not a meaningful working directory.
+    const os = require('os');
+    const cwd = opts.cwd || os.homedir();
 
     try {
         // spawnSync passes args as an array — no shell interpolation, no
@@ -322,7 +327,7 @@ async function doShellRun(args, opts = {}) {
             encoding: 'utf8',
             maxBuffer: 12_000 * 2,
             windowsHide: true,
-            cwd: process.cwd()
+            cwd
         });
 
         const stdout = result.stdout || '';

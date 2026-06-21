@@ -162,7 +162,7 @@ async function onSubmitRequest() {
                             }
                         } catch (_) { /* ignore */ }
                         if (!cwd) {
-                            cwd = settings.defaultCwd || window.electronAPI?.getHomeDir?.();
+                            cwd = settings.defaultCwd || (await window.electronAPI?.getHomeDir?.());
                         }
                         contextParts.push(`Working directory: ${cwd}`);
                     }
