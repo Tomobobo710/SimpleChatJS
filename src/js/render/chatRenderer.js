@@ -200,13 +200,18 @@ class ChatRenderer {
             }
         }
 
-        // Create title with just the tool name (no "Tool:" prefix)
-        const title = toolName || "unknown_tool";
+        // MCP tools arrive namespaced as mcp__<server>__<tool>. Show the clean
+        // tool name in the title and surface an "MCP" badge for transparency.
+        const mcpInfo = parseMcpToolName(toolName);
+        const title = mcpInfo.toolName || "unknown_tool";
+        const badge = mcpInfo.isMcp
+            ? { text: "MCP", title: `MCP server: ${mcpInfo.serverName}` }
+            : null;
 
         // Format the content with Arguments and Result sections
         const formattedContent = formatToolContent(content, toolName, metadata?.toolArgs);
 
-        const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen);
+        const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen, badge);
         dropdown.setContent(formattedContent);
         return dropdown.element;
     }

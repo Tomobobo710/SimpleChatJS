@@ -1,8 +1,10 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const { log } = require('../utils/logger');
 const { getUserdataPath } = require('../utils/pathUtils');
+const shellService = require('./shellService');
 
 const CONFIG_FILE = 'simple_tools_config.json';
 
@@ -13,8 +15,8 @@ function getConfigPath() {
 const DEFAULT_CONFIG = {
     read_file: true,
     write_file: true,
-    edit: true,
-    bash_run: true
+    edit_file: true,
+    shell_run: true
 };
 
 function loadConfig() {
@@ -53,11 +55,74 @@ function isToolEnabled(toolName, config) {
     return config[key] === true;
 }
 
-function getToolDefinitions() {
+// Description templates. Placeholders are filled at request time from the OS
+// (os_name, example_path) and the detected shell (shell_name, shell_syntax).
+// File tools use Node fs and don't touch the shell, so they only mention the OS
+// and a native example path. Only shell_run names the shell and its syntax.
+const READ_FILE_TPL = 'Read the contents of a file at the given path.\nYou are on {os_name}.\nFile path example: {example_path}\nOutput is capped at 12KB. Required: path.';
+const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, content.';
+const EDIT_FILE_TPL = 'Replace text in a file. Specify the file path, exact text to find, and replacement text.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, old_string, new_string.';
+const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nOutput is capped at 12KB. Required: command.';
+
+// OS display names keyed by process.platform.
+const OS_NAMES = {
+    win32: 'Windows',
+    linux: 'Linux',
+    darwin: 'macOS'
+};
+
+// Build an OS-appropriate example file path from the real home directory of the
+// machine running this. File tools use Node fs, which speaks the native OS path
+// format regardless of which shell is selected, so the example must come from
+// the OS, not the shell. On Windows we use forward slashes (e.g. C:/Users/...),
+// which work in both Node fs and Git Bash, avoiding the POSIX-path trap.
+function getOsValues() {
+    const osName = OS_NAMES[process.platform] || 'Linux';
+    let home = os.homedir() || (process.platform === 'win32' ? 'C:\\Users\\user' : '/home/user');
+    if (process.platform === 'win32') {
+        home = home.replace(/\\/g, '/');
+    }
+    const examplePath = `${home}/file.txt`;
+    return { osName, examplePath };
+}
+
+// Shell-derived template values. Keyed by the binary basename returned from
+// shellService.getPreferredShell(). These decide the shell display name and the
+// command syntax used only by shell_run.
+const SHELL_TEMPLATES = {
+    bash: { shellName: 'bash', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    sh: { shellName: 'sh', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    zsh: { shellName: 'zsh', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    ksh: { shellName: 'ksh', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    dash: { shellName: 'dash', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces.' },
+    pwsh: { shellName: 'PowerShell 7+', shellSyntax: 'Use && to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.' },
+    powershell: { shellName: 'PowerShell 5.1', shellSyntax: 'Use ; to chain commands. Use & "path with spaces\\script.ps1" for executables with spaces.' },
+    cmd: { shellName: 'cmd.exe', shellSyntax: 'Use && to chain commands. Use double quotes for paths with spaces. Use %VAR% for environment variables.' }
+};
+
+// Resolve shell template values for a shell binary name, falling back to cmd on
+// Windows / sh on Unix when the name is unknown.
+function getShellValues(shellName) {
+    if (SHELL_TEMPLATES[shellName]) return SHELL_TEMPLATES[shellName];
+    return process.platform === 'win32' ? SHELL_TEMPLATES.cmd : SHELL_TEMPLATES.sh;
+}
+
+function fillTemplate(tpl, shellName) {
+    const os = getOsValues();
+    const shell = getShellValues(shellName);
+    return tpl
+        .replaceAll('{os_name}', os.osName)
+        .replaceAll('{example_path}', os.examplePath)
+        .replaceAll('{shell_name}', shell.shellName)
+        .replaceAll('{shell_syntax}', shell.shellSyntax);
+}
+
+function getToolDefinitions(shellInfo) {
+    const shellName = shellInfo && shellInfo.name ? shellInfo.name : 'cmd';
     return [
         {
             name: 'read_file',
-            description: 'Read a UTF-8 text file and return its content. Use for: viewing files, reading code, inspecting configs. Required: path (absolute or relative to workspace).',
+            description: fillTemplate(READ_FILE_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -69,7 +134,7 @@ function getToolDefinitions() {
         },
         {
             name: 'write_file',
-            description: 'Create a new file or overwrite an existing file with the given content. Use for: creating files, replacing entire file content. Required: path, content.',
+            description: fillTemplate(WRITE_FILE_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -81,8 +146,8 @@ function getToolDefinitions() {
             }
         },
         {
-            name: 'edit',
-            description: 'Replace the first occurrence of old_string with new_string in an existing file. The old_string must match exactly (including whitespace). Use for: targeted code modifications. Required: path, old_string, new_string.',
+            name: 'edit_file',
+            description: fillTemplate(EDIT_FILE_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -95,8 +160,8 @@ function getToolDefinitions() {
             }
         },
         {
-            name: 'bash_run',
-            description: 'Run a shell command and return its output. Use for: executing commands, scripts, build tools, git operations. Output is capped at 12KB. Required: command.',
+            name: 'shell_run',
+            description: fillTemplate(SHELL_RUN_TPL, shellName),
             input_schema: {
                 type: 'object',
                 properties: {
@@ -109,7 +174,7 @@ function getToolDefinitions() {
     ];
 }
 
-async function executeSimpleTool(toolName, args) {
+async function executeSimpleTool(toolName, args, opts = {}) {
     const config = loadConfig();
     if (!isToolEnabled(toolName, config)) {
         throw new Error(`SimpleTool '${toolName}' is disabled. Enable it in Settings > Tools.`);
@@ -120,10 +185,10 @@ async function executeSimpleTool(toolName, args) {
             return doReadFile(args);
         case 'write_file':
             return doWriteFile(args);
-        case 'edit':
+        case 'edit_file':
             return doEdit(args);
-        case 'bash_run':
-            return doBashRun(args);
+        case 'shell_run':
+            return doShellRun(args, opts);
         default:
             throw new Error(`Unknown SimpleTool: ${toolName}`);
     }
@@ -241,59 +306,73 @@ async function doEdit(args) {
     }
 }
 
-async function doBashRun(args) {
+async function doShellRun(args, opts = {}) {
     const command = args?.command;
     if (!command) {
         throw new Error('Missing required field: command');
     }
 
+    const shellInfo = opts.shellInfo || shellService.getPreferredShell('auto');
+    const shellArgs = shellService.getShellArgs(shellInfo, command);
+    // cwd is resolved per-chat by the caller (project dir / defaultCwd / home).
+    // Never fall back to process.cwd() — it reflects how the app was launched,
+    // not a meaningful working directory.
+    const os = require('os');
+    const cwd = opts.cwd || os.homedir();
+
     try {
-        const shell = process.platform === 'win32' ? 'cmd' : 'sh';
-        const shellArg = process.platform === 'win32' ? '/C' : '-c';
-        const result = execSync(`${shell} ${shellArg} "${command.replace(/"/g, '\\"')}"`, {
+        // spawnSync passes args as an array — no shell interpolation, no
+        // double-quoting of the command by an outer shell.
+        const result = spawnSync(shellArgs.shell, shellArgs.args, {
             encoding: 'utf8',
             maxBuffer: 12_000 * 2,
-            windowsHide: true
+            windowsHide: true,
+            cwd
         });
 
-        const output = result || '';
-        const exitCode = 0;
+        const stdout = result.stdout || '';
+        const stderr = result.stderr || '';
+        const exitCode = result.status ?? 0;
+        const failed = result.status !== 0 || result.error;
 
-        if (output.length > 12_000) {
+        if (failed) {
+            const errResult = {
+                success: false,
+                output: stdout,
+                exit_code: exitCode,
+                error: stderr || (result.error ? result.error.message : 'Command failed')
+            };
+            if (stdout.length > 12_000) {
+                errResult.output = stdout.substring(0, 12_000);
+                errResult.truncated = true;
+                errResult.total_output_size = stdout.length;
+            }
+            return errResult;
+        }
+
+        if (stdout.length > 12_000) {
             return {
                 success: true,
-                output: output.substring(0, 12_000),
+                output: stdout.substring(0, 12_000),
                 truncated: true,
-                total_output_size: output.length,
+                total_output_size: stdout.length,
                 exit_code: exitCode,
                 error: null
             };
         }
         return {
             success: true,
-            output,
+            output: stdout,
             exit_code: exitCode,
             error: null
         };
     } catch (error) {
-        const stdout = error.stdout?.toString() || '';
-        const stderr = error.stderr?.toString() || '';
-        const exitCode = error.status ?? 1;
-
-        const result = {
+        return {
             success: false,
-            output: stdout,
-            exit_code: exitCode,
-            error: stderr || error.message
+            output: '',
+            exit_code: 1,
+            error: error.message
         };
-
-        if (stdout.length > 12_000) {
-            result.output = stdout.substring(0, 12_000);
-            result.truncated = true;
-            result.total_output_size = stdout.length;
-        }
-
-        return result;
     }
 }
 

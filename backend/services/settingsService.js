@@ -34,7 +34,15 @@ function getDefaultProfileSettings() {
         enableThinkingGoogle: true,
         thinkingBudgetGoogle: -1,
         enableSystemPrompt: true,
-        systemPrompt: DEFAULT_SYSTEM_PROMPT
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        shell: 'bash', // resolved at init time if not present
+        defaultCwd: '',
+        envToggles: {
+            platform: true,
+            cwd: true,
+            shell: true,
+            date: true
+        }
     };
 }
 
@@ -240,6 +248,20 @@ async function loadSettingsOnStartup() {
         // Load active profile settings into memory
         const activeSettings = getActiveProfileSettings();
         Object.assign(currentSettings, activeSettings);
+
+        // Resolve a concrete shell if the profile has none or has 'auto'.
+        // Chat-time reads always get a concrete binary name.
+        if (!currentSettings.shell || currentSettings.shell === 'auto') {
+            try {
+                const shellService = require('./shellService');
+                const detected = shellService.getDefaultShell(currentSettings);
+                currentSettings.shell = detected;
+                log(`[SETTINGS] Detected shell on startup: ${detected}`);
+            } catch (shellError) {
+                log('[SETTINGS] Shell detection failed on startup:', shellError.message);
+            }
+        }
+
         log('[SETTINGS] Loaded active profile settings on startup');
     } catch (error) {
         log('[SETTINGS] Load error:', error);

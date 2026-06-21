@@ -19,5 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     pickFolder: () => {
         return ipcRenderer.invoke('pick-folder');
+    },
+    getHomeDir: () => {
+        return ipcRenderer.invoke('get-home-dir');
     }
 });

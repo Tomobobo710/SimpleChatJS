@@ -9,6 +9,20 @@ let mcpClient = null;
 let mcpConnected = false;
 let mcpTools = [];
 
+// MCP tools are exposed to the model under a namespaced name so they can never
+// collide with the bare-named SimpleTools (e.g. write_file). Format:
+//   mcp__<serverName>__<toolName>
+const MCP_NAME_PREFIX = 'mcp__';
+
+function getMcpPublicName(tool) {
+    return `${MCP_NAME_PREFIX}${tool.serverName}__${tool.name}`;
+}
+
+// Resolve a namespaced public name back to the underlying MCP tool registration.
+function findMcpToolByPublicName(publicName) {
+    return mcpTools.find(t => getMcpPublicName(t) === publicName);
+}
+
 // Initialize MCP
 async function initMCP() {
     try {
@@ -178,14 +192,16 @@ async function executeMCPTool(toolName, args) {
         throw new Error('MCP not connected');
     }
     
-    const tool = mcpTools.find(t => t.name === toolName);
+    // toolName is the namespaced public name (mcp__server__tool); resolve it
+    // back to the real registration and call the server with its bare name.
+    const tool = findMcpToolByPublicName(toolName) || mcpTools.find(t => t.name === toolName);
     if (!tool) {
         throw new Error(`Tool '${toolName}' not found`);
     }
     
-    log(`[MCP] Executing tool: ${toolName}`);
+    log(`[MCP] Executing tool: ${toolName} -> ${tool.serverName}.${tool.name}`);
     const result = await tool.client.callTool({
-        name: toolName,
+        name: tool.name,
         arguments: args
     });
     
@@ -272,11 +288,6 @@ function saveEnabledTools(tools) {
     }
 }
 
-// Check if a tool name exists in MCP tools
-function isMcpTool(toolName) {
-    return mcpTools.some(t => t.name === toolName);
-}
-
 // Get available tools for chat
 function getAvailableToolsForChat(enabled_tools) {
     let availableTools = [];
@@ -304,7 +315,8 @@ function getAvailableToolsForChat(enabled_tools) {
         availableTools = filteredTools.map(tool => ({
             type: 'function',
             function: {
-                name: tool.name,
+                // Namespaced so it never collides with a same-named SimpleTool.
+                name: getMcpPublicName(tool),
                 description: tool.description,
                 parameters: {
                     type: 'object',
@@ -341,6 +353,8 @@ module.exports = {
     loadEnabledTools,
     saveEnabledTools,
     getAvailableToolsForChat,
-    isMcpTool,
-    shutdownMcp
+    getMcpPublicName,
+    findMcpToolByPublicName,
+    shutdownMcp,
+    mcpTools
 };

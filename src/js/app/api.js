@@ -170,7 +170,7 @@ async function loadSimpleToolsConfig() {
     } catch (error) {
         logger.warn("Failed to load SimpleTools config:", error);
     }
-    return { read_file: true, write_file: true, edit: true, bash_run: true };
+    return { read_file: true, write_file: true, edit_file: true, shell_run: true };
 }
 
 async function saveSimpleToolsConfig(config) {
@@ -187,6 +187,56 @@ async function saveSimpleToolsConfig(config) {
     }
 }
 
+// Shell config — reads detected + configured shell, saves the configured shell.
+async function loadShellConfig() {
+    try {
+        const response = await fetch(`${API_BASE}/api/shell`);
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        logger.warn("Failed to load shell config:", error);
+    }
+    return { shell: "auto", detected: null, available: [] };
+}
+
+async function saveShellConfig(shell) {
+    try {
+        const response = await fetch(`${API_BASE}/api/shell`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ shell })
+        });
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        logger.warn("Failed to save shell config:", error);
+    }
+    return null;
+}
+
+// Resolve the auto-detected shell name without changing the saved setting.
+async function resetShell() {
+    const shellConfig = await loadShellConfig();
+    return shellConfig.detected?.name || "bash";
+}
+
+
+// Get the project path for a chat (if project-scoped).
+// Returns { projectId, projectPath } or null on failure.
+async function getChatProjectPath(chatId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/project`);
+        if (response.ok) {
+            const data = await response.json();
+            return data.projectPath || null;
+        }
+    } catch (error) {
+        logger.warn("Failed to get chat project path:", error);
+    }
+    return null;
+}
 // Stream response reader
 async function* streamResponse(response) {
     const reader = response.body.getReader();

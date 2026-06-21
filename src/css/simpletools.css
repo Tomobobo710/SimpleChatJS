@@ -1,0 +1,81 @@
+/* SimpleTools Styles */
+.simple-tools-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.simple-tool-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+}
+
+.simple-tool-item:hover {
+    background: #333;
+}
+
+.simple-tool-toggle {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.simple-tool-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.simple-tool-name {
+    font-weight: bold;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.simple-tool-desc {
+    font-size: 12px;
+    color: #888;
+}
+
+/* Shell selector (Tools tab) */
+.shell-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.shell-selector select {
+    /* inherits from .settings-section select */
+}
+
+.shell-info {
+    font-size: 12px;
+    color: #888;
+    font-style: italic;
+    word-break: break-all;
+}
+
+/* Env context toggles (Tokens tab, System Prompts section) */
+.context-toggles-group {
+    margin-top: 16px;
+}
+
+.context-toggles-group h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: #e0e0e0;
+}
+
+.context-toggles-group input[type="text"] {
+    margin-top: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}

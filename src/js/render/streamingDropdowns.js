@@ -4,6 +4,24 @@
 // Enable debugging with: window.debugToolFormatting = true
 window.debugToolFormatting = false;
 
+// Parse a tool name into its display parts. MCP tools are namespaced by the
+// backend as mcp__<server>__<tool>; SimpleTools use a bare name.
+// Returns { isMcp, serverName, toolName }.
+function parseMcpToolName(name) {
+    if (typeof name === 'string' && name.startsWith('mcp__')) {
+        const rest = name.slice('mcp__'.length);
+        const sep = rest.indexOf('__');
+        if (sep !== -1) {
+            return {
+                isMcp: true,
+                serverName: rest.slice(0, sep),
+                toolName: rest.slice(sep + 2)
+            };
+        }
+    }
+    return { isMcp: false, serverName: null, toolName: name };
+}
+
 // Unified tool formatting function
 function formatToolContent(content, toolName = null, toolArgs = null) {
     // Debug: log the content we're trying to parse
@@ -192,11 +210,12 @@ function formatStreamingContent(content) {
 }
 
 class StreamingDropdown {
-    constructor(id, title, type, isCollapsed = true) {
+    constructor(id, title, type, isCollapsed = true, badge = null) {
         this.id = id;
         this.title = title;
         this.type = type; // 'thinking' or 'tool'
         this.isCollapsed = isCollapsed;
+        this.badge = badge; // optional { text, title } rendered right-aligned in the header
         this.content = '';
         this.element = this.createElement();
     }
@@ -205,9 +224,13 @@ class StreamingDropdown {
         const wrapper = document.createElement('details');
         wrapper.className = `streaming-dropdown ${this.type}-dropdown`;
         if (!this.isCollapsed) wrapper.open = true;
+        const badgeHtml = this.badge
+            ? `<span class="dropdown-badge" title="${escapeHtml(this.badge.title || '')}">${escapeHtml(this.badge.text)}</span>`
+            : '';
         wrapper.innerHTML = `
             <summary class="dropdown-toggle">
                 <span class="dropdown-title">${this.title}</span>
+                ${badgeHtml}
             </summary>
             <div class="dropdown-content">
                 <div class="dropdown-inner" id="dropdown-content-${this.id}"></div>

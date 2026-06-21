@@ -215,6 +215,24 @@ details[open] .dropdown-content {
     text-align: left;
 }
 
+/* Right-aligned header badge (e.g. "MCP" for MCP-sourced tool calls).
+   .dropdown-title uses flex:1 above, which pushes this to the far right. */
+.dropdown-badge {
+    flex: none;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #cfe8ff;
+    background: #28344a;
+    border: 1px solid #3f628f;
+    border-radius: 3px;
+    padding: 1px 6px;
+    line-height: 1.4;
+    opacity: 1; /* tweak this (0–1) to adjust badge transparency */
+}
+
 /* ponytail: native <details> marker replaced with CSS indicator */
 .dropdown-toggle {
     list-style: none;

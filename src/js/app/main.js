@@ -145,7 +145,36 @@ async function onSubmitRequest() {
             if (!history || !history.messages || history.messages.length === 0) {
                 const settings = window.cachedSettings();
                 if (settings && settings.enableSystemPrompt && settings.systemPrompt?.trim()) {
-                    messages.unshift({ role: "system", content: settings.systemPrompt.trim() });
+                    // Build the env context string from toggles and append it
+                    // to the system prompt content.
+                    const envToggles = settings.envToggles || {};
+                    const contextParts = [];
+                    if (envToggles.platform) {
+                        contextParts.push(`Platform: ${window.electronAPI?.getPlatform?.() || 'win32'}`);
+                    }
+                    if (envToggles.cwd) {
+                        // Priority: project path > user defaultCwd > home dir fallback
+                        let cwd = null;
+                        try {
+                            const projectPath = await getChatProjectPath(currentChatId);
+                            if (projectPath) {
+                                cwd = projectPath;
+                            }
+                        } catch (_) { /* ignore */ }
+                        if (!cwd) {
+                            cwd = settings.defaultCwd || (await window.electronAPI?.getHomeDir?.());
+                        }
+                        contextParts.push(`Working directory: ${cwd}`);
+                    }
+                    if (envToggles.shell && settings.shell) {
+                        contextParts.push(`Shell: ${settings.shell}`);
+                    }
+                    if (envToggles.date) {
+                        contextParts.push(`Date: ${new Date().toDateString()}`);
+                    }
+                    const contextText = contextParts.join('\n');
+                    const systemContent = settings.systemPrompt.trim() + (contextText ? '\n\n' + contextText : '');
+                    messages.unshift({ role: "system", content: systemContent });
                 }
             }
         } catch (_) {

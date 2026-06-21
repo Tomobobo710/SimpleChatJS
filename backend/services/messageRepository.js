@@ -100,6 +100,29 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
 
         log(`[CHAT-HISTORY] Retrieved ${chatMessages.length} successful messages (errors filtered out)`);
 
+        // Defensive: strip any tool calls with invalid JSON arguments
+        // (can happen from cancellation mid-stream or other errors)
+        for (const row of chatMessages) {
+            if (row.tool_calls && typeof row.tool_calls === 'string') {
+                try {
+                    const parsed = JSON.parse(row.tool_calls);
+                    if (Array.isArray(parsed)) {
+                        const valid = parsed.filter(tc => {
+                            if (!tc.function || typeof tc.function.arguments !== 'string') return false;
+                            try { JSON.parse(tc.function.arguments); return true; }
+                            catch (_) { return false; }
+                        });
+                        if (valid.length !== parsed.length) {
+                            log(`[CHAT-HISTORY] Stripped ${parsed.length - valid.length} tool call(s) with invalid arguments from history`);
+                        }
+                        row.tool_calls = valid.length > 0 ? JSON.stringify(valid) : null;
+                    }
+                } catch (_) {
+                    row.tool_calls = null;
+                }
+            }
+        }
+
         const aiMessages = chatMessages.map((row) => {
             // The database row always contains the currently active version.
             // We don't need to look in edit_history - edit_history stores

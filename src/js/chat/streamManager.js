@@ -6,11 +6,14 @@ class StreamManager {
     register(chatId, entry) {
         this.activeStreamState.set(chatId, entry);
         this.updateStreamIndicator(chatId, true);
+        if (entry.projectId) this.updateProjectIndicator(entry.projectId);
     }
 
     unregister(chatId) {
+        const entry = this.activeStreamState.get(chatId);
         this.activeStreamState.delete(chatId);
         this.updateStreamIndicator(chatId, false);
+        if (entry && entry.projectId) this.updateProjectIndicator(entry.projectId);
     }
 
     isStreaming(chatId) {
@@ -60,10 +63,41 @@ class StreamManager {
         this.refreshSendButton();
     }
 
+    updateProjectIndicator(projectId) {
+        const projectItem = document.querySelector(`[data-project-id="${projectId}"]`);
+        if (!projectItem) return;
+        const active = [...this.activeStreamState.values()].some(e => e.projectId === projectId);
+        let spinner = projectItem.querySelector(".stream-spinner");
+        if (active) {
+            if (!spinner) {
+                spinner = document.createElement("span");
+                spinner.className = "stream-spinner";
+                const nameEl = projectItem.querySelector(".project-item-name");
+                if (nameEl) nameEl.after(spinner);
+                else projectItem.querySelector(".project-item-header").appendChild(spinner);
+            }
+            spinner.style.display = "";
+        } else if (spinner) {
+            spinner.style.display = "none";
+        }
+    }
+
     refreshSendButton() {
         if (typeof setLoading === "function") {
             setLoading(this.activeStreamState.has(currentChatId));
         }
+    }
+
+    reapplyIndicators() {
+        const projectIds = new Set();
+        for (const [chatId, entry] of this.activeStreamState.entries()) {
+            this.updateStreamIndicator(chatId, true);
+            if (entry.projectId) projectIds.add(entry.projectId);
+        }
+        for (const projectId of projectIds) {
+            this.updateProjectIndicator(projectId);
+        }
+        this.refreshSendButton();
     }
 
     reconnectStreaming(chatId) {
