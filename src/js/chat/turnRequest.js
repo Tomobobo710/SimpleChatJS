@@ -21,6 +21,12 @@ class TurnRequest {
 
     async saveRequest(requestId) {
         if (this.requestOrigin === "retry") return null;
+        // Steering continuation: the queued steers are already persisted; the
+        // last steer acts as the request turn. Return its lineage synthetically
+        // (no DB write) so execute() builds the right continuation request.
+        if (this.requestOrigin === "steer_continuation") {
+            return { turn_id: this.turnId, parent_turn_id: this.parentTurnId };
+        }
         if (this.messages.length === 0) return null;
 
         const { turn_id, parent_turn_id } = await this._saveMessages();
@@ -53,6 +59,9 @@ class TurnRequest {
 
     async renderRequestTurn(requestTurnInfo, requestId) {
         if (this.requestOrigin === "retry") return;
+        // Steering continuation: the steer turns are already in the DOM (rendered
+        // when each was enqueued), so there's nothing to render here.
+        if (this.requestOrigin === "steer_continuation") return;
         if (!requestTurnInfo) return;
 
         const parentTurnId = this.parentTurnId;
@@ -164,9 +173,20 @@ class TurnRequest {
         container.appendChild(responseTurnDiv);
         responseTurnDiv.appendChild(tempContainer);
 
-        const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, parentTurnId: expectedParentTurnId, requestTurnId: requestTurnInfo?.turn_id || null, abortController, requestId };
+        // The response owns its identity: the backend mints the response turn_id
+        // and announces it in the X-Response-Turn-Id header. We expose it on the
+        // entry as a promise so a steer issued before the header lands can await
+        // the announcement rather than the request having to pre-mint it.
+        let announceResponseTurnId;
+        const responseTurnIdPromise = new Promise((resolve) => { announceResponseTurnId = resolve; });
+        const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, responseTurnIdPromise, parentTurnId: expectedParentTurnId, requestTurnId: requestTurnInfo?.turn_id || null, abortController, requestId };
         streamEntry.projectId = window.currentProjectId || null;
         streamManager.register(activeChatId, streamEntry);
+
+        // Resolve the announcement promise once, with the response's id (on the
+        // header) or null (if the stream ends/errors before announcing one), so
+        // an awaiting steer never hangs. Double-resolve is a no-op.
+        const announce = (id) => { if (announceResponseTurnId) announceResponseTurnId(id || null); };
 
         let toolEventSource = null;
         try {
@@ -198,6 +218,7 @@ class TurnRequest {
 
         const cleanupAndError = (err) => {
             errorAlreadyHandled = true;
+            announce(streamEntry.responseTurnId);
             if (toolEventSource) toolEventSource.close();
             streamManager.unregister(activeChatId);
             streamEntry.tempContainer.remove();
@@ -232,6 +253,7 @@ class TurnRequest {
             }
             savedResponseTurn = { turn_id: responseTurnId, parent_turn_id: responseParentTurnId };
             streamEntry.responseTurnId = responseTurnId;
+            announce(responseTurnId);
 
             const streamErrorType = response.headers.get("X-Stream-Error");
             if (streamErrorType) {
@@ -307,6 +329,7 @@ class TurnRequest {
             return { savedResponseTurn, responseDebugData, processor, chatId: activeChatId };
         } catch (error) {
             if (!errorAlreadyHandled) {
+                announce(streamEntry.responseTurnId);
                 if (toolEventSource) toolEventSource.close();
                 streamManager.unregister(activeChatId);
                 streamEntry.tempContainer.remove();
@@ -464,6 +487,17 @@ class TurnRequest {
         lastRequestMessage.appendChild(createDebugPanel(lastRequestMessage, messageId, requestDebugData, 0));
     }
 
+    // Persist + render a request turn WITHOUT firing an API call. Used to queue
+    // a steer: the message lands in the DB and the DOM immediately; the
+    // continuation request is fired later when the in-flight stream breaks.
+    async saveAndRender() {
+        const requestTurnInfo = await this.saveRequest(null);
+        // requestId=null → renderRequestTurn skips the request-debug listener;
+        // there is no API call associated with the enqueue itself.
+        await this.renderRequestTurn(requestTurnInfo, null);
+        return requestTurnInfo;
+    }
+
     async execute() {
         const requestId = TurnRequest.generateRequestId();
         const requestTurnInfo = await this.saveRequest(requestId);
@@ -508,6 +542,12 @@ class TurnRequest {
             lineage.effectiveHistoryAnchor
         );
 
+        // A steering continuation skips renderRequestTurn, so wire its
+        // request-debug panel onto the last steer turn here instead.
+        if (this.requestOrigin === "steer_continuation") {
+            this._listenForRequestDebug(requestId, this.messages);
+        }
+
         const result = await this.stream({
             fetchPromise: requestInfo.fetchPromise,
             requestId,
@@ -525,6 +565,74 @@ class TurnRequest {
             requestId
         });
 
+        // At the stream break, drain any steers queued for this chat and
+        // continue the conversation from them.
+        await this._maybeContinueSteering(result.savedResponseTurn);
+
         return { requestTurnInfo, responseTurnInfo: null, requestId };
+    }
+
+    // After a stream break, drain queued steers and fire a single continuation.
+    // No lineage surgery: each steer was already saved with its correct parent
+    // at enqueue time (§3.1). Re-runs (via the continuation's own execute) until
+    // the queue is empty, so steers that arrive mid-continuation are caught (§5.7).
+    async _maybeContinueSteering(savedResponseTurn) {
+        const chatId = this.chatId;
+        // Steer saves are serialized on streamManager.steerChain; wait for any
+        // in-flight save to settle so the queue holds their backend-minted
+        // turn_ids (and DB rows exist) before we build the continuation.
+        const chain = streamManager.steerChain.get(chatId);
+        if (chain) { try { await chain; } catch (_) {} }
+        const steers = streamManager.drainSteeringQueue(chatId);
+        if (!steers || steers.length === 0) return;
+
+        for (const steer of steers) {
+            const el = turnsContainer.querySelector(`.request-turn[data-turn-id="${steer.turnId}"]`);
+            if (!el) continue;
+            // Drain wins over an open edit: discard any in-progress edit on a
+            // steer we're about to answer (§5.6).
+            if (el.classList.contains("editing") && typeof chatRenderer?.cancelTurnEdit === "function") {
+                chatRenderer.cancelTurnEdit(el);
+            }
+        }
+
+        // Reconcile the just-broken response turn from the DB. A break ends the
+        // turn the instant the tool round finishes, which races the tool-result
+        // event (`tool_execution_complete`) — that event rides the separate
+        // /api/tools EventSource channel and can lose to the main stream's `done`,
+        // leaving the live dropdown stuck on "Executing...". The DB already has
+        // the result (saved before `done`), so re-render that one turn from it.
+        if (savedResponseTurn?.turn_id && currentChatId === chatId
+            && typeof chatRenderer?.rerenderTurnInPlace === "function") {
+            await chatRenderer.rerenderTurnInPlace(savedResponseTurn.turn_id);
+        }
+
+        // The steers were appended while the response was still streaming, so the
+        // DOM currently has them above the final response. Put the response back
+        // on top to match the linear lineage order.
+        this._reorderResponseBeforeSteers(savedResponseTurn?.turn_id, steers);
+
+        const last = steers[steers.length - 1];
+        const cont = new TurnRequest({
+            messages: steers.map(s => ({ role: "user", content: s.content })),
+            parentTurnId: last.parentTurnId,
+            turnId: last.turnId,
+            requestOrigin: "steer_continuation",
+            chatId,
+        });
+        await cont.execute();
+    }
+
+    _reorderResponseBeforeSteers(responseTurnId, steers) {
+        if (!responseTurnId || !steers.length) return;
+        const responseEl = turnsContainer.querySelector(`.response-turn[data-turn-id="${responseTurnId}"]`);
+        const firstSteerEl = turnsContainer.querySelector(`.request-turn[data-turn-id="${steers[0].turnId}"]`);
+        if (!responseEl || !firstSteerEl) return;
+        // If the first steer currently precedes the response, move the response
+        // up so the visual order matches the lineage (response → steers).
+        const pos = responseEl.compareDocumentPosition(firstSteerEl);
+        if (pos & Node.DOCUMENT_POSITION_PRECEDING) {
+            firstSteerEl.parentNode.insertBefore(responseEl, firstSteerEl);
+        }
     }
 }

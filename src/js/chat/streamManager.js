@@ -1,6 +1,45 @@
 class StreamManager {
     constructor() {
         this.activeStreamState = new Map();
+        // Per-chat queue of steers the user typed while a response was streaming.
+        // chatId -> Array<{ turnId, parentTurnId, content }>. Each entry is
+        // already saved to the DB and rendered as a request turn; the queue is
+        // drained at the next stream break to fire a continuation request.
+        this.steeringQueue = new Map();
+        // Per-chat promise chain that serializes steer saves. Each steer's save
+        // runs only after the previous one returns its backend-minted turn_id, so
+        // the next steer can read it as its parent. The backend stays the sole
+        // turn_id authority — the frontend never mints them.
+        this.steerChain = new Map();
+    }
+
+    // Push a steer that has already been persisted + rendered.
+    enqueueSteer(chatId, entry) {
+        if (!this.steeringQueue.has(chatId)) this.steeringQueue.set(chatId, []);
+        this.steeringQueue.get(chatId).push(entry);
+    }
+
+    // Atomically remove and return all queued steers for a chat.
+    drainSteeringQueue(chatId) {
+        const q = this.steeringQueue.get(chatId);
+        if (!q || q.length === 0) return [];
+        this.steeringQueue.set(chatId, []);
+        return q;
+    }
+
+    hasSteers(chatId) {
+        const q = this.steeringQueue.get(chatId);
+        return !!(q && q.length > 0);
+    }
+
+    // Update a queued steer's cached content after an in-place edit, so the
+    // continuation's debug view reflects the edit. Scans every chat's queue.
+    updateSteerContent(turnId, content) {
+        if (!turnId) return;
+        for (const q of this.steeringQueue.values()) {
+            const entry = q.find((e) => e.turnId === turnId);
+            if (entry) { entry.content = content; return; }
+        }
     }
 
     register(chatId, entry) {
@@ -83,8 +122,15 @@ class StreamManager {
     }
 
     refreshSendButton() {
-        if (typeof setLoading === "function") {
-            setLoading(this.activeStreamState.has(currentChatId));
+        if (typeof setLoading !== "function") return;
+        const streaming = this.activeStreamState.has(currentChatId);
+        const hasContent = typeof messageInputHasContent === "function" ? messageInputHasContent() : false;
+        setLoading(streaming, hasContent);
+        // Grey out the regenerate actions (Retry / Edit & Retry) on the viewed
+        // chat's turns while it streams — they'd start a competing turn (clicks
+        // are also guarded in the handlers).
+        if (typeof turnsContainer !== "undefined" && turnsContainer) {
+            turnsContainer.classList.toggle("chat-streaming", streaming);
         }
     }
 

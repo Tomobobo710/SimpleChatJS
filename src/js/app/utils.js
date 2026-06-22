@@ -134,21 +134,37 @@ async function cancelRequest(requestId) {
     }
 }
 
-// Show/hide loading state
-function setLoading(isLoading) {
+// Drive the send button's three states: Send / Stop / Steer.
+//   - not streaming            → Send  (normal submit)
+//   - streaming, empty input   → Stop  (cancel the viewed chat's stream)
+//   - streaming, has content   → Steer (queue the typed message)
+// The message input is NEVER disabled by streaming state — the user must always
+// be able to type (and steer) while a response is in flight.
+function setLoading(isStreaming, hasContent = false) {
     const sendBtn = document.getElementById('sendBtn');
-    const messageInput = document.getElementById('messageInput');
-    
-    sendBtn.disabled = false; // Keep enabled so user can click to stop
-    messageInput.disabled = isLoading;
-    
-    if (isLoading) {
+
+    sendBtn.disabled = false; // Keep enabled so the user can click to stop/steer
+
+    sendBtn.classList.remove('btn-stop', 'btn-steer');
+    if (isStreaming && hasContent) {
+        sendBtn.textContent = 'Steer';
+        sendBtn.classList.add('btn-steer');
+    } else if (isStreaming) {
         sendBtn.textContent = 'Stop';
         sendBtn.classList.add('btn-stop');
     } else {
         sendBtn.textContent = 'Send';
-        sendBtn.classList.remove('btn-stop');
     }
+}
+
+// True when the message input holds any text, image, or document content.
+// Used to decide between the Stop and Steer button states while streaming.
+function messageInputHasContent() {
+    const input = document.getElementById('messageInput');
+    const hasText = !!(input && input.value.length > 0);
+    const hasImages = typeof getSelectedImages === 'function' && getSelectedImages().length > 0;
+    const hasDocs = typeof getSelectedDocuments === 'function' && getSelectedDocuments().length > 0;
+    return hasText || hasImages || hasDocs;
 }
 
 // Stop current generation

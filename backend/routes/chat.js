@@ -1,7 +1,7 @@
 // Chat routes - Handle chat operations and messaging
 const express = require("express");
 const { db } = require("../config/database");
-const { processRequest, cancelInFlightRequest } = require("../services/chatStreamService");
+const { processRequest, cancelInFlightRequest, flagSteerBreak } = require("../services/chatStreamService");
 const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
 const { getTurnInfo, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
 const { log } = require("../utils/logger");
@@ -473,6 +473,20 @@ const stmt = db.prepare(`
 
 // Main chat endpoint that frontend expects
 router.post("/chat", processRequest);
+
+// Steering: ask an in-flight request to end at its next message boundary
+// (tool-round boundary) so the queued steer(s) become the next request. Unlike
+// cancel, this does NOT stop the upstream — the current round finishes cleanly.
+router.post("/chat/steer/:requestId", (req, res) => {
+    const { requestId } = req.params;
+    try {
+        const result = flagSteerBreak(requestId);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        log(`[STEER] Error flagging steer break for requestId=${requestId}: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Cancel an in-flight chat request. Marks it user_stopped, destroys the
 // upstream AI provider request, and persists the partial content as an

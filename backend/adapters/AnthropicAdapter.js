@@ -20,6 +20,30 @@ class AnthropicAdapter extends BaseResponseAdapter {
         return getProviderById('anthropic').getHeaders(settings.apiKey);
     }
 
+    // Normalize message content to an array of Anthropic content blocks.
+    contentToBlocks(content) {
+        if (Array.isArray(content)) return content;
+        if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : [];
+        if (content == null) return [];
+        return [content];
+    }
+
+    // Merge adjacent messages that share a role into a single message, combining
+    // their content blocks. Anthropic rejects consecutive same-role turns, which
+    // steering (multiple queued user messages) can produce.
+    mergeConsecutiveMessages(messages) {
+        const merged = [];
+        for (const msg of messages) {
+            const last = merged[merged.length - 1];
+            if (last && last.role === msg.role) {
+                last.content = this.contentToBlocks(last.content).concat(this.contentToBlocks(msg.content));
+            } else {
+                merged.push({ role: msg.role, content: msg.content });
+            }
+        }
+        return merged;
+    }
+
     convertRequest(unifiedRequest, settings) {
         // Convert from OpenAI format to Anthropic format
         const anthropicMessages = [];
@@ -79,10 +103,15 @@ class AnthropicAdapter extends BaseResponseAdapter {
             }
         }
         
+        // Steering can produce consecutive same-role messages (e.g. several
+        // queued user steers in a row). Anthropic's Messages API expects
+        // alternating roles, so merge adjacent same-role messages by combining
+        // their content blocks. This is the adapter's responsibility — the
+        // stored history stays a faithful, role-accurate turn sequence (§5.1).
         const request = {
             model: unifiedRequest.model,
             max_tokens: 4096,
-            messages: anthropicMessages,
+            messages: this.mergeConsecutiveMessages(anthropicMessages),
             stream: true
         };
         

@@ -23,7 +23,7 @@ async function saveMessage(chatId, messageData, turnInfo = null, errorState = nu
 
         // Insert message with turn info
         const insertStmt = db.prepare(`
-            INSERT INTO messages 
+            INSERT INTO messages
             (chat_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state, turn_type)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
@@ -85,9 +85,25 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
                 SELECT id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, active_edit_version, edit_history, turn_type
                 FROM messages
                 WHERE chat_id = ? AND (error_state IS NULL OR (role = 'assistant' AND content != '')) AND turn_id IN (${turnIdPlaceholders})
-                ORDER BY timestamp ASC
+                ORDER BY id ASC
             `);
             chatMessages = messagesStmt.all(chat_id, ...ancestorIds);
+
+            // Order by LINEAGE (root -> leaf), not timestamp: a turn's parent must
+            // always precede it. A steered turn is persisted BEFORE the response it
+            // hangs under (the response saves at `done`), so timestamp order would
+            // misplace it. `getAncestorTurnIds` returns leaf -> root, so reverse it
+            // to get each turn's depth; tiebreak within a turn by row id.
+            const lineageOrder = new Map();
+            for (let i = ancestorIds.length - 1, ord = 0; i >= 0; i--, ord++) {
+                lineageOrder.set(ancestorIds[i], ord);
+            }
+            chatMessages.sort((a, b) => {
+                const oa = lineageOrder.has(a.turn_id) ? lineageOrder.get(a.turn_id) : Number.MAX_SAFE_INTEGER;
+                const ob = lineageOrder.has(b.turn_id) ? lineageOrder.get(b.turn_id) : Number.MAX_SAFE_INTEGER;
+                if (oa !== ob) return oa - ob;
+                return a.id - b.id;
+            });
         } else {
             messagesStmt = db.prepare(`
                 SELECT id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, active_edit_version, edit_history, turn_type

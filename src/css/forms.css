@@ -85,6 +85,19 @@
     color: #aaa;
 }
 
+/* Steer state — distinct from Stop so the user can tell they'll queue a
+   message (not cancel) while a response streams. */
+.btn.btn-steer {
+    background: #1d3a5f;
+    color: #cfe3ff;
+    border: 1px outset #2f5d96;
+}
+
+.btn.btn-steer:hover {
+    background: #244a78;
+    color: #eaf3ff;
+}
+
 /* Tab Button Variant */
 .btn.btn-tab {
     border-bottom: none;

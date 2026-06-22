@@ -27,6 +27,20 @@ async function pushTurnError(chatId, turnInfo, responsePayload, errorPayload) {
 // In-flight chat requests, keyed by requestId.
 const inFlightRequests = new Map();
 
+// requestIds for which the user has steered and asked the agentic loop to stop
+// at its next message boundary (tool-round boundary). Keyed by requestId because
+// the requestId is stable across all rounds of one response, whereas the
+// per-round in-flight state is recreated/deleted each round.
+const steerBreakRequested = new Set();
+
+// Flag an in-flight request to end at its next tool-round boundary (steering).
+function flagSteerBreak(requestId) {
+    if (!requestId) return { found: false };
+    steerBreakRequested.add(requestId);
+    log(`[STEER] Break requested at next boundary for requestId=${requestId}`);
+    return { found: true };
+}
+
 // Debug data structure stored in turn_debug table (keyed by chat_id + turn_id):
 // {
 //   sequence: [ ... ],           // Request debug sequence
@@ -74,6 +88,7 @@ function cancelInFlightRequest(requestId) {
     state.cancelledByUser = true;
     state.saved = true;
     inFlightRequests.delete(requestId);
+    steerBreakRequested.delete(requestId);
 
     const streamedSoFar = state.streamedContent || "";
     const ur = state.unifiedResponse;
@@ -181,7 +196,11 @@ async function executeStreamingLoop(
         }
     });
 
-    // Generate turn info for this conversation turn
+    // Generate turn info for this conversation turn. The response owns its
+    // identity — the backend mints the response turn_id here and announces it via
+    // the X-Response-Turn-Id header; the request never carries it. Tool rounds
+    // (responseCounter > 1) reuse the round-1 turn_id via the recursion's
+    // `turnInfo`.
     let turnInfo;
     if (responseCounter > 1 && requestTurnId) {
         turnInfo = getTurnInfo(parentTurnId, requestTurnId);
@@ -622,6 +641,10 @@ async function executeStreamingLoop(
                 // Emit done event with complete response
                 writeSSEEvent(res, 'done', unifiedResponse.toJSON());
 
+                // The turn reached its natural end; drop any steer-break flag
+                // (the queued steer will drain on this terminal `done` anyway).
+                if (requestId) steerBreakRequested.delete(requestId);
+
                 // Finish response
                 res.end();
             }
@@ -882,6 +905,19 @@ async function executeToolCallsAndContinue(
         }
     }
 
+    // Steering break: if the user steered during this round, end the turn at this
+    // message boundary instead of continuing the agentic loop. The round's tools
+    // have already run and been saved, so the conversation is in a valid state
+    // (every tool_use has its tool_result) — a safe place to hand the turn over
+    // to the queued steer(s).
+    if (steerBreakRequested.has(requestId)) {
+        steerBreakRequested.delete(requestId);
+        log(`[STEER] Breaking at tool-round boundary for requestId=${requestId}`);
+        writeSSEEvent(res, 'done', { content: assistantMessage || "" });
+        res.end();
+        return;
+    }
+
     // Continue conversation with tool results — same turn as the tool-call response
     await executeStreamingLoop(
         req,
@@ -1031,5 +1067,6 @@ module.exports = {
     executeStreamingLoop,
     cancelInFlightRequest,
     executeToolCallsAndContinue,
-    processRequest
+    processRequest,
+    flagSteerBreak
 };

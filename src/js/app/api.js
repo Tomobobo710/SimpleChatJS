@@ -693,6 +693,17 @@ async function editMessage(messageId, allMessageEdits) {
     }
 }
 
+// Ask an in-flight request to end at its next message boundary (steering).
+// Fire-and-forget: if it fails, the steer still drains at the terminal `done`.
+async function requestSteerBreak(requestId) {
+    if (!requestId) return;
+    try {
+        await fetch(`${API_BASE}/api/chat/steer/${requestId}`, { method: "POST" });
+    } catch (error) {
+        logger.warn("[STEER] Failed to signal steer break:", error);
+    }
+}
+
 // Get message by ID
 async function getMessage(messageId) {
     try {

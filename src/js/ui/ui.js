@@ -71,25 +71,29 @@ function initializeElements() {
 
 // Setup event listeners
 function setupEventListeners() {
-    // Send message
-    sendBtn.addEventListener('click', () => {
-        if (sendBtn.classList.contains("btn-stop")) {
+    // Send / Stop / Steer — the button's class reflects its current state.
+    const dispatchSendButton = () => {
+        if (sendBtn.classList.contains("btn-steer")) {
+            enqueueSteer();
+        } else if (sendBtn.classList.contains("btn-stop")) {
             stopGeneration();
         } else {
             onSubmitRequest();
         }
-    });
-    
+    };
+    sendBtn.addEventListener('click', dispatchSendButton);
+
     // Enter key to send (Shift+Enter for new line)
     messageInput.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            if (sendBtn.classList.contains("btn-stop")) {
-                stopGeneration();
-            } else {
-                onSubmitRequest();
-            }
+            dispatchSendButton();
         }
+    });
+
+    // Keep the button in sync (Stop⇄Steer) as the user types while streaming.
+    messageInput.addEventListener('input', () => {
+        if (typeof streamManager !== "undefined") streamManager.refreshSendButton();
     });
     
     // Settings modal (old settings button removed from sidebar, kept for compatibility)
@@ -514,6 +518,9 @@ function updateImageAreaVisibility() {
     } else {
         inputContainer.classList.remove('has-documents');
     }
+
+    // Attaching/removing files counts as content — keep Stop⇄Steer in sync.
+    if (typeof streamManager !== "undefined") streamManager.refreshSendButton();
 }
 
 function getSelectedImages() {
