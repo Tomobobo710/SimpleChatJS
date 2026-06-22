@@ -743,6 +743,15 @@ class ChatRenderer {
             return;
         }
 
+        // Unavailable while the chat has an in-flight response — it would start a
+        // competing turn (and loadChatHistory would destroy the live-stream DOM).
+        if (typeof streamManager !== "undefined" && streamManager.isStreaming(currentChatId)) {
+            if (typeof showNotification === "function") {
+                showNotification("This action is unavailable during an in-flight response.", "info");
+            }
+            return;
+        }
+
         // Set a flag that this turn should retry after editing
         const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (turnDiv) {
@@ -757,6 +766,15 @@ class ChatRenderer {
     async handleRetryMessage(turnId, identity) {
         if (identity !== "response") return;
         if (!turnId) return;
+
+        // Unavailable while the chat has an in-flight response — a retry would
+        // start a second stream in the same chat (one activeStreamState slot).
+        if (typeof streamManager !== "undefined" && streamManager.isStreaming(currentChatId)) {
+            if (typeof showNotification === "function") {
+                showNotification("This action is unavailable during an in-flight response.", "info");
+            }
+            return;
+        }
 
         const turnDiv = document.querySelector(`[data-turn-id="${turnId}"]`);
         if (turnDiv) {
@@ -1836,9 +1854,7 @@ class ChatRenderer {
             const newEl = this.renderTurn(turn.renderable(), false);
             if (!newEl) return false;
             // renderTurn appended newEl at the bottom; splice it into the old
-            // turn's slot and drop the old node. Preserve the queued-steer marker
-            // so an un-drained steer keeps Edit & Retry hidden.
-            if (oldEl.classList.contains("steer-pending")) newEl.classList.add("steer-pending");
+            // turn's slot and drop the old node.
             oldEl.replaceWith(newEl);
             return true;
         } catch (e) {

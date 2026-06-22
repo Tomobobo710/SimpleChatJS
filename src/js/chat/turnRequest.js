@@ -594,9 +594,6 @@ class TurnRequest {
             if (el.classList.contains("editing") && typeof chatRenderer?.cancelTurnEdit === "function") {
                 chatRenderer.cancelTurnEdit(el);
             }
-            // It's now answered by the continuation — drop the pending marker so
-            // its Edit & Retry action returns like any other request turn.
-            el.classList.remove("steer-pending");
         }
 
         // Reconcile the just-broken response turn from the DB. A break ends the

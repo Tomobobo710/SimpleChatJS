@@ -98,13 +98,6 @@
     color: #eaf3ff;
 }
 
-/* A queued (not-yet-answered) steer hides only "Edit & Retry" — there's no
-   response to that steer yet, so retry has nothing to regenerate. Plain Edit
-   stays available (the steer may sit queued for a long time). */
-.turn.steer-pending .edit-retry-btn {
-    display: none;
-}
-
 /* Tab Button Variant */
 .btn.btn-tab {
     border-bottom: none;

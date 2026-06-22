@@ -126,6 +126,12 @@ class StreamManager {
         const streaming = this.activeStreamState.has(currentChatId);
         const hasContent = typeof messageInputHasContent === "function" ? messageInputHasContent() : false;
         setLoading(streaming, hasContent);
+        // Grey out the regenerate actions (Retry / Edit & Retry) on the viewed
+        // chat's turns while it streams — they'd start a competing turn (clicks
+        // are also guarded in the handlers).
+        if (typeof turnsContainer !== "undefined" && turnsContainer) {
+            turnsContainer.classList.toggle("chat-streaming", streaming);
+        }
     }
 
     reapplyIndicators() {

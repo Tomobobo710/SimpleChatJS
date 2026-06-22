@@ -293,15 +293,14 @@ async function saveSteer(chatId, messageContent) {
         throw new Error("steer save returned no turn_id");
     }
 
-    // Record the (now-saved) steer for the drain, and hide its Edit & Retry while
-    // queued (there's no response to that steer yet to regenerate).
+    // Record the (now-saved) steer for the drain. Its Edit & Retry is greyed by
+    // the chat-streaming rule (the chat is streaming while a steer is queued), so
+    // no per-steer marking is needed.
     streamManager.enqueueSteer(chatId, {
         turnId: saved.turn_id,
         parentTurnId: saved.parent_turn_id,
         content: messageContent,
     });
-    const steerEl = turnsContainer.querySelector(`.request-turn[data-turn-id="${saved.turn_id}"]`);
-    if (steerEl) steerEl.classList.add("steer-pending");
 
     logger.info(`[STEER] Queued steer for chat ${chatId} (turn ${saved.turn_id})`);
 }
