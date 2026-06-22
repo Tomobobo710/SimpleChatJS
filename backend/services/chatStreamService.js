@@ -177,8 +177,7 @@ async function executeStreamingLoop(
     requestTurnId = null,
     enabledToolsFilter = null,
     shellInfo = null,
-    cwd = null,
-    responseTurnId = null
+    cwd = null
 ) {
     const currentSettings = getCurrentSettings();
 
@@ -197,19 +196,18 @@ async function executeStreamingLoop(
         }
     });
 
-    // Generate turn info for this conversation turn.
-    // Round 1 uses the frontend's pre-allocated response turn_id when provided
-    // (steering needs the response's turn_id to be known before the response is
-    // saved, so steers can parent to it at save time). Tool rounds
-    // (responseCounter > 1) inherit that same turn_id via the recursion's
-    // `turnInfo`, so they don't need the override.
+    // Generate turn info for this conversation turn. The response owns its
+    // identity — the backend mints the response turn_id here and announces it via
+    // the X-Response-Turn-Id header; the request never carries it. Tool rounds
+    // (responseCounter > 1) reuse the round-1 turn_id via the recursion's
+    // `turnInfo`.
     let turnInfo;
     if (responseCounter > 1 && requestTurnId) {
         turnInfo = getTurnInfo(parentTurnId, requestTurnId);
     } else if (requestTurnId) {
-        turnInfo = getTurnInfo(requestTurnId, responseTurnId);
+        turnInfo = getTurnInfo(requestTurnId);
     } else {
-        turnInfo = getTurnInfo(null, responseTurnId);
+        turnInfo = getTurnInfo(null);
     }
     turnInfo.turn_type = 'response';
 
@@ -942,7 +940,7 @@ async function executeToolCallsAndContinue(
 // Process chat request (entry point from routes)
 async function processRequest(req, res) {
     const { db } = require("../config/database");
-    const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, history_anchor_turn_id, response_turn_id } = req.body || {};
+    const { chat_id, enabled_tools, request_id, parent_turn_id, turn_id, history_anchor_turn_id } = req.body || {};
     try {
 
         // Build messages for API from chat history.
@@ -1018,15 +1016,12 @@ async function processRequest(req, res) {
             turn_id,
             enabled_tools,
             shellInfo,
-            cwd,
-            response_turn_id
+            cwd
         );
     } catch (error) {
         log("[CHAT] Error:", error);
 
-        // Use the pre-allocated response turn_id so an errored response keeps its
-        // own identity (and never collides with the request/steer turn_id).
-        const turnInfo = getTurnInfo(parent_turn_id, response_turn_id || turn_id);
+        const turnInfo = getTurnInfo(parent_turn_id, turn_id);
         turnInfo.turn_type = 'response';
         if (chat_id) {
             const errorMessage = {

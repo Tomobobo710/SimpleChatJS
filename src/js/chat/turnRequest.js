@@ -19,20 +19,6 @@ class TurnRequest {
         return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    // Pre-allocate a response turn_id (UUID) on the frontend so the in-flight
-    // response's identity is known before it's saved — steers parent to it.
-    static generateTurnId() {
-        if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-            return crypto.randomUUID();
-        }
-        // Fallback: RFC-4122-ish v4 from Math.random (Electron renderer always
-        // has crypto.randomUUID, so this is just defensive).
-        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-            const r = (Math.random() * 16) | 0;
-            return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-        });
-    }
-
     async saveRequest(requestId) {
         if (this.requestOrigin === "retry") return null;
         // Steering continuation: the queued steers are already persisted; the
@@ -55,19 +41,9 @@ class TurnRequest {
             const contentForDb = Array.isArray(msg.content) ? JSON.stringify(msg.content) : msg.content;
             const dbEntry = { role: msg.role, content: contentForDb, turn_type: 'request' };
 
-            let params;
-            if (i === 0) {
-                params = this.parentTurnId ? { parent_turn_id: this.parentTurnId } : null;
-                // A steer pre-generates its turn_id (so it can be queued + chained
-                // synchronously, race-free); honor it so the DB row's turn_id
-                // matches the queue entry. Only "steer" — edit_retry deliberately
-                // mints a fresh sibling turn_id, so it must NOT reuse this.turnId.
-                if (this.requestOrigin === "steer" && this.turnId) {
-                    params = { ...(params || {}), turn_id: this.turnId };
-                }
-            } else {
-                params = { turn_id: firstSave.turn_id, parent_turn_id: firstSave.parent_turn_id };
-            }
+            const params = i === 0
+                ? (this.parentTurnId ? { parent_turn_id: this.parentTurnId } : null)
+                : { turn_id: firstSave.turn_id, parent_turn_id: firstSave.parent_turn_id };
 
             const result = await saveCompleteMessage(this.chatId, dbEntry, params);
             if (i === 0) {
@@ -179,8 +155,7 @@ class TurnRequest {
             requestId,
             effectiveParentTurnId,
             effectiveTurnId,
-            effectiveHistoryAnchor,
-            this.responseTurnId
+            effectiveHistoryAnchor
         );
     }
 
@@ -198,9 +173,20 @@ class TurnRequest {
         container.appendChild(responseTurnDiv);
         responseTurnDiv.appendChild(tempContainer);
 
-        const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: this.responseTurnId || null, parentTurnId: expectedParentTurnId, requestTurnId: requestTurnInfo?.turn_id || null, abortController, requestId };
+        // The response owns its identity: the backend mints the response turn_id
+        // and announces it in the X-Response-Turn-Id header. We expose it on the
+        // entry as a promise so a steer issued before the header lands can await
+        // the announcement rather than the request having to pre-mint it.
+        let announceResponseTurnId;
+        const responseTurnIdPromise = new Promise((resolve) => { announceResponseTurnId = resolve; });
+        const streamEntry = { processor, tempContainer, liveRenderer, responseTurnDiv, responseTurnId: null, responseTurnIdPromise, parentTurnId: expectedParentTurnId, requestTurnId: requestTurnInfo?.turn_id || null, abortController, requestId };
         streamEntry.projectId = window.currentProjectId || null;
         streamManager.register(activeChatId, streamEntry);
+
+        // Resolve the announcement promise once, with the response's id (on the
+        // header) or null (if the stream ends/errors before announcing one), so
+        // an awaiting steer never hangs. Double-resolve is a no-op.
+        const announce = (id) => { if (announceResponseTurnId) announceResponseTurnId(id || null); };
 
         let toolEventSource = null;
         try {
@@ -232,6 +218,7 @@ class TurnRequest {
 
         const cleanupAndError = (err) => {
             errorAlreadyHandled = true;
+            announce(streamEntry.responseTurnId);
             if (toolEventSource) toolEventSource.close();
             streamManager.unregister(activeChatId);
             streamEntry.tempContainer.remove();
@@ -266,6 +253,7 @@ class TurnRequest {
             }
             savedResponseTurn = { turn_id: responseTurnId, parent_turn_id: responseParentTurnId };
             streamEntry.responseTurnId = responseTurnId;
+            announce(responseTurnId);
 
             const streamErrorType = response.headers.get("X-Stream-Error");
             if (streamErrorType) {
@@ -341,6 +329,7 @@ class TurnRequest {
             return { savedResponseTurn, responseDebugData, processor, chatId: activeChatId };
         } catch (error) {
             if (!errorAlreadyHandled) {
+                announce(streamEntry.responseTurnId);
                 if (toolEventSource) toolEventSource.close();
                 streamManager.unregister(activeChatId);
                 streamEntry.tempContainer.remove();
@@ -511,9 +500,6 @@ class TurnRequest {
 
     async execute() {
         const requestId = TurnRequest.generateRequestId();
-        // Pre-allocate the response turn_id up front so a steer issued mid-stream
-        // can parent to it (it's stored on the stream entry by stream()).
-        this.responseTurnId = TurnRequest.generateTurnId();
         const requestTurnInfo = await this.saveRequest(requestId);
 
         // Remove previous turns for this lineage if retrying
@@ -592,6 +578,11 @@ class TurnRequest {
     // the queue is empty, so steers that arrive mid-continuation are caught (§5.7).
     async _maybeContinueSteering(savedResponseTurn) {
         const chatId = this.chatId;
+        // Steer saves are serialized on streamManager.steerChain; wait for any
+        // in-flight save to settle so the queue holds their backend-minted
+        // turn_ids (and DB rows exist) before we build the continuation.
+        const chain = streamManager.steerChain.get(chatId);
+        if (chain) { try { await chain; } catch (_) {} }
         const steers = streamManager.drainSteeringQueue(chatId);
         if (!steers || steers.length === 0) return;
 
@@ -606,6 +597,17 @@ class TurnRequest {
             // It's now answered by the continuation — drop the pending marker so
             // its Edit & Retry action returns like any other request turn.
             el.classList.remove("steer-pending");
+        }
+
+        // Reconcile the just-broken response turn from the DB. A break ends the
+        // turn the instant the tool round finishes, which races the tool-result
+        // event (`tool_execution_complete`) — that event rides the separate
+        // /api/tools EventSource channel and can lose to the main stream's `done`,
+        // leaving the live dropdown stuck on "Executing...". The DB already has
+        // the result (saved before `done`), so re-render that one turn from it.
+        if (savedResponseTurn?.turn_id && currentChatId === chatId
+            && typeof chatRenderer?.rerenderTurnInPlace === "function") {
+            await chatRenderer.rerenderTurnInPlace(savedResponseTurn.turn_id);
         }
 
         // The steers were appended while the response was still streaming, so the

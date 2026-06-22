@@ -208,10 +208,15 @@ async function onSubmitRequest() {
     }
 }
 
-// Queue a steer for the currently-viewed chat. The message is persisted with its
-// correct parent (§3.1) and rendered immediately as a request turn; it's picked
-// up at the next stream break (see TurnRequest._maybeContinueSteering), which
-// fires a single continuation request — no reparenting needed.
+// Queue a steer for the currently-viewed chat. The steer is persisted (backend
+// mints its turn_id) and rendered as a request turn, then picked up at the next
+// stream break (see TurnRequest._maybeContinueSteering) which fires a single
+// continuation request — no reparenting needed.
+//
+// Saves are serialized per chat via streamManager.steerChain so that each steer's
+// save runs only after the previous steer's save has returned its backend-minted
+// turn_id; the next steer reads that as its parent. This keeps the backend as the
+// sole turn_id authority while still chaining rapid steers correctly.
 async function enqueueSteer() {
     const messageContent = buildMessageContentFromInput();
     if (messageContent === null) return;
@@ -223,59 +228,80 @@ async function enqueueSteer() {
     clearSelectedImages();
     clearSelectedDocuments();
     streamManager.refreshSendButton();
-
-    // Pre-generate the steer's turn_id and record it in the queue SYNCHRONOUSLY,
-    // before any await. Correct parent at save time (§3.1): chain onto the
-    // previous queued steer, or — for the first steer — onto the in-flight
-    // response's pre-allocated turn_id. Doing this before the await is what makes
-    // two rapid steers chain (steerB → steerA) instead of both parenting to the
-    // response (which would make them siblings).
-    const turnId = TurnRequest.generateTurnId();
-    const queue = streamManager.steeringQueue.get(chatId) || [];
-    const stream = streamManager.getStream(chatId);
-    const parentTurnId = queue.length
-        ? queue[queue.length - 1].turnId
-        : ((stream && stream.responseTurnId) || null);
-    streamManager.enqueueSteer(chatId, { turnId, parentTurnId, content: messageContent });
+    messageInput.focus();
 
     // Ask the in-flight response to end at its next message boundary (tool-round
     // boundary) so this steer becomes the next request, rather than waiting for
     // the whole agentic run to finish. Fire-and-forget.
+    const stream = streamManager.getStream(chatId);
     if (stream && stream.requestId) {
         requestSteerBreak(stream.requestId);
     }
 
+    // Chain this steer's save after the previous one for this chat.
+    const prev = streamManager.steerChain.get(chatId) || Promise.resolve();
+    const thisSave = prev.then(() => saveSteer(chatId, messageContent));
+    // `.catch` keeps the chain alive if a save fails (so later steers still run).
+    streamManager.steerChain.set(chatId, thisSave.catch(() => {}));
+
     try {
-        const messages = [{ role: "user", content: messageContent }];
-        const turnRequest = new TurnRequest({
-            messages,
-            parentTurnId,
-            turnId,
-            requestOrigin: "steer",
-            chatId,
-        });
-        const saved = await turnRequest.saveAndRender();
-        if (!saved || !saved.turn_id) {
-            throw new Error("steer save returned no turn_id");
-        }
-
-        // Mark the rendered turn so its Edit & Retry action stays hidden while it
-        // is queued (there's no response to that steer yet to regenerate).
-        const steerEl = turnsContainer.querySelector(`.request-turn[data-turn-id="${turnId}"]`);
-        if (steerEl) steerEl.classList.add("steer-pending");
-
-        logger.info(`[STEER] Queued steer for chat ${chatId} (turn ${turnId})`);
+        await thisSave;
     } catch (error) {
         logger.error("[STEER] Failed to enqueue steer:", error);
         showError(`Failed to steer: ${error.message}`);
-        // Roll back the optimistic queue entry so a failed save isn't sent.
-        const q = streamManager.steeringQueue.get(chatId);
-        if (q) {
-            const idx = q.findIndex((e) => e.turnId === turnId);
-            if (idx !== -1) q.splice(idx, 1);
-        }
     } finally {
         streamManager.refreshSendButton();
-        messageInput.focus();
     }
+}
+
+// Persist + render one steer. Runs serialized (see enqueueSteer): the previous
+// steer in this chat has already saved, so its turn_id is available as this
+// steer's parent. The backend mints this steer's turn_id.
+async function saveSteer(chatId, messageContent) {
+    // Parent: the previous queued steer (already saved — serialized), or for the
+    // first steer the in-flight response's own announced turn_id (from the
+    // X-Response-Turn-Id header). The request never carries a response id.
+    const queue = streamManager.steeringQueue.get(chatId) || [];
+    let parentTurnId;
+    if (queue.length) {
+        parentTurnId = queue[queue.length - 1].turnId;
+    } else {
+        const stream = streamManager.getStream(chatId);
+        if (stream && stream.responseTurnId) {
+            parentTurnId = stream.responseTurnId;
+        } else if (stream && stream.responseTurnIdPromise) {
+            // Header not landed yet (sub-ms; paste-and-fire) — await the
+            // announcement rather than minting an id on the request side.
+            parentTurnId = await stream.responseTurnIdPromise;
+        } else {
+            // No live stream (extreme drain-window edge): fall back to the chat's
+            // current active leaf so the steer still attaches to the conversation.
+            parentTurnId = await getActiveTerminalTurnId(chatId);
+        }
+    }
+
+    const messages = [{ role: "user", content: messageContent }];
+    const turnRequest = new TurnRequest({
+        messages,
+        parentTurnId,
+        turnId: null,            // backend mints the turn_id
+        requestOrigin: "steer",
+        chatId,
+    });
+    const saved = await turnRequest.saveAndRender();
+    if (!saved || !saved.turn_id) {
+        throw new Error("steer save returned no turn_id");
+    }
+
+    // Record the (now-saved) steer for the drain, and hide its Edit & Retry while
+    // queued (there's no response to that steer yet to regenerate).
+    streamManager.enqueueSteer(chatId, {
+        turnId: saved.turn_id,
+        parentTurnId: saved.parent_turn_id,
+        content: messageContent,
+    });
+    const steerEl = turnsContainer.querySelector(`.request-turn[data-turn-id="${saved.turn_id}"]`);
+    if (steerEl) steerEl.classList.add("steer-pending");
+
+    logger.info(`[STEER] Queued steer for chat ${chatId} (turn ${saved.turn_id})`);
 }

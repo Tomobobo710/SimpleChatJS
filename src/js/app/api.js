@@ -31,8 +31,7 @@ function initiateMessageRequest(
     requestId = null,
     parentTurnId = null,
     turnId = null,
-    historyAnchorTurnId = null,
-    responseTurnId = null
+    historyAnchorTurnId = null
 ) {
     try {
         // Require a requestId; missing requestId is a programmer error.
@@ -47,10 +46,7 @@ function initiateMessageRequest(
             request_id: generatedRequestId,
             parent_turn_id: parentTurnId,
             turn_id: turnId,
-            history_anchor_turn_id: historyAnchorTurnId,
-            // Pre-allocated response turn_id (steering needs the response's id
-            // known before it's saved). Backend uses it for the round-1 response.
-            response_turn_id: responseTurnId
+            history_anchor_turn_id: historyAnchorTurnId
         };
 
         // Create abort controller for this request

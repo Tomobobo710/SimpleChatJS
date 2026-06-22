@@ -6,6 +6,11 @@ class StreamManager {
         // already saved to the DB and rendered as a request turn; the queue is
         // drained at the next stream break to fire a continuation request.
         this.steeringQueue = new Map();
+        // Per-chat promise chain that serializes steer saves. Each steer's save
+        // runs only after the previous one returns its backend-minted turn_id, so
+        // the next steer can read it as its parent. The backend stays the sole
+        // turn_id authority — the frontend never mints them.
+        this.steerChain = new Map();
     }
 
     // Push a steer that has already been persisted + rendered.
