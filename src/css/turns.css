@@ -250,7 +250,7 @@ details[open] .dropdown-content {
     /* Tahoma's glyphs sit low in the line box vs the symmetric chevron, so nudge
        the text up. NOTE: top only works because of position: relative. */
     position: relative;
-    top: 0px;
+    top: -1px;
 }
 
 /* Right-aligned header badge (e.g. "MCP" for MCP-sourced tool calls).

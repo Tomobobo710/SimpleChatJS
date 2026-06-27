@@ -62,6 +62,21 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                         }
                     }
                 } else if (currentBlock.type === 'codeblock') {
+                    // The language label tab may not have existed at first render
+                    // (``` streams a beat before the language word). Add/sync it now
+                    // that the language is known.
+                    const blockLang = currentBlock.metadata.language;
+                    if (blockLang) {
+                        let langLabel = blockElement.querySelector('.code-lang');
+                        if (!langLabel) {
+                            langLabel = document.createElement('div');
+                            langLabel.className = 'code-lang';
+                            langLabel.textContent = blockLang;
+                            blockElement.insertBefore(langLabel, blockElement.firstChild);
+                        } else if (langLabel.textContent !== blockLang) {
+                            langLabel.textContent = blockLang;
+                        }
+                    }
                     // Update live streaming code block
                     const codeElement = blockElement.querySelector('code');
                     if (codeElement) {
