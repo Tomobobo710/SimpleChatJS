@@ -42,10 +42,15 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                 
                 // Update content without destroying the dropdown structure
                 if (currentBlock.type === 'tool') {
-                    const dropdownInner = blockElement.querySelector('.dropdown-inner');
-                    if (dropdownInner) {
-                        const formattedContent = formatToolContent(currentBlock.content, currentBlock.metadata?.toolName);
-                        dropdownInner.innerHTML = formattedContent;
+                    if (currentBlock.metadata?.toolName === 'shell_run' || currentBlock.metadata?.isShellConsole) {
+                        // Live shell console: append to the terminal body in place.
+                        updateShellConsoleElement(blockElement, currentBlock.metadata || {});
+                    } else {
+                        const dropdownInner = blockElement.querySelector('.dropdown-inner');
+                        if (dropdownInner) {
+                            const formattedContent = formatToolContent(currentBlock.content, currentBlock.metadata?.toolName);
+                            dropdownInner.innerHTML = formattedContent;
+                        }
                     }
                 } else if (currentBlock.type === 'thinking') {
                     const dropdownInner = blockElement.querySelector('.dropdown-inner');
@@ -57,12 +62,34 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                         }
                     }
                 } else if (currentBlock.type === 'codeblock') {
+                    // The language label tab may not have existed at first render
+                    // (``` streams a beat before the language word). Add/sync it now
+                    // that the language is known.
+                    const blockLang = currentBlock.metadata.language;
+                    if (blockLang) {
+                        blockElement.classList.add('has-lang');
+                        let langLabel = blockElement.querySelector('.code-lang');
+                        if (!langLabel) {
+                            langLabel = document.createElement('div');
+                            langLabel.className = 'code-lang';
+                            langLabel.textContent = blockLang;
+                            // Before the <pre> (keeps `.code-lang + pre` styling) and
+                            // after the sticky copy wrap.
+                            const preEl = blockElement.querySelector('pre');
+                            blockElement.insertBefore(langLabel, preEl);
+                        } else if (langLabel.textContent !== blockLang) {
+                            langLabel.textContent = blockLang;
+                        }
+                    }
                     // Update live streaming code block
                     const codeElement = blockElement.querySelector('code');
                     if (codeElement) {
                         if (currentBlock.metadata.isStreaming) {
-                            // Still streaming - show raw content with cursor
-                            codeElement.innerHTML = escapeHtml(currentBlock.content) + '<span class="code-cursor">|</span>';
+                            // Still streaming — highlight live (SimpleSyntax is
+                            // per-line + self-escaping, so partial code is safe).
+                            const lang = currentBlock.metadata.language;
+                            const hl = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, lang) : escapeHtml(currentBlock.content);
+                            codeElement.innerHTML = hl + '<span class="code-cursor">|</span>';
                         } else {
                             // Streaming finished - use SimpleSyntax highlighting
                             const language = currentBlock.metadata.language;

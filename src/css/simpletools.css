@@ -44,6 +44,28 @@
     color: #888;
 }
 
+/* Output size limit (Tools tab) */
+.simple-tools-limit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 8px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+}
+
+.simple-tools-limit label {
+    font-weight: bold;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.simple-tools-limit input[type="number"] {
+    width: 100px;
+}
+
 /* Shell selector (Tools tab) */
 .shell-selector {
     display: flex;
@@ -61,6 +83,188 @@
     color: #888;
     font-style: italic;
     word-break: break-all;
+}
+
+/* Live shell console (shell_run tool blocks). Chrome matches .tool-dropdown
+   (green left accent, ▶/▼ marker, #2a2a2a/#3a3a3a frame); body stays terminal-black. */
+.shell-console {
+    margin: 2px 0;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #2a2a2a;
+    font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
+}
+
+.shell-console-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: #0c0c0c;
+    border-left: 3px solid #5a5a5a; /* dark grey — shell_run's accent */
+    color: #e0e0e0;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+    /* Matches .dropdown-toggle so the shell console header is the same height as
+       the other tool rows. Keep these two min-heights in sync. */
+    box-sizing: border-box;
+    min-height: 30px;
+}
+
+.shell-console-header:hover {
+    background: #161616;
+}
+
+.shell-console-chevron {
+    flex-shrink: 0;
+    color: #e0e0e0;
+    font-size: 11px;
+}
+
+.shell-console-chevron::before {
+    content: "\25bc"; /* ▼ open */
+}
+
+.shell-console.collapsed .shell-console-chevron::before {
+    content: "\25b6"; /* ▶ collapsed */
+}
+
+.shell-console.collapsed .shell-console-body {
+    display: none;
+}
+
+/* Header tool name — inherits the header's monospace code font + 13px size. */
+.shell-console-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shell-console-prompt {
+    color: #5fd35f;
+    font-weight: bold;
+}
+
+/* Command line at the top of the terminal body, separated from the output. */
+.shell-console-cmdline {
+    display: block;
+    color: #ffffff;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #2c2c2c;
+}
+
+/* Raw JSON toggle — left of the status badge, only shown when expanded. */
+.shell-console-raw-toggle {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #3a3a3a;
+    color: #888;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.shell-console-raw-toggle:hover {
+    color: #e0e0e0;
+    border-color: #555;
+}
+
+.shell-console-raw-toggle.active {
+    color: #e0e0e0;
+    background: #2a2a2a;
+    border-color: #555;
+}
+
+.shell-console.collapsed .shell-console-raw-toggle {
+    display: none;
+}
+
+.shell-console-status {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+.shell-console-status.running {
+    color: #e0c060;
+    background: rgba(224, 192, 96, 0.12);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.shell-console-status.ok {
+    color: #5fd35f;
+    background: rgba(95, 211, 95, 0.12);
+}
+
+.shell-console-status.err {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.12);
+}
+
+.shell-console-spinner {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e0c060;
+    display: inline-block;
+    animation: shell-console-pulse 1s ease-in-out infinite;
+}
+
+@keyframes shell-console-pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+.shell-console-body {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 360px;
+    overflow: auto;
+    color: #d6d6d6;
+    font-size: 12.5px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #0c0c0c;
+    border-top: 1px solid #555;
+}
+
+/* Raw JSON view drops the terminal-black theme for the standard grey dropdown
+   content theme, so it matches the other tools. */
+.shell-console.raw-mode .shell-console-body {
+    background: #1a1a1a;
+    padding: 8px;
+}
+
+/* The other tools get nested grey boxes from a broad `details div` rule; the shell
+   console isn't a <details>, so mirror just the box look (bg/padding/radius — NOT
+   color/font-size, so the blue section titles stay intact). */
+.shell-console.raw-mode .shell-console-body div {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 6px;
+    border-radius: 0 0 4px 4px;
+}
+
+.shell-console-empty {
+    color: #777;
+    font-style: italic;
 }
 
 /* Env context toggles (Tokens tab, System Prompts section) */

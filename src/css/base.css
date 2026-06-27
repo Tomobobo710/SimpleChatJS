@@ -200,11 +200,24 @@ pre code, code[class*="language-"] {
     position: relative;
 }
 
+/* Copy button rides along on scroll: a zero-height sticky bar pinned near the top
+   of the scroll area, holding the button at the right. Sticks while the code block
+   is in view, releases when you scroll past it. */
+.code-copy-wrap {
+    position: sticky;
+    top: 8px;
+    height: 0;
+    text-align: right;
+    z-index: 10;
+    pointer-events: none; /* the 0-height bar shouldn't eat clicks; button re-enables */
+}
+
 /* Code block copy button */
 .code-copy-btn {
-    position: absolute;
-    top: 30px;
-    right: 8px;
+    position: relative;
+    top: 8px; /* no language tab: sit near the code's top-right */
+    margin-right: 8px;
+    pointer-events: auto;
     background: #333;
     border: 1px outset #555;
     color: #e0e0e0;
@@ -214,6 +227,11 @@ pre code, code[class*="language-"] {
     opacity: 0;
     transition: opacity 0.2s ease;
     z-index: 10;
+}
+
+/* With a language tab present, drop the button below it into the code area. */
+.live-code-block.has-lang .code-copy-btn {
+    top: 30px;
 }
 
 .code-copy-btn:hover {

@@ -1,5 +1,272 @@
 // ChatRenderer.js
 
+// ===== Live shell console (shell_run tool blocks) =====
+// shell_run renders as a terminal-style console rather than an Arguments/Result
+// dropdown. The same builder/updater serve all three states (live streaming,
+// post-stream, reload) — they read everything from the block's metadata.
+
+// Strip ANSI/VT escape sequences (colors, cursor moves). Phase 1 drops color;
+// a real emulator (xterm.js) would interpret them — that's a later upgrade.
+function shellStripAnsi(s) {
+    // CSI sequences (e.g. \x1b[31m), plus stray OSC and single-char escapes.
+    return s
+        .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+        .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+        .replace(/\x1b[@-Z\\-_]/g, '');
+}
+
+// Resolve carriage returns the way a terminal does: within a line, content after
+// the last \r overwrites what came before (this is how progress bars repaint a
+// single line). Good enough without a full cursor model.
+function shellResolveCarriageReturns(text) {
+    return text.replace(/\r\n/g, '\n').split('\n').map(line => {
+        const i = line.lastIndexOf('\r');
+        return i === -1 ? line : line.slice(i + 1);
+    }).join('\n');
+}
+
+// Phase 1.5: convert ANSI SGR color codes to styled spans (foreground + bold),
+// escape everything else, and drop non-color escape sequences. Not a full terminal
+// (no cursor addressing) but covers typical colored output — git, npm, ls, etc.
+const SHELL_ANSI_FG = {
+    30: '#555555', 31: '#f14c4c', 32: '#23d18b', 33: '#e5e510', 34: '#3b8eea', 35: '#d670d6', 36: '#29b8db', 37: '#e5e5e5',
+    90: '#888888', 91: '#f14c4c', 92: '#23d18b', 93: '#f5f543', 94: '#3b8eea', 95: '#d670d6', 96: '#29b8db', 97: '#ffffff'
+};
+
+function shellAnsiToHtml(raw) {
+    const s = shellResolveCarriageReturns(raw);
+    let html = '';
+    let fg = null, bold = false, open = false;
+    const closeSpan = () => { if (open) { html += '</span>'; open = false; } };
+    const openSpan = () => {
+        closeSpan();
+        const styles = [];
+        if (fg) styles.push('color:' + fg);
+        if (bold) styles.push('font-weight:bold');
+        if (styles.length) { html += `<span style="${styles.join(';')}">`; open = true; }
+    };
+    let i = 0;
+    while (i < s.length) {
+        const next = s.indexOf('\x1b', i);
+        if (next === -1) { html += escapeHtml(s.slice(i)); break; }
+        if (next > i) html += escapeHtml(s.slice(i, next));
+        i = next;
+        const sgr = s.slice(i).match(/^\x1b\[([0-9;]*)m/);
+        if (sgr) {
+            const codes = sgr[1] ? sgr[1].split(';').map(Number) : [0];
+            for (const c of codes) {
+                if (c === 0) { fg = null; bold = false; }
+                else if (c === 1) bold = true;
+                else if (c === 22) bold = false;
+                else if (c === 39) fg = null;
+                else if (SHELL_ANSI_FG[c]) fg = SHELL_ANSI_FG[c];
+            }
+            openSpan();
+            i += sgr[0].length;
+            continue;
+        }
+        // Non-color escape (cursor moves, OSC, etc.) — skip it.
+        const csi = s.slice(i).match(/^\x1b\[[0-9;?]*[ -/]*[@-~]/);
+        if (csi) { i += csi[0].length; continue; }
+        const osc = s.slice(i).match(/^\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/);
+        if (osc) { i += osc[0].length; continue; }
+        const single = s.slice(i).match(/^\x1b[@-Z\\-_]/);
+        if (single) { i += single[0].length; continue; }
+        i += 1; // lone ESC
+    }
+    closeSpan();
+    return html;
+}
+
+function shellConsoleStatusHtml(metadata) {
+    const status = metadata.shellStatus;
+    if (status === 'done') {
+        const code = metadata.shellExitCode;
+        if (metadata.shellSuccess && (code === 0 || code === null)) {
+            return `<span class="shell-console-status ok">exit ${code === null ? 0 : code}</span>`;
+        }
+        const label = (code === null || code === undefined) ? 'error' : `exit ${code}`;
+        return `<span class="shell-console-status err">${escapeHtml(label)}</span>`;
+    }
+    return `<span class="shell-console-status running">running<span class="shell-console-spinner"></span></span>`;
+}
+
+// Raw view: the Arguments + Result JSON, same as the other tool dropdowns show,
+// for transparency behind the pretty terminal. Reuses the .tool-section/.tool-content
+// styling so it looks identical to the rest.
+function shellConsoleRawHtml(metadata) {
+    const args = metadata.arguments || {};
+    const result = metadata.shellResult || (metadata.shellStatus === 'done'
+        ? { success: metadata.shellSuccess, exit_code: metadata.shellExitCode }
+        : { status: 'running' });
+    // Render through the SAME formatter the other tool dropdowns use, so multiline
+    // output is deep-unescaped + pretty-printed identically (real line breaks, not
+    // literal \n) instead of a raw JSON.stringify.
+    const content = `[shell_run]:\nArguments: ${JSON.stringify(args)}\nResult: ${JSON.stringify(result)}`;
+    // Wrapped in .dropdown-inner to match the other tools' nesting (the grey boxes).
+    return '<div class="dropdown-inner">' + formatToolContent(content, 'shell_run', args) + '</div>';
+}
+
+// Body HTML: the command goes at the TOP of the terminal (as a `$ cmd` line —
+// readable and full, unlike the truncated header), followed by the output.
+function shellConsoleBodyHtml(metadata) {
+    if (metadata.shellShowRaw) return shellConsoleRawHtml(metadata);
+
+    const rawOut = metadata.shellOutput || '';
+    const hasOutput = shellStripAnsi(rawOut).trim().length > 0;
+    let bodyOut = hasOutput ? shellAnsiToHtml(rawOut) : '';
+
+    // Done-state notes (error / truncation) appended as plain escaped text.
+    let extras = '';
+    if (metadata.shellStatus === 'done') {
+        if (metadata.shellError && !metadata.shellSuccess) extras += metadata.shellError;
+        if (metadata.shellTruncated) extras += (extras ? '\n' : '') + '[output truncated — older lines omitted]';
+    }
+    if (extras) bodyOut = (bodyOut ? bodyOut + '\n' : '') + escapeHtml(extras);
+
+    // No output: placeholder wording depends on whether it's still running.
+    if (!bodyOut) {
+        bodyOut = `<span class="shell-console-empty">${metadata.shellStatus === 'done' ? '(no output)' : '(no output yet)'}</span>`;
+    }
+
+    const cmd = metadata.command || '';
+    const cmdLine = cmd
+        ? `<div class="shell-console-cmdline"><span class="shell-console-prompt">$</span> ${escapeHtml(cmd)}</div>`
+        : '';
+    if (!cmdLine) return bodyOut;
+    return cmdLine + `<div class="shell-console-out">${bodyOut}</div>`;
+}
+
+// Grace period after a command finishes before the console auto-collapses, so the
+// user has a moment to read the output.
+const SHELL_COLLAPSE_DELAY = 2500;
+
+// Collapse state: open while running, collapsed once done (after the grace period)
+// — unless the user has clicked the header, after which their explicit choice wins.
+function shellConsoleIsCollapsed(metadata) {
+    if (metadata.shellUserToggled) return !!metadata.shellCollapsed;
+    if (metadata.shellStatus !== 'done') return false;
+    return !!metadata.shellAutoCollapsed;
+}
+
+// Schedule the auto-collapse of a finished console. Uses the absolute shellDoneAt
+// timestamp so each (re)rendered element collapses at the right moment even if an
+// earlier element was replaced mid-grace-period. shellDoneAt = 0 (reload) → now.
+function armShellCollapse(el, metadata) {
+    if (metadata.shellUserToggled || metadata.shellAutoCollapsed) return;
+    if (metadata.shellStatus !== 'done') return;
+    if (el._collapseArmed) return;
+    el._collapseArmed = true;
+    const doneAt = metadata.shellDoneAt || 0;
+    const remaining = doneAt ? SHELL_COLLAPSE_DELAY - (Date.now() - doneAt) : 0;
+    if (remaining <= 0) {
+        metadata.shellAutoCollapsed = true;
+        el.classList.add('collapsed');
+        return;
+    }
+    setTimeout(() => {
+        if (metadata.shellUserToggled) return;
+        metadata.shellAutoCollapsed = true;
+        el.classList.add('collapsed');
+    }, remaining);
+}
+
+function buildShellConsoleElement(metadata) {
+    const el = document.createElement('div');
+    el.className = 'shell-console';
+    el.innerHTML = `
+        <div class="shell-console-header">
+            <span class="shell-console-chevron"></span>
+            <span class="shell-console-title">shell_run</span>
+            <button class="shell-console-raw-toggle" title="Toggle raw JSON">{ }</button>
+            ${shellConsoleStatusHtml(metadata)}
+        </div>
+        <div class="shell-console-body"></div>
+    `;
+    const body = el.querySelector('.shell-console-body');
+    body.innerHTML = shellConsoleBodyHtml(metadata);
+    el.classList.toggle('raw-mode', !!metadata.shellShowRaw);
+    if (shellConsoleIsCollapsed(metadata)) el.classList.add('collapsed');
+    armShellCollapse(el, metadata);
+
+    // Raw JSON toggle (Arguments/Result, like the other tools). Lives left of the
+    // status badge, only visible when expanded (CSS). stopPropagation so it doesn't
+    // also trigger the header's collapse handler.
+    const rawBtn = el.querySelector('.shell-console-raw-toggle');
+    rawBtn.classList.toggle('active', !!metadata.shellShowRaw);
+    rawBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        metadata.shellShowRaw = !metadata.shellShowRaw;
+        rawBtn.classList.toggle('active', metadata.shellShowRaw);
+        el.classList.toggle('raw-mode', metadata.shellShowRaw);
+        body.innerHTML = shellConsoleBodyHtml(metadata);
+        // Engaging with the raw view counts as taking control — keep the row open
+        // so the auto-collapse timer doesn't yank it shut while you're reading.
+        metadata.shellUserToggled = true;
+        metadata.shellCollapsed = false;
+    });
+
+    // Header click toggles, and pins the user's choice (mutates the shared block
+    // metadata so later re-renders/updates respect it).
+    el.querySelector('.shell-console-header').addEventListener('click', () => {
+        const nowCollapsed = !el.classList.contains('collapsed');
+        metadata.shellUserToggled = true;
+        metadata.shellCollapsed = nowCollapsed;
+        el.classList.toggle('collapsed', nowCollapsed);
+        if (!nowCollapsed) { const b = el.querySelector('.shell-console-body'); if (b) b.scrollTop = b.scrollHeight; }
+    });
+
+    // Defer scroll until attached; harmless if not yet in the DOM.
+    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+    return el;
+}
+
+function updateShellConsoleElement(el, metadata) {
+    if (!el) return;
+    const header = el.querySelector('.shell-console-header');
+    if (header) {
+        const oldStatus = header.querySelector('.shell-console-status');
+        if (oldStatus) oldStatus.outerHTML = shellConsoleStatusHtml(metadata);
+        const rawBtn = header.querySelector('.shell-console-raw-toggle');
+        if (rawBtn) rawBtn.classList.toggle('active', !!metadata.shellShowRaw);
+    }
+    const body = el.querySelector('.shell-console-body');
+    if (body) {
+        const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 30;
+        body.innerHTML = shellConsoleBodyHtml(metadata);
+        el.classList.toggle('raw-mode', !!metadata.shellShowRaw);
+        if (atBottom) body.scrollTop = body.scrollHeight;
+    }
+    // Re-apply auto collapse/expand (running→open, done→collapsed) unless the user
+    // has taken control, then arm the delayed auto-collapse for a fresh finish.
+    el.classList.toggle('collapsed', shellConsoleIsCollapsed(metadata));
+    armShellCollapse(el, metadata);
+}
+
+// ===== Deterministic MCP accent color =====
+// Each MCP tool gets a stable color seeded by its name, kept clear of the hues
+// already used by the built-in tools so they never clash. Fed to CSS via the
+// --mcp-bar / --mcp-tint custom properties (not a raw inline border).
+function hueCircularDist(a, b) {
+    const d = Math.abs(a - b) % 360;
+    return Math.min(d, 360 - d);
+}
+
+function mcpBarHue(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    let hue = h % 360;
+    // Reserved hues: red(0)/yellow(43)/green(134)/blue(213)/purple(258). Nudge the
+    // hash away from any of them so MCP colors stay distinct from the built-ins.
+    const reserved = [0, 43, 134, 213, 258];
+    let guard = 0;
+    while (reserved.some(r => hueCircularDist(hue, r) < 22) && guard < 36) {
+        hue = (hue + 11) % 360;
+        guard++;
+    }
+    return hue;
+}
+
 class ChatRenderer {
     constructor(containerElement) {
         this.container = containerElement;
@@ -83,7 +350,10 @@ class ChatRenderer {
                 if (blockData.type === "thinking") {
                     stateKey = "thinking_" + thinkingIndex;
                     thinkingIndex++;
-                } else if (blockData.type === "tool") {
+                } else if (blockData.type === "tool" && blockData.metadata?.toolName !== "shell_run") {
+                    // shell_run renders as a console, not a collapsible dropdown, so
+                    // it's excluded from the .streaming-dropdown ordinal state keys
+                    // (which the post-stream capture also skips). Keep indices aligned.
                     stateKey = "tool_" + toolIndex;
                     toolIndex++;
                 }
@@ -200,6 +470,11 @@ class ChatRenderer {
             }
         }
 
+        // shell_run renders as a live terminal console, not a dropdown.
+        if (toolName === 'shell_run') {
+            return buildShellConsoleElement(metadata || {});
+        }
+
         // MCP tools arrive namespaced as mcp__<server>__<tool>. Show the clean
         // tool name in the title and surface an "MCP" badge for transparency.
         const mcpInfo = parseMcpToolName(toolName);
@@ -212,6 +487,15 @@ class ChatRenderer {
         const formattedContent = formatToolContent(content, toolName, metadata?.toolArgs);
 
         const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen, badge);
+        // Tag with the tool so CSS can color the left accent bar per tool
+        // (read=blue, write=green, edit=yellow, shell=grey). MCP tools get a color
+        // seeded from the tool name, fed to CSS via --mcp-bar / --mcp-tint.
+        dropdown.element.dataset.tool = mcpInfo.isMcp ? 'mcp' : toolName;
+        if (mcpInfo.isMcp) {
+            const hue = mcpBarHue(mcpInfo.toolName || toolName || '');
+            dropdown.element.style.setProperty('--mcp-bar', `hsl(${hue}, 65%, 62%)`);
+            dropdown.element.style.setProperty('--mcp-tint', `hsla(${hue}, 65%, 62%, 0.12)`);
+        }
         dropdown.setContent(formattedContent);
         return dropdown.element;
     }
@@ -221,8 +505,10 @@ class ChatRenderer {
         const div = document.createElement("div");
         div.className = "live-code-block";
 
-        // Add language label if present
+        // Add language label if present (and mark the block so the copy button
+        // offsets below the tab; without a tab it sits near the top).
         if (metadata.language) {
+            div.classList.add("has-lang");
             const langLabel = document.createElement("div");
             langLabel.className = "code-lang";
             langLabel.textContent = metadata.language;
@@ -241,8 +527,9 @@ class ChatRenderer {
 
         if (metadata.isStreaming) {
             code.className = `streaming-code ${codeClass}`.trim();
-            // For streaming, escape HTML and add cursor
-            code.innerHTML = escapeHtml(content) + '<span class="code-cursor">|</span>';
+            // Highlight live while streaming (SimpleSyntax is per-line + self-escaping).
+            const hl = window.SimpleSyntax ? SimpleSyntax.highlight(content, metadata.language) : escapeHtml(content);
+            code.innerHTML = hl + '<span class="code-cursor">|</span>';
         } else {
             code.className = codeClass;
             // For final content, use SimpleSyntax highlighting
@@ -254,14 +541,18 @@ class ChatRenderer {
         pre.appendChild(code);
         div.appendChild(pre);
 
-        // Add copy button
+        // Copy button in a sticky wrap, inserted FIRST so it pins to the top of the
+        // scroll area and follows you down a long code block (see .code-copy-wrap).
+        const copyWrap = document.createElement("div");
+        copyWrap.className = "code-copy-wrap";
         const copyBtn = document.createElement("button");
         copyBtn.className = "code-copy-btn";
         copyBtn.textContent = "Copy";
         copyBtn.addEventListener("click", () => {
             this.copyCodeToClipboard(content);
         });
-        div.appendChild(copyBtn);
+        copyWrap.appendChild(copyBtn);
+        div.insertBefore(copyWrap, div.firstChild);
 
         return div;
     }
@@ -284,17 +575,11 @@ class ChatRenderer {
 
         dropdown.setContent(errorContent);
 
-        // Add error-specific styling
+        // Error styling lives entirely in CSS (.error-dropdown in turns.css): grey
+        // frame + a single 3px red toggle bar, matching the other tool dropdowns.
+        // (Previously set here as inline styles, which overrode the CSS and produced
+        // a second, full-height red border-left bar.)
         dropdown.element.classList.add("error-dropdown");
-        dropdown.element.style.borderLeft = "4px solid #ff4444";
-
-        // Style the dropdown toggle (header) - use correct selector and add null check
-        const dropdownToggle = dropdown.element.querySelector(".dropdown-toggle");
-        if (dropdownToggle) {
-            dropdownToggle.style.backgroundColor = "#4a1a1a"; // Dark red background
-            dropdownToggle.style.color = "#ff9999"; // Light red text
-            dropdownToggle.style.borderLeft = "3px solid #cc0000";
-        }
 
         return dropdown.element;
     }

@@ -162,6 +162,9 @@ class TurnRequest {
     async stream({ fetchPromise, requestId, requestTurnInfo, container, expectedParentTurnId, abortController }) {
         const activeChatId = currentChatId;
         const processor = new StreamingMessageProcessor();
+        // Live stream (not a reload/replay) — lets the shell console linger a few
+        // seconds after a command finishes before auto-collapsing.
+        processor._live = true;
         const tempContainer = document.createElement("div");
         tempContainer.style.width = "100%";
         tempContainer.style.boxSizing = "border-box";

@@ -195,7 +195,8 @@ function formatStreamingContent(content) {
         } else {
             logger.debug(`[STREAMING-FMT] Open code fence (lang=${lang}), rest=${rest.slice(0, 80)}`);
             const langLabel = lang ? `<div class="code-lang">${lang}</div>` : '';
-            html += `${langLabel}<pre><code class="streaming-code language-${lang}">${escapeHtml(rest)}<span class="code-cursor">|</span></code></pre>`;
+            const hl = window.SimpleSyntax ? SimpleSyntax.highlight(rest, lang) : escapeHtml(rest);
+            html += `${langLabel}<pre><code class="streaming-code language-${lang}">${hl}<span class="code-cursor">|</span></code></pre>`;
             lastIndex = content.length;
             break;
         }

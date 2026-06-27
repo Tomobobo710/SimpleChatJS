@@ -793,7 +793,15 @@ async function executeToolCallsAndContinue(
             if (toolCall.function.name.startsWith('mcp__')) {
                 toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
             } else if (toolCall.function.name === 'shell_run') {
-                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd });
+                // Stream stdout/stderr chunks to the live console as they arrive.
+                // The resolved result (capped) is still what the model sees.
+                const onChunk = requestId
+                    ? (stream, chunk) => addToolEvent(requestId, {
+                        type: "shell_output_chunk",
+                        data: { id: toolCall.id, name: toolCall.function.name, stream, chunk }
+                    })
+                    : undefined;
+                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd, onChunk });
             } else {
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
             }
@@ -983,7 +991,7 @@ async function processRequest(req, res) {
 
         // Merge SimpleTools definitions
         const simpleConfig = simpleTools.loadConfig();
-        const simpleDefs = simpleTools.getToolDefinitions(shellInfo);
+        const simpleDefs = simpleTools.getToolDefinitions(shellInfo, simpleConfig);
         for (const def of simpleDefs) {
             if (simpleTools.isToolEnabled(def.name, simpleConfig)) {
                 tools.push({
