@@ -118,16 +118,6 @@
     margin-left: 10px;
 }
 
-/* Version navigation container (legacy) */
-.version-nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 10px;
-    color: var(--text-dim);
-    margin-left: auto; /* Push to right side */
-}
-
 /* Navigation buttons */
 .nav-btn {
     width: 20px;
@@ -162,15 +152,6 @@
 
 /* Branch indicator */
 .branch-indicator {
-    font-size: 10px;
-    color: var(--text-dim);
-    font-weight: 500;
-    min-width: 30px;
-    text-align: center;
-}
-
-/* Version indicator (legacy) */
-.version-indicator {
     font-size: 10px;
     color: var(--text-dim);
     font-weight: 500;

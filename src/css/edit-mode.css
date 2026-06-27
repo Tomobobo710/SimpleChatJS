@@ -413,9 +413,10 @@
     transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
+/* (0,2,0) already beats the base .editable-message (0,1,0) — no !important. */
 .editable-message.drag-over {
-    border-color: var(--accent-info) !important;
-    background-color: rgba(74, 144, 226, 0.1) !important;
+    border-color: var(--accent-info);
+    background-color: rgba(74, 144, 226, 0.1);
 }
 
 .editable-message.drag-over::before {

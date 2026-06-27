@@ -111,30 +111,11 @@
     overflow-wrap: anywhere;
 }
 
-/* Dropdown styling */
-details {
-    margin: 4px 0;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-panel);
-    overflow: hidden;
-}
-
-details summary {
-    padding: 8px 12px;
-    background: var(--bg-raised);
-    cursor: pointer;
-    font-weight: bold;
-    font-size: 11px;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-details summary:hover {
-    background: var(--border);
-}
+/* The only <details> in the app are .streaming-dropdown and .debug-dropdown, and
+   each fully styles itself (and its summary) below / in debug.css. The old bare
+   `details` / `details summary` base layer was almost entirely overridden; the two
+   bits it actually carried are restored at their owners: overflow:hidden on
+   .debug-dropdown (debug.css) and user-select:none on .dropdown-toggle (below). */
 
 /* Nested grey boxes inside tool dropdowns: the .dropdown-inner wrapper, each
    .tool-section, and the section titles. Only the box look (bg/padding/radius) —
@@ -172,6 +153,7 @@ details summary:hover {
     color: var(--text);
     padding: 6px 10px;
     cursor: pointer;
+    user-select: none;
     display: flex;
     align-items: center;
     font-family: Tahoma, Arial, sans-serif;
@@ -347,14 +329,17 @@ details[open] .dropdown-toggle::before {
     color: #ffcccc;
 }
 
+/* Error dropdowns only ever carry `error-dropdown` (renderErrorBlock adds no
+   data-tool / tool-dropdown), so this (0,2,0) selector already beats the base
+   .dropdown-toggle — no !important needed. */
 .error-dropdown .dropdown-toggle {
-    background: #4a1a1a !important; /* Dark red background */
-    border-left: 3px solid var(--accent-red) !important; /* single red accent bar */
-    color: #ff9999 !important; /* Light red text */
+    background: #4a1a1a; /* dark red background */
+    border-left: 3px solid var(--accent-red); /* single red accent bar */
+    color: #ff9999; /* light red text */
 }
 
 .error-dropdown .dropdown-toggle:hover {
-    background: #5a2020 !important; /* Slightly lighter on hover */
+    background: #5a2020; /* slightly lighter on hover */
 }
 
 .error-dropdown .dropdown-content {

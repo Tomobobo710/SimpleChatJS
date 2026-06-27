@@ -111,6 +111,7 @@
     background: var(--bg-panel);
     width: 100%;
     box-sizing: border-box;
+    overflow: hidden; /* clip content to the rounded corners (was inherited from the removed bare `details` rule) */
 }
 
 .debug-dropdown-header {
@@ -122,6 +123,7 @@
     align-items: center;
     gap: 6px;
     list-style: none;
+    font-size: 11px; /* dropdown text baseline (was inherited from the removed bare `details summary` rule) */
 }
 
 .debug-dropdown-header::-webkit-details-marker {

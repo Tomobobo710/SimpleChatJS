@@ -322,7 +322,7 @@
 .budget-input-container span {
     min-width: 60px;
     font-weight: bold;
-    color: var(--text-secondary);
+    color: var(--text); /* was var(--text-secondary), which was never defined → fell back to this inherited value */
 }
 
 /* Win98 Style Checkboxes */
