@@ -67,12 +67,16 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     // that the language is known.
                     const blockLang = currentBlock.metadata.language;
                     if (blockLang) {
+                        blockElement.classList.add('has-lang');
                         let langLabel = blockElement.querySelector('.code-lang');
                         if (!langLabel) {
                             langLabel = document.createElement('div');
                             langLabel.className = 'code-lang';
                             langLabel.textContent = blockLang;
-                            blockElement.insertBefore(langLabel, blockElement.firstChild);
+                            // Before the <pre> (keeps `.code-lang + pre` styling) and
+                            // after the sticky copy wrap.
+                            const preEl = blockElement.querySelector('pre');
+                            blockElement.insertBefore(langLabel, preEl);
                         } else if (langLabel.textContent !== blockLang) {
                             langLabel.textContent = blockLang;
                         }

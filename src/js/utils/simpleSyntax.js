@@ -73,6 +73,9 @@ const LANG_ALIASES = {
 class SimpleSyntax {
     static highlight(code, language = '') {
         if (!code || typeof code !== 'string') return code;
+        // No language label → don't guess; return plain (escaped) text. Guessing
+        // with a default config only mislabels code we can't identify.
+        if (!language || !language.trim()) return this.escapeHtml(code);
         const cfg = this.config(language);
         const lines = code.split('\n');
         let inBlock = false;

@@ -503,8 +503,10 @@ class ChatRenderer {
         const div = document.createElement("div");
         div.className = "live-code-block";
 
-        // Add language label if present
+        // Add language label if present (and mark the block so the copy button
+        // offsets below the tab; without a tab it sits near the top).
         if (metadata.language) {
+            div.classList.add("has-lang");
             const langLabel = document.createElement("div");
             langLabel.className = "code-lang";
             langLabel.textContent = metadata.language;
@@ -537,14 +539,18 @@ class ChatRenderer {
         pre.appendChild(code);
         div.appendChild(pre);
 
-        // Add copy button
+        // Copy button in a sticky wrap, inserted FIRST so it pins to the top of the
+        // scroll area and follows you down a long code block (see .code-copy-wrap).
+        const copyWrap = document.createElement("div");
+        copyWrap.className = "code-copy-wrap";
         const copyBtn = document.createElement("button");
         copyBtn.className = "code-copy-btn";
         copyBtn.textContent = "Copy";
         copyBtn.addEventListener("click", () => {
             this.copyCodeToClipboard(content);
         });
-        div.appendChild(copyBtn);
+        copyWrap.appendChild(copyBtn);
+        div.insertBefore(copyWrap, div.firstChild);
 
         return div;
     }
