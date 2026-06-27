@@ -99,10 +99,12 @@ function shellConsoleRawHtml(metadata) {
     const result = metadata.shellResult || (metadata.shellStatus === 'done'
         ? { success: metadata.shellSuccess, exit_code: metadata.shellExitCode }
         : { status: 'running' });
-    const section = (title, obj) =>
-        `<div class="tool-section"><div class="tool-section-title">${title}</div>` +
-        `<pre class="tool-content">${escapeHtml(JSON.stringify(obj, null, 2))}</pre></div>`;
-    return section('Arguments', args) + section('Result', result);
+    // Render through the SAME formatter the other tool dropdowns use, so multiline
+    // output is deep-unescaped + pretty-printed identically (real line breaks, not
+    // literal \n) instead of a raw JSON.stringify.
+    const content = `[shell_run]:\nArguments: ${JSON.stringify(args)}\nResult: ${JSON.stringify(result)}`;
+    // Wrapped in .dropdown-inner to match the other tools' nesting (the grey boxes).
+    return '<div class="dropdown-inner">' + formatToolContent(content, 'shell_run', args) + '</div>';
 }
 
 // Body HTML: the command goes at the TOP of the terminal (as a `$ cmd` line —

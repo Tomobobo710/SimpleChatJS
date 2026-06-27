@@ -253,6 +253,15 @@
     padding: 8px;
 }
 
+/* The other tools get nested grey boxes from a broad `details div` rule; the shell
+   console isn't a <details>, so mirror just the box look (bg/padding/radius — NOT
+   color/font-size, so the blue section titles stay intact). */
+.shell-console.raw-mode .shell-console-body div {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 6px;
+    border-radius: 0 0 4px 4px;
+}
+
 .shell-console-empty {
     color: #777;
     font-style: italic;
