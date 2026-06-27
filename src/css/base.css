@@ -243,7 +243,12 @@ pre code, code[class*="language-"] {
     background: #222;
 }
 
-.live-code-block:hover .code-copy-btn {
+/* Reveal driven by a JS .code-hover class, not CSS :hover. Chromium doesn't
+   re-evaluate :hover while you scroll with a stationary mouse, so a sticky copy
+   button would linger over a block the cursor has actually left and ride the scroll.
+   initCodeCopyHover() (chatRenderer.js) recomputes the hovered block on mousemove
+   AND scroll, so the button tracks the real pointer position. */
+.live-code-block.code-hover .code-copy-btn {
     opacity: 1;
 }
 

@@ -587,6 +587,8 @@ class ChatRenderer {
         return div;
     }
 
+    // (see initCodeCopyHover below — copy-button visibility is driven from JS)
+
     // Render error block as dropdown with debug information
     renderErrorBlock(content, metadata, isOpen = false) {
         const dropdownId = `error-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -2515,5 +2517,48 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     // the .debug-dropdown* rules in debug.css.
     debugPanel.innerHTML = createDebugPanelContent(debugData);
 
+    // The debug dropdowns are static-HTML <details>; the native summary-click toggle
+    // snaps (no transition), so intercept it (delegated, since the markup is injected
+    // as a string) and animate the clip height instead — mirrors the streaming
+    // dropdowns. preventDefault cancels the native open/close so JS owns the state.
+    debugPanel.addEventListener('click', (e) => {
+        const header = e.target.closest('.debug-dropdown-header');
+        if (!header || !debugPanel.contains(header)) return;
+        const details = header.closest('.debug-dropdown');
+        if (!details) return;
+        e.preventDefault();
+        toggleDebugDropdown(details);
+    });
+
     return debugPanel;
+}
+
+// Animate a debug dropdown open/closed by tweening its .debug-dropdown-clip pixel
+// height (Web Animations API). The .dd-open class holds the resting state (height
+// auto vs 0) and flips the chevron; the native `open` attr is kept in sync for
+// semantics (dropped only after a collapse finishes so content stays rendered during
+// the slide). Honors prefers-reduced-motion.
+function toggleDebugDropdown(details) {
+    const clip = details.querySelector('.debug-dropdown-clip');
+    if (!clip) return;
+    if (details._ddAnim) { details._ddAnim.cancel(); details._ddAnim = null; }
+    const opening = !details.classList.contains('dd-open');
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const opts = { duration: 180, easing: 'ease' };
+
+    if (opening) {
+        details.open = true;
+        const target = clip.scrollHeight;
+        details.classList.add('dd-open');
+        if (reduce || !clip.animate) return;
+        details._ddAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], opts);
+        details._ddAnim.onfinish = details._ddAnim.oncancel = () => { details._ddAnim = null; };
+    } else {
+        const start = clip.scrollHeight;
+        details.classList.remove('dd-open');
+        if (reduce || !clip.animate) { details.open = false; return; }
+        details._ddAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], opts);
+        details._ddAnim.onfinish = () => { details._ddAnim = null; details.open = false; };
+        details._ddAnim.oncancel = () => { details._ddAnim = null; };
+    }
 }

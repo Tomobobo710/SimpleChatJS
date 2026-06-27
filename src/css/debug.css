@@ -139,7 +139,7 @@
     color: var(--text);
 }
 
-details[open] .debug-dropdown-header::before {
+.debug-dropdown.dd-open .debug-dropdown-header::before {
     content: "\25bc"; /* ▼ open */
 }
 
@@ -153,6 +153,20 @@ details[open] .debug-dropdown-header::before {
 .debug-dropdown .dropdown-title {
     font-size: 11px;
     color: var(--text-soft);
+}
+
+/* Animated open/close. createDebugPanel (chatRenderer.js) tweens this clip's pixel
+   height (Web Animations API) between collapsed = 0 and expanded = natural height.
+   The clip is padding/border-free so a closed dropdown collapses to a true 0; the
+   padded content lives one level in, on .debug-dropdown-content. .dd-open is toggled
+   by JS rather than relying on the native [open] toggle, which snaps. Mirrors the
+   streaming-dropdown .dropdown-clip pattern in turns.css. */
+.debug-dropdown-clip {
+    overflow: hidden;
+    height: 0;
+}
+.debug-dropdown.dd-open .debug-dropdown-clip {
+    height: auto;
 }
 
 .debug-dropdown-content {
