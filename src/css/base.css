@@ -183,7 +183,11 @@ pre code, code[class*="language-"] {
     border-bottom: none;
     border-radius: 4px 4px 0 0;
     margin-bottom: 0;
-    display: inline-block;
+    /* Block (shrink-to-fit) rather than inline-block so the .code-copy-wrap + *
+       negative-margin pull-up applies to it — a negative top margin doesn't lift an
+       inline-block's line box. Appearance is unchanged (still left-aligned, tab-width). */
+    display: block;
+    width: fit-content;
     text-transform: lowercase;
 }
 
@@ -196,27 +200,50 @@ pre code, code[class*="language-"] {
 
 /* Live streaming code blocks */
 .live-code-block {
+    /* Sticky-bar height: copy-button height (~21px) + 8px top gap + a few px buffer so
+       sticky sub-pixel slack at the scroll extremes can't let the button poke past the
+       block's bottom edge. Sizes the bar and cancels its layout space (below). */
+    --copy-h: 36px;
     margin: 4px 0;
     position: relative;
 }
 
-/* Copy button rides along on scroll: a zero-height sticky bar pinned near the top
-   of the scroll area, holding the button at the right. Sticks while the code block
-   is in view, releases when you scroll past it. */
+/* Copy button rides along on scroll so it stays reachable while the block is on
+   screen, but is CLAMPED to the block's edges. The trick: the sticky bar has a real
+   height (button + top gap), so the sticky bottom-clamp keeps the whole button inside
+   the block instead of letting it poke past the bottom edge (the old 0-height bar +
+   offset button escaped the clamp at the extremes). */
 .code-copy-wrap {
     position: sticky;
     top: 8px;
-    height: 0;
+    height: var(--copy-h);
     text-align: right;
     z-index: 10;
-    pointer-events: none; /* the 0-height bar shouldn't eat clicks; button re-enables */
+    pointer-events: none; /* the bar shouldn't eat clicks; button re-enables */
 }
 
-/* Code block copy button */
+/* Pull the following content up under the sticky bar so the bar adds no layout space.
+   The negative margin MUST live here, not on the bar itself — a negative margin on a
+   sticky element shrinks its containment box and defeats the bottom clamp. */
+.code-copy-wrap + * {
+    margin-top: calc(-1 * var(--copy-h));
+}
+
+/* The copy wrap sits between the language tab and the code body, so the tab and body
+   are no longer adjacent and `.code-lang + pre` (above) can't seam them. Re-seam the
+   body to the tab here. (`.code-lang + pre` still covers non-live markdown blocks,
+   which have no copy wrap between.) */
+.live-code-block.has-lang pre {
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+}
+
+/* Code block copy button. margin-top is the gap from the top of the code body; it's
+   part of --copy-h above so the button's bottom coincides with the sticky bar's bottom
+   and the clamp holds it inside the block. The wrap sits below the language tab, so the
+   button rests inside the code body rather than poking above it. */
 .code-copy-btn {
-    position: relative;
-    top: 8px; /* no language tab: sit near the code's top-right */
-    margin-right: 8px;
+    margin: 8px 8px 0 0;
     pointer-events: auto;
     background: var(--bg-raised);
     border: 1px outset var(--border-strong);
@@ -227,11 +254,6 @@ pre code, code[class*="language-"] {
     opacity: 0;
     transition: opacity 0.2s ease;
     z-index: 10;
-}
-
-/* With a language tab present, drop the button below it into the code area. */
-.live-code-block.has-lang .code-copy-btn {
-    top: 30px;
 }
 
 .code-copy-btn:hover {

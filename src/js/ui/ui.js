@@ -15,6 +15,9 @@ function initializeElements() {
     scrollContainer = document.getElementById('messagesContainer');   // Outer div for scrolling
     // Initialize smart auto-scroll tracking
     initSmartScroll(scrollContainer);
+    // Track real pointer-over state for code-block copy buttons (fixes :hover going
+    // stale during scroll — see initCodeCopyHover in chatRenderer.js).
+    initCodeCopyHover(scrollContainer);
     
     chatList = document.getElementById('chatList');
     chatTitle = document.getElementById('chatTitle');

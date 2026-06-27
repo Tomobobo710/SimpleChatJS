@@ -571,8 +571,10 @@ class ChatRenderer {
         pre.appendChild(code);
         div.appendChild(pre);
 
-        // Copy button in a sticky wrap, inserted FIRST so it pins to the top of the
-        // scroll area and follows you down a long code block (see .code-copy-wrap).
+        // Copy button in a sticky wrap, inserted just before the code body (so with a
+        // language tab it sits INSIDE the body, below the tab — not poking above it).
+        // It rides along near the top of the scroll area while the block is on screen,
+        // clamped to the block's edges (see .code-copy-wrap).
         const copyWrap = document.createElement("div");
         copyWrap.className = "code-copy-wrap";
         const copyBtn = document.createElement("button");
@@ -582,7 +584,7 @@ class ChatRenderer {
             this.copyCodeToClipboard(content);
         });
         copyWrap.appendChild(copyBtn);
-        div.insertBefore(copyWrap, div.firstChild);
+        div.insertBefore(copyWrap, pre);
 
         return div;
     }
@@ -2499,6 +2501,43 @@ if (document.readyState === "loading") {
 }
 
 // Create debug panel DOM element using sequential debug system
+// Drive code-block copy-button visibility from JS instead of CSS :hover. Chromium
+// doesn't re-evaluate :hover while you scroll with a stationary mouse, so the sticky
+// copy button would stay lit over a block the cursor has already left and ride the
+// scroll until you wiggle the mouse. We track the last pointer position and recompute
+// which .live-code-block is actually under it on both mousemove and scroll, toggling
+// .code-hover (rAF-throttled). Call once at startup with the scroll container.
+let _codeHoverX = -1, _codeHoverY = -1, _codeHoverEl = null, _codeHoverRaf = 0;
+
+function _updateCodeHover() {
+    _codeHoverRaf = 0;
+    let block = null;
+    if (_codeHoverX >= 0) {
+        const el = document.elementFromPoint(_codeHoverX, _codeHoverY);
+        block = el ? el.closest('.live-code-block') : null;
+    }
+    if (block === _codeHoverEl) return;
+    if (_codeHoverEl) _codeHoverEl.classList.remove('code-hover');
+    if (block) block.classList.add('code-hover');
+    _codeHoverEl = block;
+}
+
+function _queueCodeHover() {
+    if (_codeHoverRaf) return;
+    _codeHoverRaf = requestAnimationFrame(_updateCodeHover);
+}
+
+function initCodeCopyHover(scrollContainer) {
+    document.addEventListener('mousemove', (e) => {
+        _codeHoverX = e.clientX;
+        _codeHoverY = e.clientY;
+        _queueCodeHover();
+    });
+    if (scrollContainer) {
+        scrollContainer.addEventListener('scroll', _queueCodeHover, { passive: true });
+    }
+}
+
 function createDebugPanel(turnDiv, messageId, debugData) {
     const debugPanel = document.createElement("div");
     debugPanel.className = "debug-panel-container";
