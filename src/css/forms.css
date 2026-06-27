@@ -248,7 +248,7 @@
     margin: 4px 0 2px 0;
     font-weight: bold;
     font-size: 13px;
-    color: #b3d9ff;
+    color: var(--navy-text-dim);
 }
 
 .settings-section input, .settings-section textarea, .settings-section select {
@@ -424,7 +424,7 @@ input[type="checkbox"]:disabled {
     white-space: nowrap;
     font-weight: bold;
     font-size: 13px;
-    color: #b3d9ff;
+    color: var(--navy-text-dim);
 }
 
 .profile-row .profile-dropdown {

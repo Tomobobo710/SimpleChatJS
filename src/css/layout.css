@@ -70,87 +70,9 @@
     padding: 2px;
 }
 
-.project-item {
-    display: flex;
-    flex-direction: column;
-    border-bottom: 1px solid var(--bg-raised);
-    font-size: 15px;
-    color: var(--text);
-    position: relative;
-    margin-bottom: 2px;
-    cursor: pointer;
-}
-
-.project-item:hover {
-    background: none;
-}
-
-.project-item:hover .project-item-content {
-    background: #2a4a7a;
-}
-
-.project-item-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 12px;
-    background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
-    min-height: 24px;
-}
-
-.project-item-name {
-    font-weight: bold;
-    font-size: 13px;
-    color: #e0f2fe;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-}
-
-.project-item-content {
-    padding: 10px 12px;
-    background: #1f1f1f;
-    overflow: hidden;
-    transition: background-color 0.15s ease;
-}
-
-.project-item-content:hover {
-    background: #2a4a7a;
-}
-
-.project-item-path {
-    font-size: 12px;
-    color: var(--text-faint);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    line-height: 1.3;
-}
-
-.project-delete-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: #e0f2fe;
-    font-size: 14px;
-    width: 18px;
-    height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    border-radius: 0;
-    flex-shrink: 0;
-    transition: all 0.15s ease;
-    backdrop-filter: blur(4px);
-}
-
-.project-delete-btn:hover {
-    background: rgba(255, 102, 102, 0.8);
-    color: white;
-    transform: scale(1.05);
-}
+/* .project-item shares one visual treatment with .chat-item via the grouped
+   selectors in the "Sidebar list items" section below — only the container
+   (.projects-list above) and the row's data differ. */
 
 /* Project chat view header */
 .project-chat-header {
@@ -163,26 +85,6 @@
     justify-content: space-between;
     align-items: center;
     color: var(--text);
-}
-
-.project-chat-back-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: var(--text);
-    font-size: 16px;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    border-radius: 3px;
-    flex-shrink: 0;
-    transition: all 0.15s ease;
-}
-
-.project-chat-back-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
 }
 
 /* Sidebar bottom bar */
@@ -204,9 +106,11 @@
     min-width: 0;
 }
 
-.bottom-bar-arrow {
+/* Back arrow + add (+) button — same square grey button. */
+.bottom-bar-arrow,
+.bottom-bar-plus {
     background: var(--border);
-    border: 1px solid #6a6a6a;
+    border: 1px solid var(--btn-grey);
     color: white;
     width: 32px;
     height: 28px;
@@ -220,43 +124,24 @@
     transition: background 0.15s ease;
 }
 
-.bottom-bar-arrow:hover {
-    background: #6a6a6a;
+.bottom-bar-arrow:hover,
+.bottom-bar-plus:hover {
+    background: var(--btn-grey);
 }
 
 .bottom-bar-label {
     font-size: 14px;
     font-weight: bold;
     font-family: Tahoma, Arial, sans-serif;
-    color: #999999;
+    color: var(--text-faint);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.bottom-bar-plus {
-    background: var(--border);
-    border: 1px solid #6a6a6a;
-    color: white;
-    width: 32px;
-    height: 28px;
-    border-radius: 4px;
-    font-size: 22px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.15s ease;
-}
-
-.bottom-bar-plus:hover {
-    background: #6a6a6a;
-}
-
 
 .sidebar-header {
-    background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
+    background: linear-gradient(to bottom, var(--navy-top), var(--navy-bottom));
     color: white;
     padding: 8px;
     border-bottom: 1px solid #0a1a2a;
@@ -274,16 +159,7 @@
 
 .user-status {
     font-size: 14px; /* Increased from 12px */
-    color: #b3d9ff;
-}
-
-.chat-controls {
-    padding: 5px;
-    background: var(--border);
-    border-bottom: 1px inset var(--bg-mid);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px;
+    color: var(--navy-text-dim);
 }
 
 .chat-list-header {
@@ -307,7 +183,23 @@
     margin: 3px;
 }
 
-.chat-item {
+/* Empty / error placeholder shown in the chat or projects list (e.g. "No chats
+   available."). Replaces an inline style that was repeated across chatManager.js. */
+.sidebar-empty {
+    padding: 8px;
+    color: #666;
+    font-style: italic;
+    text-align: center;
+}
+
+/* ── Sidebar list items ───────────────────────────────────────────────────────
+   .chat-item (Chat tab) and .project-item (Code tab) are the same visual component
+   — row → gradient header [label + delete-btn] → content [text]. Their rules are
+   grouped here so the two tabs stay in lockstep; only the row's *data* differs
+   (chat: datetime + title + preview; project: name + path). */
+
+.chat-item,
+.project-item {
     display: flex;
     flex-direction: column;
     border-bottom: 1px solid var(--bg-raised);
@@ -315,66 +207,66 @@
     color: var(--text);
     position: relative;
     margin-bottom: 2px;
+    cursor: pointer;
 }
 
-.chat-item:hover {
-    background: none; /* Header will have its own hover */
-}
-
-.chat-item:hover .chat-item-content {
-    background: #2a4a7a;
-}
-
-.chat-item.active {
+/* Row itself stays flat; the content panel carries the hover. */
+.chat-item:hover,
+.project-item:hover {
     background: none;
-    color: white;
 }
 
+.chat-item:hover .chat-item-content,
+.project-item:hover .project-item-content {
+    background: var(--navy-select);
+}
 
-/* Chat Item Header with Gradient */
-.chat-item-header {
+/* Gradient header bar (label on the left, delete button on the right) */
+.chat-item-header,
+.project-item-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 6px 6px 6px 12px;
-    background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
-    border-radius: 0;
+    background: linear-gradient(to bottom, var(--navy-top), var(--navy-bottom));
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     min-height: 24px;
 }
 
+/* Header label slot — chat shows a datetime, project shows a name; same treatment. */
+.chat-item-datetime,
+.project-item-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--navy-text);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Wrapper for stream indicators injected into the header at runtime (streamManager). */
 .chat-item-actions {
     display: flex;
     align-items: center;
 }
 
-.chat-item-datetime {
-    font-size: 11px;
-    color: #e0f2fe;
-    font-weight: 500;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.chat-item-content {
+/* Content panel */
+.chat-item-content,
+.project-item-content {
+    flex: 1;
+    min-width: 0;
     padding: 10px 12px;
     background: #1f1f1f;
-    border-radius: 0;
     cursor: pointer;
+    overflow: hidden;
     transition: background-color 0.15s ease;
 }
 
-.chat-item-content:hover {
-    background: #2a4a7a;
-}
-
-.chat-item.active .chat-item-content {
-    background: var(--bg-elevated);
-}
-
-.chat-item.active .chat-item-content:hover {
-    background: #1a4a7a;
-}
-
+/* Content text — chat's title (bold) sits above its preview; both tabs share the
+   faint secondary line (.chat-item-preview / .project-item-path). */
 .chat-item-title {
     font-weight: bold;
     margin-bottom: 4px;
@@ -384,7 +276,8 @@
     line-height: 1.2;
 }
 
-.chat-item-preview {
+.chat-item-preview,
+.project-item-path {
     font-size: 12px;
     color: var(--text-faint);
     overflow: hidden;
@@ -393,23 +286,30 @@
     line-height: 1.3;
 }
 
+/* Active (selected) row — Chat tab only; projects open rather than stay selected. */
+.chat-item.active {
+    background: none;
+    color: white;
+}
+
+.chat-item.active .chat-item-content {
+    background: var(--bg-elevated);
+}
+
+.chat-item.active .chat-item-content:hover {
+    background: var(--navy-top);
+}
+
 .chat-item.active .chat-item-preview {
     color: white;
 }
 
-/* Old time styles removed - now using header datetime */
-
-.chat-item-content {
-    flex: 1;
-    cursor: pointer;
-    min-width: 0; /* Allows flex item to shrink below content size */
-    overflow: hidden; /* Prevent content from spilling out */
-}
-
-.chat-delete-btn {
+/* Delete button (identical for both row types) */
+.chat-delete-btn,
+.project-delete-btn {
     background: rgba(255, 255, 255, 0.1);
     border: none;
-    color: #e0f2fe;
+    color: var(--navy-text);
     font-size: 14px;
     width: 18px;
     height: 18px;
@@ -423,14 +323,15 @@
     backdrop-filter: blur(4px);
 }
 
-.chat-delete-btn:hover {
+.chat-delete-btn:hover,
+.project-delete-btn:hover {
     background: rgba(255, 102, 102, 0.8);
     color: white;
     transform: scale(1.05);
 }
 
 .chat-item.active .chat-delete-btn {
-    color: #e0f2fe;
+    color: var(--navy-text);
     background: rgba(255, 255, 255, 0.15);
 }
 
@@ -798,7 +699,7 @@
 
 .file-attachment .file-size {
     font-size: 11px;
-    color: #999999;
+    color: var(--text-faint);
     font-weight: normal;
 }
 

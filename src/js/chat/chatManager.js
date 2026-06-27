@@ -143,7 +143,7 @@ async function loadChatList() {
             } catch (error) {
                 logger.error("Failed to create initial chat:", error, true);
                 chatList.innerHTML =
-                    '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error creating initial chat.</div>';
+                    '<div class="sidebar-empty">Error creating initial chat.</div>';
             }
             return;
         }
@@ -164,7 +164,7 @@ async function loadChatList() {
     } catch (error) {
         logger.error("Error loading chat list:", error, true);
         chatList.innerHTML =
-            '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No chats available.</div>';
+            '<div class="sidebar-empty">No chats available.</div>';
     }
 }
 
@@ -712,7 +712,7 @@ function renderProjects() {
 
     if (window.projects.length === 0) {
         container.innerHTML =
-            '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No projects yet.</div>';
+            '<div class="sidebar-empty">No projects yet.</div>';
         return;
     }
 
@@ -833,7 +833,7 @@ async function loadProjectChats(projectId) {
             } catch (error) {
                 logger.error("Failed to create initial project chat:", error, true);
                 chatList.innerHTML =
-                    '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error creating initial chat.</div>';
+                    '<div class="sidebar-empty">Error creating initial chat.</div>';
             }
             return;
         }
@@ -846,7 +846,7 @@ async function loadProjectChats(projectId) {
         logger.error("Error loading project chats:", error);
         const chatList = document.getElementById("chatList");
         chatList.innerHTML =
-            '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error loading chats.</div>';
+            '<div class="sidebar-empty">Error loading chats.</div>';
     }
 }
 

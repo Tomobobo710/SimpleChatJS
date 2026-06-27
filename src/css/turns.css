@@ -16,7 +16,7 @@
 /* User turn styling */
 .turn.request-turn, .message.user {
     align-self: flex-end;
-    background: #2a4a7a;
+    background: var(--navy-select);
     color: #ffffff;
 }
 

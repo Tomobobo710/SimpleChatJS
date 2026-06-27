@@ -23,6 +23,7 @@
     --border-subtle: #444;     /* lighter dividers */
     --border-strong: #555;     /* content separators, inner borders */
     --border-bright: #666;     /* lightest borders (buttons, previews) */
+    --btn-grey:      #6a6a6a;  /* grey button border + hover (bottom bar, message actions) */
 
     /* Text (bright → dim) */
     --text:       #e0e0e0;  /* primary text */
@@ -40,4 +41,12 @@
     --accent-purple: #a371f7;  /* MCP fallback */
     --accent-red:    #ff4444;  /* errors */
     --accent-info:   #4a90e2;  /* section titles, info, links */
+
+    /* Navy "buddy-list" accent — sidebar rows, user turns, modal/section headers.
+       Its own blue family, distinct from the semantic accents above. */
+    --navy-top:      #1a4a7a;  /* header-gradient top, active row hover */
+    --navy-bottom:   #0d2d4a;  /* header-gradient bottom */
+    --navy-select:   #2a4a7a;  /* hovered/selected row, user turn bubble */
+    --navy-text:     #e0f2fe;  /* text on navy */
+    --navy-text-dim: #b3d9ff;  /* dim text on navy */
 }

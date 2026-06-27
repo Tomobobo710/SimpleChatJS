@@ -163,13 +163,13 @@
 
 /* Special styling for user vs assistant turns - 90s style */
 .request-turn .message-actions {
-    background: #2a4a7a;
+    background: var(--navy-select);
     border: 1px inset #4a6a9a;
 }
 
 .response-turn .message-actions {
     background: var(--bg-elevated);
-    border: 1px inset #6a6a6a;
+    border: 1px inset var(--btn-grey);
 }
 
 /* Loading state for buttons - simple 90s style */
