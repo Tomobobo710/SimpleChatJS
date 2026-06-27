@@ -169,10 +169,31 @@ class StreamingMessageProcessor {
 
     _onToolCallArgumentsDelta(data) {
         const block = this._findToolBlock(data.id);
-        if (block) {
+        if (!block) return;
+        block.metadata.arguments = data.arguments;
+        if (block.metadata.toolName === 'shell_run') {
+            // Stream the command into the console as the model types it (data.arguments
+            // is the accumulated partial JSON, so pull a best-effort command out).
+            block.metadata.isShellConsole = true;
+            const cmd = StreamingMessageProcessor._partialShellCommand(data.arguments);
+            if (cmd) block.metadata.command = cmd;
+            if (block.metadata.shellStatus !== 'done') block.metadata.shellStatus = 'running';
+            block.content = `__shell__|args:${(data.arguments || '').length}`;
+        } else {
             block.content = `[${data.name}]:\nArguments: ${data.arguments}\nResult: Executing...`;
-            block.metadata.arguments = data.arguments;
         }
+    }
+
+    // Extract the command value from a partial/streaming JSON args string, tolerating
+    // an unterminated string or a dangling escape mid-stream.
+    static _partialShellCommand(argsStr) {
+        if (typeof argsStr !== 'string') return '';
+        const m = argsStr.match(/"command"\s*:\s*"((?:[^"\\]|\\.)*)/);
+        if (!m) return '';
+        for (const candidate of [m[1], m[1].replace(/\\+$/, '')]) {
+            try { return JSON.parse('"' + candidate + '"'); } catch (e) { /* keep trying */ }
+        }
+        return m[1];
     }
 
     _onToolExecutionStart(data) {
