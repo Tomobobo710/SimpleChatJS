@@ -204,12 +204,20 @@
     border-left-color: var(--mcp-bar, var(--accent-purple));
 }
 
-details[open] .dropdown-content {
-    display: block;
+/* Animated open/close. streamingDropdowns.js tweens .dropdown-clip's pixel height
+   (Web Animations API) between these two resting states — collapsed = 0, expanded =
+   natural height. The clip is padding/border-free so a closed dropdown collapses to a
+   true 0; the padded panel lives one level in, on .dropdown-content. .dd-open is
+   toggled by JS rather than relying on the native [open] toggle, which snaps. */
+.dropdown-clip {
+    overflow: hidden;
+    height: 0;
+}
+.dd-open .dropdown-clip {
+    height: auto;
 }
 
 .dropdown-content {
-    display: none;
     border-top: 1px solid var(--border-strong);
     background: var(--bg-deep);
     max-height: 400px;
@@ -267,7 +275,7 @@ details[open] .dropdown-content {
     font-size: 11px;
     color: var(--text);
 }
-details[open] .dropdown-toggle::before {
+.dd-open .dropdown-toggle::before {
     content: "\25bc"; /* ▼ open */
 }
 

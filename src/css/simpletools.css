@@ -134,8 +134,13 @@
     content: "\25b6"; /* ▶ collapsed */
 }
 
-.shell-console.collapsed .shell-console-body {
-    display: none;
+/* Clip wrapper around the body; its pixel height is tweened open/closed by
+   setShellCollapsed() (chatRenderer.js). Collapsed = 0, expanded = natural height. */
+.shell-console-clip {
+    overflow: hidden;
+}
+.shell-console.collapsed .shell-console-clip {
+    height: 0;
 }
 
 /* Header tool name — inherits the header's monospace code font + 13px size. */

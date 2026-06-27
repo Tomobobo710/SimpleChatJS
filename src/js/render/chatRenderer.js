@@ -149,6 +149,33 @@ function shellConsoleIsCollapsed(metadata) {
     return !!metadata.shellAutoCollapsed;
 }
 
+// Collapse/expand the console by tweening the clip's pixel height (Web Animations
+// API), matching the tool dropdowns. No-ops when already in the target state, so it's
+// safe to call from the per-chunk live update. Pass animate=false for an instant
+// change (initial render / reload). The .collapsed class holds the resting state
+// (clip height 0 vs auto) and flips the chevron.
+function setShellCollapsed(el, collapsed, animate) {
+    if (!el) return;
+    if (el.classList.contains('collapsed') === collapsed) return; // already there
+    const clip = el.querySelector('.shell-console-clip');
+    if (el._shellAnim) { el._shellAnim.cancel(); el._shellAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!clip || animate === false || reduce || !clip.animate) {
+        el.classList.toggle('collapsed', collapsed);
+        return;
+    }
+    if (collapsed) {
+        const start = clip.scrollHeight;
+        el.classList.add('collapsed');                 // resting height = 0
+        el._shellAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], { duration: 180, easing: 'ease' });
+    } else {
+        el.classList.remove('collapsed');              // resting height = auto
+        const target = clip.scrollHeight;
+        el._shellAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], { duration: 180, easing: 'ease' });
+    }
+    el._shellAnim.onfinish = el._shellAnim.oncancel = () => { el._shellAnim = null; };
+}
+
 // Schedule the auto-collapse of a finished console. Uses the absolute shellDoneAt
 // timestamp so each (re)rendered element collapses at the right moment even if an
 // earlier element was replaced mid-grace-period. shellDoneAt = 0 (reload) → now.
@@ -161,13 +188,13 @@ function armShellCollapse(el, metadata) {
     const remaining = doneAt ? SHELL_COLLAPSE_DELAY - (Date.now() - doneAt) : 0;
     if (remaining <= 0) {
         metadata.shellAutoCollapsed = true;
-        el.classList.add('collapsed');
+        setShellCollapsed(el, true, false); // grace already elapsed / reload → instant
         return;
     }
     setTimeout(() => {
         if (metadata.shellUserToggled) return;
         metadata.shellAutoCollapsed = true;
-        el.classList.add('collapsed');
+        setShellCollapsed(el, true, true);  // animate the auto-collapse
     }, remaining);
 }
 
@@ -181,7 +208,7 @@ function buildShellConsoleElement(metadata) {
             <button class="shell-console-raw-toggle" title="Toggle raw JSON">{ }</button>
             ${shellConsoleStatusHtml(metadata)}
         </div>
-        <div class="shell-console-body"></div>
+        <div class="shell-console-clip"><div class="shell-console-body"></div></div>
     `;
     const body = el.querySelector('.shell-console-body');
     body.innerHTML = shellConsoleBodyHtml(metadata);
@@ -212,7 +239,7 @@ function buildShellConsoleElement(metadata) {
         const nowCollapsed = !el.classList.contains('collapsed');
         metadata.shellUserToggled = true;
         metadata.shellCollapsed = nowCollapsed;
-        el.classList.toggle('collapsed', nowCollapsed);
+        setShellCollapsed(el, nowCollapsed, true);
         if (!nowCollapsed) { const b = el.querySelector('.shell-console-body'); if (b) b.scrollTop = b.scrollHeight; }
     });
 
@@ -239,7 +266,9 @@ function updateShellConsoleElement(el, metadata) {
     }
     // Re-apply auto collapse/expand (running→open, done→collapsed) unless the user
     // has taken control, then arm the delayed auto-collapse for a fresh finish.
-    el.classList.toggle('collapsed', shellConsoleIsCollapsed(metadata));
+    // setShellCollapsed no-ops when the state is unchanged, so this is cheap on the
+    // per-chunk live update.
+    setShellCollapsed(el, shellConsoleIsCollapsed(metadata), true);
     armShellCollapse(el, metadata);
 }
 
