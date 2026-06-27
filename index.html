@@ -292,6 +292,11 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="simple-tools-limit">
+                            <label for="st-output-limit">Output size limit (KB)</label>
+                            <input type="number" id="st-output-limit" min="2" step="1" value="99">
+                            <span class="simple-tool-desc">Caps read_file output; shell_run uses 1 KB less to leave room for its truncation notice. Min 2.</span>
+                        </div>
                     </div>
 
                     <div class="settings-section">

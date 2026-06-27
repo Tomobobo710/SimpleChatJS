@@ -102,6 +102,8 @@ async function loadSettingsIntoModal() {
         document.getElementById('st-write-file').checked = simpleConfig.write_file !== false;
         document.getElementById('st-edit-file').checked = simpleConfig.edit_file !== false;
         document.getElementById('st-shell-run').checked = simpleConfig.shell_run !== false;
+        document.getElementById('st-output-limit').value =
+            Number.isFinite(simpleConfig.output_limit_kb) ? simpleConfig.output_limit_kb : 99;
 
         // Load shell config (separate from main settings)
         const shellConfig = await loadShellConfig();
@@ -230,11 +232,13 @@ async function handleSaveSettings() {
         await saveEnabledToolsToBackend(enabledTools);
 
         // Save SimpleTools config
+        const parsedLimit = parseInt(document.getElementById('st-output-limit').value, 10);
         const simpleToolsConfig = {
             read_file: document.getElementById('st-read-file').checked,
             write_file: document.getElementById('st-write-file').checked,
             edit_file: document.getElementById('st-edit-file').checked,
-            shell_run: document.getElementById('st-shell-run').checked
+            shell_run: document.getElementById('st-shell-run').checked,
+            output_limit_kb: Number.isFinite(parsedLimit) ? Math.max(2, parsedLimit) : 99
         };
         await saveSimpleToolsConfig(simpleToolsConfig);
 

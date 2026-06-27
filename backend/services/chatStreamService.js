@@ -983,7 +983,7 @@ async function processRequest(req, res) {
 
         // Merge SimpleTools definitions
         const simpleConfig = simpleTools.loadConfig();
-        const simpleDefs = simpleTools.getToolDefinitions(shellInfo);
+        const simpleDefs = simpleTools.getToolDefinitions(shellInfo, simpleConfig);
         for (const def of simpleDefs) {
             if (simpleTools.isToolEnabled(def.name, simpleConfig)) {
                 tools.push({

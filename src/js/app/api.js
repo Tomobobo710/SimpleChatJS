@@ -170,7 +170,7 @@ async function loadSimpleToolsConfig() {
     } catch (error) {
         logger.warn("Failed to load SimpleTools config:", error);
     }
-    return { read_file: true, write_file: true, edit_file: true, shell_run: true };
+    return { read_file: true, write_file: true, edit_file: true, shell_run: true, output_limit_kb: 99 };
 }
 
 async function saveSimpleToolsConfig(config) {

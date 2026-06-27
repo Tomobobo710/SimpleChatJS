@@ -44,6 +44,28 @@
     color: #888;
 }
 
+/* Output size limit (Tools tab) */
+.simple-tools-limit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 8px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+}
+
+.simple-tools-limit label {
+    font-weight: bold;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.simple-tools-limit input[type="number"] {
+    width: 100px;
+}
+
 /* Shell selector (Tools tab) */
 .shell-selector {
     display: flex;
