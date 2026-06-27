@@ -230,9 +230,13 @@ class StreamingMessageProcessor {
             }
             block.metadata.shellExitCode = (result && result.exit_code !== undefined) ? result.exit_code : null;
             block.metadata.shellSuccess = data.status === 'success' && (!result || result.success !== false);
+            block.metadata.shellResult = result || null; // full result object for the raw JSON view
             block.metadata.shellTruncated = !!(result && result.truncated);
             block.metadata.shellError = (result && result.error) || (data.status !== 'success' ? data.error : null);
             block.metadata.shellStatus = 'done';
+            // Live finishes linger before auto-collapsing (grace period to read the
+            // output); reloads collapse immediately (shellDoneAt = 0 → no delay).
+            block.metadata.shellDoneAt = this._live ? Date.now() : 0;
             block.metadata.command = block.metadata.command || (block.metadata.arguments && block.metadata.arguments.command);
             block.metadata.status = data.status;
             block.content = `__shell__|status:done|exit:${block.metadata.shellExitCode}|len:${(block.metadata.shellOutput || '').length}`;

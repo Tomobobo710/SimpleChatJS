@@ -66,8 +66,11 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     const codeElement = blockElement.querySelector('code');
                     if (codeElement) {
                         if (currentBlock.metadata.isStreaming) {
-                            // Still streaming - show raw content with cursor
-                            codeElement.innerHTML = escapeHtml(currentBlock.content) + '<span class="code-cursor">|</span>';
+                            // Still streaming — highlight live (SimpleSyntax is
+                            // per-line + self-escaping, so partial code is safe).
+                            const lang = currentBlock.metadata.language;
+                            const hl = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, lang) : escapeHtml(currentBlock.content);
+                            codeElement.innerHTML = hl + '<span class="code-cursor">|</span>';
                         } else {
                             // Streaming finished - use SimpleSyntax highlighting
                             const language = currentBlock.metadata.language;

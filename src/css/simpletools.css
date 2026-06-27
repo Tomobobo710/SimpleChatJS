@@ -122,7 +122,6 @@
 
 .shell-console-chevron {
     flex-shrink: 0;
-    width: 12px;
     color: #e0e0e0;
     font-size: 11px;
 }
@@ -139,18 +138,58 @@
     display: none;
 }
 
+/* Header tool name — inherits the header's monospace code font + 13px size. */
+.shell-console-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .shell-console-prompt {
     color: #5fd35f;
     font-weight: bold;
 }
 
-.shell-console-command {
-    color: #d0d0d0;
-    white-space: pre;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1;
-    min-width: 0;
+/* Command line at the top of the terminal body, separated from the output. */
+.shell-console-cmdline {
+    display: block;
+    color: #ffffff;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #2c2c2c;
+}
+
+/* Raw JSON toggle — left of the status badge, only shown when expanded. */
+.shell-console-raw-toggle {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #3a3a3a;
+    color: #888;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.shell-console-raw-toggle:hover {
+    color: #e0e0e0;
+    border-color: #555;
+}
+
+.shell-console-raw-toggle.active {
+    color: #e0e0e0;
+    background: #2a2a2a;
+    border-color: #555;
+}
+
+.shell-console.collapsed .shell-console-raw-toggle {
+    display: none;
 }
 
 .shell-console-status {
@@ -207,9 +246,16 @@
     border-top: 1px solid #555;
 }
 
-.shell-console-body:empty::before {
-    content: "(no output yet)";
-    color: #555;
+/* Raw JSON view drops the terminal-black theme for the standard grey dropdown
+   content theme, so it matches the other tools. */
+.shell-console.raw-mode .shell-console-body {
+    background: #1a1a1a;
+    padding: 8px;
+}
+
+.shell-console-empty {
+    color: #777;
+    font-style: italic;
 }
 
 /* Env context toggles (Tokens tab, System Prompts section) */
