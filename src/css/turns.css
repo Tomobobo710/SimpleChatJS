@@ -173,10 +173,15 @@ details div {
     align-items: center;
     font-family: Tahoma, Arial, sans-serif;
     gap: 8px;
-    font-size: 13px;
+    font-size: 14px;
+    line-height: 1; /* collapse default line-box so flex centering reads true */
     text-align: left;
     transition: background-color 0.2s;
-    font-weight: 500;
+    font-weight: 700;
+    /* Fixed header height shared with .shell-console-header so all tool rows
+       (dropdowns + shell console) are exactly the same size. Tune both together. */
+    box-sizing: border-box;
+    min-height: 30px;
 }
 
 .dropdown-toggle:hover {
@@ -191,6 +196,27 @@ details div {
 .tool-dropdown .dropdown-toggle {
     background: rgba(64, 192, 87, 0.1);
     border-left: 3px solid #40c057;
+}
+
+/* Per-tool left-accent color (+ matching faint header tint). shell_run renders as
+   its own console (grey bar) and isn't a dropdown, so it's handled separately. */
+.streaming-dropdown[data-tool="read_file"] .dropdown-toggle {
+    background: rgba(74, 158, 255, 0.1);
+    border-left-color: #4a9eff; /* blue */
+}
+.streaming-dropdown[data-tool="write_file"] .dropdown-toggle {
+    background: rgba(64, 192, 87, 0.1);
+    border-left-color: #40c057; /* green */
+}
+.streaming-dropdown[data-tool="edit_file"] .dropdown-toggle {
+    background: rgba(227, 179, 65, 0.1);
+    border-left-color: #e3b341; /* yellow */
+}
+.streaming-dropdown[data-tool="mcp"] .dropdown-toggle {
+    /* Per-tool color seeded from the tool name (set as --mcp-bar/--mcp-tint inline);
+       falls back to purple if the vars aren't set. */
+    background: var(--mcp-tint, rgba(163, 113, 247, 0.1));
+    border-left-color: var(--mcp-bar, #a371f7);
 }
 
 details[open] .dropdown-content {
@@ -213,6 +239,18 @@ details[open] .dropdown-content {
     flex: 1;
     font-weight: 500;
     text-align: left;
+}
+
+/* debug.css defines an unscoped `.dropdown-title { font-size: 11px }` that, being
+   applied directly to the title span, overrides the size inherited from
+   .dropdown-toggle. Re-assert inherit at higher specificity so the toggle's
+   font-size actually controls the streaming-dropdown title. */
+.streaming-dropdown .dropdown-title {
+    font-size: inherit;
+    /* Tahoma's glyphs sit low in the line box vs the symmetric chevron, so nudge
+       the text up. NOTE: top only works because of position: relative. */
+    position: relative;
+    top: -1px;
 }
 
 /* Right-aligned header badge (e.g. "MCP" for MCP-sourced tool calls).
@@ -241,11 +279,13 @@ details[open] .dropdown-content {
     display: none;
 }
 .dropdown-toggle::before {
-    content: '▶';
-    transition: transform 0.2s;
+    content: "\25b6"; /* ▶ collapsed — rendered in monospace to match the shell console chevron */
+    font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
+    font-size: 11px;
+    color: #e0e0e0;
 }
 details[open] .dropdown-toggle::before {
-    content: '▼';
+    content: "\25bc"; /* ▼ open */
 }
 
 /* Tool Content Formatting */
@@ -308,7 +348,7 @@ details[open] .dropdown-toggle::before {
 
 .error-dropdown .dropdown-toggle {
     background: #4a1a1a !important; /* Dark red background */
-    border-left: 3px solid #cc0000 !important;
+    border-left: 3px solid #ff4444 !important; /* single red accent bar */
     color: #ff9999 !important; /* Light red text */
 }
 
@@ -318,12 +358,14 @@ details[open] .dropdown-toggle::before {
 
 .error-dropdown .dropdown-content {
     background: #2a1a1a;
-    border-color: #ff4444;
+    border-color: #555; /* grey separator like the other tools (was red) */
     color: #ffcccc;
 }
 
 .error-dropdown {
-    border-color: #ff4444;
+    /* Keep the outer frame dark like the other tool dropdowns so only the 3px
+       toggle bar reads as the accent (avoids a double red bar). */
+    border-color: #3a3a3a;
 }
 
 /* System block styling — black background, grey text, system label */
@@ -386,4 +428,5 @@ details[open] .dropdown-toggle::before {
 @keyframes stream-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+
 }

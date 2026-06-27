@@ -446,6 +446,10 @@
     display: flex;
     flex-direction: column;
     background: #1e1e1e;
+    /* Allow this flex column to shrink below its content's intrinsic width so a
+       wide child (e.g. a long shell console command/output) can't push the chat
+       area past the viewport. Without this, flex min-width:auto lets it grow. */
+    min-width: 0;
 }
 
 .chat-header {

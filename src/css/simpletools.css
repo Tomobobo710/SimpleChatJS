@@ -85,13 +85,14 @@
     word-break: break-all;
 }
 
-/* Live shell console (shell_run tool blocks) */
+/* Live shell console (shell_run tool blocks). Chrome matches .tool-dropdown
+   (green left accent, ▶/▼ marker, #2a2a2a/#3a3a3a frame); body stays terminal-black. */
 .shell-console {
-    margin: 8px 0;
-    border: 1px solid #2c2c2c;
-    border-radius: 6px;
+    margin: 2px 0;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
     overflow: hidden;
-    background: #0c0c0c;
+    background: #2a2a2a;
     font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
 }
 
@@ -100,9 +101,42 @@
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    background: #1a1a1a;
-    border-bottom: 1px solid #2c2c2c;
-    font-size: 12px;
+    background: #0c0c0c;
+    border-left: 3px solid #5a5a5a; /* dark grey — shell_run's accent */
+    color: #e0e0e0;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+    /* Matches .dropdown-toggle so the shell console header is the same height as
+       the other tool rows. Keep these two min-heights in sync. */
+    box-sizing: border-box;
+    min-height: 30px;
+}
+
+.shell-console-header:hover {
+    background: #161616;
+}
+
+.shell-console-chevron {
+    flex-shrink: 0;
+    width: 12px;
+    color: #e0e0e0;
+    font-size: 11px;
+}
+
+.shell-console-chevron::before {
+    content: "\25bc"; /* ▼ open */
+}
+
+.shell-console.collapsed .shell-console-chevron::before {
+    content: "\25b6"; /* ▶ collapsed */
+}
+
+.shell-console.collapsed .shell-console-body {
+    display: none;
 }
 
 .shell-console-prompt {
@@ -170,6 +204,7 @@
     white-space: pre-wrap;
     word-break: break-word;
     background: #0c0c0c;
+    border-top: 1px solid #555;
 }
 
 .shell-console-body:empty::before {

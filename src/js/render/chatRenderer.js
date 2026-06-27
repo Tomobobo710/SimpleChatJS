@@ -53,12 +53,20 @@ function shellConsoleBodyText(metadata) {
     return body;
 }
 
+// Collapse state: open while running, collapsed once done — unless the user has
+// clicked the header, after which their explicit choice wins.
+function shellConsoleIsCollapsed(metadata) {
+    if (metadata.shellUserToggled) return !!metadata.shellCollapsed;
+    return metadata.shellStatus === 'done';
+}
+
 function buildShellConsoleElement(metadata) {
     const el = document.createElement('div');
     el.className = 'shell-console';
     const cmd = metadata.command || '';
     el.innerHTML = `
         <div class="shell-console-header">
+            <span class="shell-console-chevron"></span>
             <span class="shell-console-prompt">$</span>
             <span class="shell-console-command"></span>
             ${shellConsoleStatusHtml(metadata)}
@@ -68,6 +76,18 @@ function buildShellConsoleElement(metadata) {
     el.querySelector('.shell-console-command').textContent = cmd;
     const body = el.querySelector('.shell-console-body');
     body.textContent = shellConsoleBodyText(metadata);
+    if (shellConsoleIsCollapsed(metadata)) el.classList.add('collapsed');
+
+    // Header click toggles, and pins the user's choice (mutates the shared block
+    // metadata so later re-renders/updates respect it).
+    el.querySelector('.shell-console-header').addEventListener('click', () => {
+        const nowCollapsed = !el.classList.contains('collapsed');
+        metadata.shellUserToggled = true;
+        metadata.shellCollapsed = nowCollapsed;
+        el.classList.toggle('collapsed', nowCollapsed);
+        if (!nowCollapsed) { const b = el.querySelector('.shell-console-body'); if (b) b.scrollTop = b.scrollHeight; }
+    });
+
     // Defer scroll until attached; harmless if not yet in the DOM.
     requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
     return el;
@@ -88,6 +108,33 @@ function updateShellConsoleElement(el, metadata) {
         body.textContent = shellConsoleBodyText(metadata);
         if (atBottom) body.scrollTop = body.scrollHeight;
     }
+    // Re-apply auto collapse/expand (running→open, done→collapsed) unless the user
+    // has taken control. This is what auto-collapses the console on completion.
+    el.classList.toggle('collapsed', shellConsoleIsCollapsed(metadata));
+}
+
+// ===== Deterministic MCP accent color =====
+// Each MCP tool gets a stable color seeded by its name, kept clear of the hues
+// already used by the built-in tools so they never clash. Fed to CSS via the
+// --mcp-bar / --mcp-tint custom properties (not a raw inline border).
+function hueCircularDist(a, b) {
+    const d = Math.abs(a - b) % 360;
+    return Math.min(d, 360 - d);
+}
+
+function mcpBarHue(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    let hue = h % 360;
+    // Reserved hues: red(0)/yellow(43)/green(134)/blue(213)/purple(258). Nudge the
+    // hash away from any of them so MCP colors stay distinct from the built-ins.
+    const reserved = [0, 43, 134, 213, 258];
+    let guard = 0;
+    while (reserved.some(r => hueCircularDist(hue, r) < 22) && guard < 36) {
+        hue = (hue + 11) % 360;
+        guard++;
+    }
+    return hue;
 }
 
 class ChatRenderer {
@@ -310,6 +357,15 @@ class ChatRenderer {
         const formattedContent = formatToolContent(content, toolName, metadata?.toolArgs);
 
         const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen, badge);
+        // Tag with the tool so CSS can color the left accent bar per tool
+        // (read=blue, write=green, edit=yellow, shell=grey). MCP tools get a color
+        // seeded from the tool name, fed to CSS via --mcp-bar / --mcp-tint.
+        dropdown.element.dataset.tool = mcpInfo.isMcp ? 'mcp' : toolName;
+        if (mcpInfo.isMcp) {
+            const hue = mcpBarHue(mcpInfo.toolName || toolName || '');
+            dropdown.element.style.setProperty('--mcp-bar', `hsl(${hue}, 65%, 62%)`);
+            dropdown.element.style.setProperty('--mcp-tint', `hsla(${hue}, 65%, 62%, 0.12)`);
+        }
         dropdown.setContent(formattedContent);
         return dropdown.element;
     }
@@ -382,17 +438,11 @@ class ChatRenderer {
 
         dropdown.setContent(errorContent);
 
-        // Add error-specific styling
+        // Error styling lives entirely in CSS (.error-dropdown in turns.css): grey
+        // frame + a single 3px red toggle bar, matching the other tool dropdowns.
+        // (Previously set here as inline styles, which overrode the CSS and produced
+        // a second, full-height red border-left bar.)
         dropdown.element.classList.add("error-dropdown");
-        dropdown.element.style.borderLeft = "4px solid #ff4444";
-
-        // Style the dropdown toggle (header) - use correct selector and add null check
-        const dropdownToggle = dropdown.element.querySelector(".dropdown-toggle");
-        if (dropdownToggle) {
-            dropdownToggle.style.backgroundColor = "#4a1a1a"; // Dark red background
-            dropdownToggle.style.color = "#ff9999"; // Light red text
-            dropdownToggle.style.borderLeft = "3px solid #cc0000";
-        }
 
         return dropdown.element;
     }
