@@ -136,11 +136,18 @@ class StreamingMessageProcessor {
             case 'tool_execution_start':
                 this._onToolExecutionStart(data);
                 break;
+            case 'shell_output_chunk':
+                this._onShellOutputChunk(data);
+                break;
             case 'tool_execution_complete':
                 this._onToolExecutionComplete(data);
                 break;
         }
     }
+
+    // Keep the live console's in-memory buffer bounded so a runaway command can't
+    // pin a huge string in the DOM. We only ever show the tail anyway.
+    static get SHELL_CONSOLE_MAX() { return 500000; }
 
     _findToolBlock(toolId) {
         return this._toolBlocks.get(toolId);
@@ -169,17 +176,70 @@ class StreamingMessageProcessor {
     }
 
     _onToolExecutionStart(data) {
-        const block = this._findToolBlock(data.id);
-        if (block) {
-            block.content = `[${data.name}]:\nArguments: ${JSON.stringify(data.arguments, null, 2)}\nResult: Executing...`;
-            block.metadata.status = 'executing';
-            block.metadata.arguments = data.arguments;
+        let block = this._findToolBlock(data.id);
+        // Defensive: if no tool_call_detected preceded this (e.g. some adapters),
+        // create the block so shell chunks have somewhere to land.
+        if (!block) {
+            block = new Block({
+                type: 'tool',
+                content: `[${data.name}]:`,
+                metadata: { toolName: data.name, id: data.id, status: 'executing' }
+            });
+            this._toolBlocks.set(data.id, block);
+            this._blockSequence.push({ type: 'tool', id: data.id, ref: block });
         }
+        block.metadata.status = 'executing';
+        block.metadata.arguments = data.arguments;
+
+        if (data.name === 'shell_run') {
+            block.metadata.isShellConsole = true;
+            block.metadata.command = data.arguments && data.arguments.command;
+            block.metadata.shellStatus = 'running';
+            if (block.metadata.shellOutput === undefined) block.metadata.shellOutput = '';
+            block.content = `__shell__|status:running|len:${block.metadata.shellOutput.length}`;
+        } else {
+            block.content = `[${data.name}]:\nArguments: ${JSON.stringify(data.arguments, null, 2)}\nResult: Executing...`;
+        }
+    }
+
+    _onShellOutputChunk(data) {
+        const block = this._findToolBlock(data.id);
+        if (!block) return;
+        block.metadata.isShellConsole = true;
+        let out = (block.metadata.shellOutput || '') + (data.chunk || '');
+        const max = StreamingMessageProcessor.SHELL_CONSOLE_MAX;
+        if (out.length > max) out = out.slice(out.length - max);
+        block.metadata.shellOutput = out;
+        block.metadata.shellStatus = 'running';
+        // Bump content so the live-render diff fires and the console body updates.
+        block.content = `__shell__|status:running|len:${out.length}`;
     }
 
     _onToolExecutionComplete(data) {
         const block = this._findToolBlock(data.id);
-        if (block) {
+        if (!block) return;
+
+        // Shell consoles keep the terminal view instead of an Arguments/Result
+        // dropdown. On reload there were no live chunks, so seed the console body
+        // from the stored result output here.
+        if (block.metadata.isShellConsole || data.name === 'shell_run') {
+            block.metadata.isShellConsole = true;
+            const result = (data.status === 'success' && data.result) ? data.result : (data.result || {});
+            if (!block.metadata.shellOutput) {
+                block.metadata.shellOutput = (result && typeof result.output === 'string') ? result.output : '';
+            }
+            block.metadata.shellExitCode = (result && result.exit_code !== undefined) ? result.exit_code : null;
+            block.metadata.shellSuccess = data.status === 'success' && (!result || result.success !== false);
+            block.metadata.shellTruncated = !!(result && result.truncated);
+            block.metadata.shellError = (result && result.error) || (data.status !== 'success' ? data.error : null);
+            block.metadata.shellStatus = 'done';
+            block.metadata.command = block.metadata.command || (block.metadata.arguments && block.metadata.arguments.command);
+            block.metadata.status = data.status;
+            block.content = `__shell__|status:done|exit:${block.metadata.shellExitCode}|len:${(block.metadata.shellOutput || '').length}`;
+            return;
+        }
+
+        {
             let resultContent;
             if (data.status === 'success') {
                 const result = data.result;

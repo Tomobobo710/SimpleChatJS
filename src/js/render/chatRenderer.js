@@ -1,5 +1,95 @@
 // ChatRenderer.js
 
+// ===== Live shell console (shell_run tool blocks) =====
+// shell_run renders as a terminal-style console rather than an Arguments/Result
+// dropdown. The same builder/updater serve all three states (live streaming,
+// post-stream, reload) — they read everything from the block's metadata.
+
+// Strip ANSI/VT escape sequences (colors, cursor moves). Phase 1 drops color;
+// a real emulator (xterm.js) would interpret them — that's a later upgrade.
+function shellStripAnsi(s) {
+    // CSI sequences (e.g. \x1b[31m), plus stray OSC and single-char escapes.
+    return s
+        .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+        .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+        .replace(/\x1b[@-Z\\-_]/g, '');
+}
+
+// Resolve carriage returns the way a terminal does: within a line, content after
+// the last \r overwrites what came before (this is how progress bars repaint a
+// single line). Good enough without a full cursor model.
+function shellProcessTerminalText(raw) {
+    const clean = shellStripAnsi(raw).replace(/\r\n/g, '\n');
+    return clean.split('\n').map(line => {
+        if (line.indexOf('\r') === -1) return line;
+        const parts = line.split('\r');
+        return parts[parts.length - 1];
+    }).join('\n');
+}
+
+function shellConsoleStatusHtml(metadata) {
+    const status = metadata.shellStatus;
+    if (status === 'done') {
+        const code = metadata.shellExitCode;
+        if (metadata.shellSuccess && (code === 0 || code === null)) {
+            return `<span class="shell-console-status ok">exit ${code === null ? 0 : code}</span>`;
+        }
+        const label = (code === null || code === undefined) ? 'error' : `exit ${code}`;
+        return `<span class="shell-console-status err">${escapeHtml(label)}</span>`;
+    }
+    return `<span class="shell-console-status running">running<span class="shell-console-spinner"></span></span>`;
+}
+
+function shellConsoleBodyText(metadata) {
+    let body = shellProcessTerminalText(metadata.shellOutput || '');
+    if (metadata.shellStatus === 'done') {
+        if (metadata.shellError && !metadata.shellSuccess) {
+            body += (body && !body.endsWith('\n') ? '\n' : '') + metadata.shellError;
+        }
+        if (metadata.shellTruncated) {
+            body += (body && !body.endsWith('\n') ? '\n' : '') + '[output truncated — older lines omitted]';
+        }
+    }
+    return body;
+}
+
+function buildShellConsoleElement(metadata) {
+    const el = document.createElement('div');
+    el.className = 'shell-console';
+    const cmd = metadata.command || '';
+    el.innerHTML = `
+        <div class="shell-console-header">
+            <span class="shell-console-prompt">$</span>
+            <span class="shell-console-command"></span>
+            ${shellConsoleStatusHtml(metadata)}
+        </div>
+        <pre class="shell-console-body"></pre>
+    `;
+    el.querySelector('.shell-console-command').textContent = cmd;
+    const body = el.querySelector('.shell-console-body');
+    body.textContent = shellConsoleBodyText(metadata);
+    // Defer scroll until attached; harmless if not yet in the DOM.
+    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+    return el;
+}
+
+function updateShellConsoleElement(el, metadata) {
+    if (!el) return;
+    const header = el.querySelector('.shell-console-header');
+    if (header) {
+        const cmdSpan = header.querySelector('.shell-console-command');
+        if (cmdSpan && metadata.command !== undefined) cmdSpan.textContent = metadata.command || '';
+        const oldStatus = header.querySelector('.shell-console-status');
+        if (oldStatus) oldStatus.outerHTML = shellConsoleStatusHtml(metadata);
+    }
+    const body = el.querySelector('.shell-console-body');
+    if (body) {
+        const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 30;
+        body.textContent = shellConsoleBodyText(metadata);
+        if (atBottom) body.scrollTop = body.scrollHeight;
+    }
+}
+
 class ChatRenderer {
     constructor(containerElement) {
         this.container = containerElement;
@@ -83,7 +173,10 @@ class ChatRenderer {
                 if (blockData.type === "thinking") {
                     stateKey = "thinking_" + thinkingIndex;
                     thinkingIndex++;
-                } else if (blockData.type === "tool") {
+                } else if (blockData.type === "tool" && blockData.metadata?.toolName !== "shell_run") {
+                    // shell_run renders as a console, not a collapsible dropdown, so
+                    // it's excluded from the .streaming-dropdown ordinal state keys
+                    // (which the post-stream capture also skips). Keep indices aligned.
                     stateKey = "tool_" + toolIndex;
                     toolIndex++;
                 }
@@ -198,6 +291,11 @@ class ChatRenderer {
             if (toolMatch) {
                 toolName = toolMatch[1];
             }
+        }
+
+        // shell_run renders as a live terminal console, not a dropdown.
+        if (toolName === 'shell_run') {
+            return buildShellConsoleElement(metadata || {});
         }
 
         // MCP tools arrive namespaced as mcp__<server>__<tool>. Show the clean

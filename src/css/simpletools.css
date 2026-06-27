@@ -85,6 +85,98 @@
     word-break: break-all;
 }
 
+/* Live shell console (shell_run tool blocks) */
+.shell-console {
+    margin: 8px 0;
+    border: 1px solid #2c2c2c;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #0c0c0c;
+    font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
+}
+
+.shell-console-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #2c2c2c;
+    font-size: 12px;
+}
+
+.shell-console-prompt {
+    color: #5fd35f;
+    font-weight: bold;
+}
+
+.shell-console-command {
+    color: #d0d0d0;
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
+
+.shell-console-status {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+
+.shell-console-status.running {
+    color: #e0c060;
+    background: rgba(224, 192, 96, 0.12);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.shell-console-status.ok {
+    color: #5fd35f;
+    background: rgba(95, 211, 95, 0.12);
+}
+
+.shell-console-status.err {
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.12);
+}
+
+.shell-console-spinner {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e0c060;
+    display: inline-block;
+    animation: shell-console-pulse 1s ease-in-out infinite;
+}
+
+@keyframes shell-console-pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+.shell-console-body {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 360px;
+    overflow: auto;
+    color: #d6d6d6;
+    font-size: 12.5px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #0c0c0c;
+}
+
+.shell-console-body:empty::before {
+    content: "(no output yet)";
+    color: #555;
+}
+
 /* Env context toggles (Tokens tab, System Prompts section) */
 .context-toggles-group {
     margin-top: 16px;

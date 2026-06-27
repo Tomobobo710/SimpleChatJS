@@ -432,7 +432,10 @@ const SHELL_MAX_CAPTURE = 10 * 1024 * 1024;
 // Run the command via async spawn (NOT spawnSync) so the Node event loop stays
 // free while the command runs — streaming, steering, and other requests keep
 // working. Resolves to a spawnSync-shaped result { stdout, stderr, status, error }.
-function runShellAsync(shell, argv, options) {
+// onChunk(streamName, text) is invoked for each stdout/stderr chunk as it arrives,
+// which is what feeds the live console in the UI (the resolved result, separately,
+// is the capped text the model sees — one source, two sinks).
+function runShellAsync(shell, argv, options, onChunk) {
     return new Promise((resolve) => {
         let child;
         try {
@@ -448,6 +451,9 @@ function runShellAsync(shell, argv, options) {
         let spawnError = null;
 
         const append = (chunk, isOut) => {
+            if (typeof onChunk === 'function') {
+                try { onChunk(isOut ? 'stdout' : 'stderr', chunk); } catch (_) {}
+            }
             if (isOut) {
                 stdoutTotal += chunk.length;
                 stdout += chunk;
@@ -497,7 +503,7 @@ async function doShellRun(args, opts = {}, shellCap = (DEFAULT_OUTPUT_LIMIT_KB -
         const result = await runShellAsync(shellArgs.shell, shellArgs.args, {
             windowsHide: true,
             cwd
-        });
+        }, opts.onChunk);
 
         const stdout = result.stdout || '';
         const stderr = result.stderr || '';

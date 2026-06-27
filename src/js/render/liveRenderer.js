@@ -42,10 +42,15 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                 
                 // Update content without destroying the dropdown structure
                 if (currentBlock.type === 'tool') {
-                    const dropdownInner = blockElement.querySelector('.dropdown-inner');
-                    if (dropdownInner) {
-                        const formattedContent = formatToolContent(currentBlock.content, currentBlock.metadata?.toolName);
-                        dropdownInner.innerHTML = formattedContent;
+                    if (currentBlock.metadata?.toolName === 'shell_run' || currentBlock.metadata?.isShellConsole) {
+                        // Live shell console: append to the terminal body in place.
+                        updateShellConsoleElement(blockElement, currentBlock.metadata || {});
+                    } else {
+                        const dropdownInner = blockElement.querySelector('.dropdown-inner');
+                        if (dropdownInner) {
+                            const formattedContent = formatToolContent(currentBlock.content, currentBlock.metadata?.toolName);
+                            dropdownInner.innerHTML = formattedContent;
+                        }
                     }
                 } else if (currentBlock.type === 'thinking') {
                     const dropdownInner = blockElement.querySelector('.dropdown-inner');
