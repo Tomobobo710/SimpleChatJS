@@ -98,12 +98,22 @@
     border-top: 1px solid var(--border-strong);
 }
 
+/* Left group: back arrow + "Back to Projects" label (only inside a project). */
 .bottom-bar-left {
     display: flex;
     align-items: center;
     gap: 8px;
     flex: 1;
     min-width: 0;
+}
+
+/* Right group: the + label sits just left of the + button, hard against the right
+   edge (so "New Chat" / "New Project" reads right-aligned next to +). */
+.bottom-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 /* Back arrow + add (+) button — same square grey button. */
@@ -137,6 +147,68 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    /* Tahoma sits low in its line box, so the label reads slightly below the buttons'
+       optical center — nudge it up to match. */
+    position: relative;
+    top: -1px;
+}
+
+/* Inside a project both labels share the row. Shrink them to the same small size so
+   the bold "Back to Projects" + "New Chat" both fit with a gap between them. */
+.sidebar-bottom-bar.compact .bottom-bar-label,
+.sidebar-bottom-bar.compact .bottom-bar-back-label {
+    font-size: 10px;
+}
+
+/* "Back to Projects" — smaller than the + label so it + the back arrow fit on the
+   left while "New Chat" + the + button sit on the right. Truncates if too narrow. */
+.bottom-bar-back-label {
+    font-size: 11px;
+    font-weight: bold;
+    font-family: Tahoma, Arial, sans-serif;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    position: relative;
+    top: -1px;
+}
+
+/* CSS-drawn left arrow for the back button. Centered by construction (both strokes
+   are top:50% + translateY(-50%) inside the icon box, which is flex-centered in the
+   button) — the old ← glyph sat off-center because of its font metrics. Mirrors the
+   .x-icon approach in base.css. */
+.back-icon {
+    display: block;
+    position: relative;
+    width: 14px;
+    height: 12px;
+}
+
+.back-icon::before { /* shaft */
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 14px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 1px;
+    transform: translateY(-50%);
+}
+
+.back-icon::after { /* arrowhead (two strokes of "<") */
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 1px;
+    width: 7px;
+    height: 7px;
+    border-left: 2px solid currentColor;
+    border-top: 2px solid currentColor;
+    border-radius: 1px;
+    transform: translateY(-50%) rotate(-45deg);
 }
 
 
@@ -284,6 +356,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     line-height: 1.3;
+}
+
+/* Show the END of the path (project folder + nearest parents) with the ellipsis at
+   the START — the deep tail is the useful part, the C:\Users\… head isn't. An rtl
+   block direction moves the truncation/ellipsis to the leading edge while the path
+   text itself stays LTR; text-align keeps short paths left-aligned. Full path is in
+   the row's title tooltip. */
+.project-item-path {
+    direction: rtl;
+    text-align: left;
 }
 
 /* Active (selected) row — Chat tab only; projects open rather than stay selected. */
