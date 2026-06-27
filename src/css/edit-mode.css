@@ -3,8 +3,8 @@
 /* Edit container */
 .edit-container {
     width: 100%;
-    background: #2a2a2a;
-    border: 1px inset #666;
+    background: var(--bg-panel);
+    border: 1px inset var(--border-bright);
     padding: 8px;
     box-sizing: border-box;
 }
@@ -12,9 +12,9 @@
 /* Edit textarea */
 .edit-textarea {
     width: 100%;
-    background: #1a1a1a;
-    color: #e0e0e0;
-    border: 1px inset #333;
+    background: var(--bg-deep);
+    color: var(--text);
+    border: 1px inset var(--bg-raised);
     padding: 6px;
     font-family: inherit;
     font-size: 11px;
@@ -26,7 +26,7 @@
 
 .edit-textarea:focus {
     outline: none;
-    border-color: #4a90e2;
+    border-color: var(--accent-info);
     background: #111;
 }
 
@@ -42,7 +42,7 @@
 /* Edit indicator */
 .edit-indicator {
     font-size: 9px;
-    color: #aaa;
+    color: var(--text-dim);
     font-style: italic;
     align-self: flex-end;
     opacity: 0.7;
@@ -54,15 +54,15 @@
     align-items: center;
     gap: 6px;
     font-size: 11px;
-    color: #aaa;
+    color: var(--text-dim);
     align-self: flex-end;
     opacity: 0.8;
 }
 
 .edit-nav-btn {
     background: transparent;
-    border: 1px solid #666;
-    color: #aaa;
+    border: 1px solid var(--border-bright);
+    color: var(--text-dim);
     border-radius: 3px;
     padding: 2px 6px;
     font-size: 10px;
@@ -72,13 +72,13 @@
 }
 
 .edit-nav-btn:hover {
-    background: #2a2a2a;
-    border-color: #888;
+    background: var(--bg-panel);
+    border-color: var(--text-muted);
     color: #fff;
 }
 
 .edit-nav-btn:active {
-    background: #1a1a1a;
+    background: var(--bg-deep);
 }
 
 .edit-version-label {
@@ -90,7 +90,7 @@
 /* Turn in editing state */
 .turn.editing {
     background: rgba(74, 144, 226, 0.1);
-    border-left: 3px solid #4a90e2;
+    border-left: 3px solid var(--accent-info);
 }
 
 /* Hide actions while editing */
@@ -104,7 +104,7 @@
     content: 'EDITING MODE';
     display: block;
     font-size: 9px;
-    color: #4a90e2;
+    color: var(--accent-info);
     font-weight: bold;
     margin-bottom: 4px;
     text-transform: uppercase;
@@ -116,7 +116,7 @@
     content: 'Ctrl+Enter to save • Escape to cancel';
     display: block;
     font-size: 8px;
-    color: #666;
+    color: var(--border-bright);
     margin-top: 4px;
     text-align: right;
     font-style: italic;
@@ -124,8 +124,8 @@
 
 /* Message edit mode styles */
 .message-edit-container {
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
     border-radius: 8px;
     padding: 20px;
     margin: 10px 0;
@@ -144,26 +144,26 @@
 }
 
 .editable-message {
-    background: #333;
-    border: 1px solid #555;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-strong);
     border-radius: 6px;
     padding: 15px;
 }
 
 .message-header {
-    color: #ccc;
+    color: var(--text-soft);
     font-size: 14px;
     margin-bottom: 10px;
     padding-bottom: 5px;
-    border-bottom: 1px solid #555;
+    border-bottom: 1px solid var(--border-strong);
 }
 
 .message-content-textarea {
     width: 100%;
     min-height: 100px;
-    background: #1a1a1a;
+    background: var(--bg-deep);
     color: #fff;
-    border: 1px solid #666;
+    border: 1px solid var(--border-bright);
     border-radius: 4px;
     padding: 10px;
     font-family: 'Courier New', monospace;
@@ -172,8 +172,8 @@
 }
 
 .edit-content-section {
-    background: #1a1a1a;
-    border: 1px solid #555;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-strong);
     border-radius: 6px;
     padding: 12px;
     margin-bottom: 12px;
@@ -181,7 +181,7 @@
 
 .edit-content-label {
     display: block;
-    color: #aaa;
+    color: var(--text-dim);
     font-size: 12px;
     font-weight: 600;
     margin-bottom: 8px;
@@ -192,9 +192,9 @@
 .message-reasoning-textarea {
     width: 100%;
     min-height: 100px;
-    background: #1a1a1a;
+    background: var(--bg-deep);
     color: #fff;
-    border: 1px solid #666;
+    border: 1px solid var(--border-bright);
     border-radius: 4px;
     padding: 10px;
     font-family: 'Courier New', monospace;
@@ -205,9 +205,9 @@
 .message-tool-calls-textarea {
     width: 100%;
     min-height: 150px;
-    background: #1a1a1a;
+    background: var(--bg-deep);
     color: #fff;
-    border: 1px solid #666;
+    border: 1px solid var(--border-bright);
     border-radius: 4px;
     padding: 10px;
     font-family: 'Courier New', monospace;
@@ -230,7 +230,7 @@
     align-items: center;
     margin-bottom: 10px;
     padding-bottom: 10px;
-    border-bottom: 1px solid #555;
+    border-bottom: 1px solid var(--border-strong);
 }
 
 .edit-tool-call-type-dropdown {
@@ -240,15 +240,15 @@
 }
 
 .edit-tool-call-type-label {
-    color: #aaa;
+    color: var(--text-dim);
     font-size: 12px;
     font-weight: 600;
 }
 
 .edit-tool-call-type-select {
-    background: #2a2a2a;
+    background: var(--bg-panel);
     color: #fff;
-    border: 1px solid #555;
+    border: 1px solid var(--border-strong);
     border-radius: 3px;
     padding: 5px 8px;
     font-size: 12px;
@@ -256,15 +256,15 @@
 }
 
 .edit-tool-call-type-select:hover {
-    border-color: #666;
+    border-color: var(--border-bright);
 }
 
 .message-tool-call-function-textarea {
     width: 100%;
     min-height: 80px;
-    background: #1a1a1a;
+    background: var(--bg-deep);
     color: #fff;
-    border: 1px solid #666;
+    border: 1px solid var(--border-bright);
     border-radius: 4px;
     padding: 10px;
     font-family: 'Courier New', monospace;
@@ -279,8 +279,8 @@
 }
 
 .edit-tool-call-item {
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
     padding: 10px;
 }
@@ -288,25 +288,25 @@
 .edit-tool-call-header {
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #444;
-    color: #aaa;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-dim);
     font-size: 13px;
 }
 
 .edit-tool-call-id {
-    color: #888;
+    color: var(--text-muted);
     font-size: 12px;
     margin-left: 5px;
 }
 
 .edit-tool-call-args {
-    background: #1a1a1a;
-    border: 1px solid #333;
+    background: var(--bg-deep);
+    border: 1px solid var(--bg-raised);
     border-radius: 3px;
     padding: 8px;
     margin: 0;
     font-size: 12px;
-    color: #ccc;
+    color: var(--text-soft);
     overflow-x: auto;
     max-height: 200px;
     overflow-y: auto;
@@ -323,18 +323,18 @@
 /* Image preview styles for edit mode */
 .edit-images-container {
     margin-bottom: 15px;
-    background: #1a1a1a;
-    border: 1px solid #444;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
     padding: 10px;
 }
 
 .edit-images-header {
-    color: #ccc;
+    color: var(--text-soft);
     font-size: 12px;
     margin-bottom: 10px;
     padding-bottom: 5px;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
 .edit-images-grid {
@@ -351,7 +351,7 @@
 }
 
 .edit-image-preview:hover {
-    border-color: #4a90e2;
+    border-color: var(--accent-info);
 }
 
 /* Image removal button */
@@ -388,10 +388,10 @@
 /* Make image preview relative positioned for absolute button positioning */
 .edit-image-preview {
     position: relative;
-    border: 1px solid #666;
+    border: 1px solid var(--border-bright);
     border-radius: 4px;
     overflow: hidden;
-    background: #333;
+    background: var(--bg-raised);
 }
 
 /* Edit modal image controls */
@@ -401,8 +401,8 @@
     gap: 8px;
     margin-top: 10px;
     padding: 8px;
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
 }
 
@@ -414,7 +414,7 @@
 }
 
 .editable-message.drag-over {
-    border-color: #4a90e2 !important;
+    border-color: var(--accent-info) !important;
     background-color: rgba(74, 144, 226, 0.1) !important;
 }
 
@@ -438,7 +438,7 @@
 /* Enhanced textarea styling when images are present */
 .message-content-textarea:focus {
     outline: none;
-    border-color: #4a90e2;
+    border-color: var(--accent-info);
     background: #111;
     box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
 }

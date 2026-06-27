@@ -256,9 +256,10 @@ function mcpBarHue(name) {
     let h = 0;
     for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
     let hue = h % 360;
-    // Reserved hues: red(0)/yellow(43)/green(134)/blue(213)/purple(258). Nudge the
-    // hash away from any of them so MCP colors stay distinct from the built-ins.
-    const reserved = [0, 43, 134, 213, 258];
+    // Reserved hues: red(0)/orange(25)/yellow(43)/green(134)/blue(213)/purple(258).
+    // Nudge the hash away from any of them so MCP colors stay distinct from the
+    // built-in tool accents.
+    const reserved = [0, 25, 43, 134, 213, 258];
     let guard = 0;
     while (reserved.some(r => hueCircularDist(hue, r) < 22) && guard < 36) {
         hue = (hue + 11) % 360;
@@ -1685,10 +1686,8 @@ class ChatRenderer {
 
                 const img = document.createElement("img");
                 img.src = `data:${imageData.mimeType};base64,${imageData.imageData}`;
-                img.style.maxWidth = "150px";
-                img.style.maxHeight = "150px";
-                img.style.border = "1px solid #666";
-                img.style.borderRadius = "4px";
+                // Sizing/border/radius come from CSS (.edit-image-preview img and its
+                // container in edit-mode.css) — no inline styles needed.
 
                 // Add remove button
                 const removeBtn = document.createElement("button");
@@ -2357,11 +2356,9 @@ class ChatRenderer {
             branchNavElement._siblings = sortedSiblings;
             branchNavElement._currentIndex = currentIndex;
 
-            // Show navigation
-            branchNavElement.style.display = "flex";
-            branchNavElement.style.alignItems = "center";
-            branchNavElement.style.gap = "6px";
-            branchNavElement.style.marginLeft = "10px";
+            // Show navigation. Clearing the inline display lets the .branch-nav class
+            // (flex/align/gap/margin-left in message-actions.css) govern the layout.
+            branchNavElement.style.display = "";
 
             return true;
         } catch (error) {
@@ -2476,8 +2473,6 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     debugPanel.className = "debug-panel-container";
     debugPanel.dataset.messageId = messageId;
     debugPanel.style.display = "none"; // Initially hidden
-    debugPanel.style.width = "100%";
-    debugPanel.style.boxSizing = "border-box";
 
     // Add turn ID and message ID to debug data
     if (!debugData) {
@@ -2486,27 +2481,10 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     debugData.turnId = turnDiv.closest(".turn")?.dataset.turnId || "unknown";
     debugData.messageId = messageId || "unknown";
 
-    // Use the new sequential debug panel
+    // Use the new sequential debug panel. Width/box-sizing (so long unbroken content
+    // can't blow out the turn) is handled by CSS now — see .debug-panel-container and
+    // the .debug-dropdown* rules in debug.css.
     debugPanel.innerHTML = createDebugPanelContent(debugData);
-
-    // Force width on all debug dropdowns synchronously.
-    const dropdowns = debugPanel.querySelectorAll(".debug-dropdown");
-    dropdowns.forEach((dropdown) => {
-        dropdown.style.width = "100%";
-        dropdown.style.boxSizing = "border-box";
-
-        const content = dropdown.querySelector(".debug-dropdown-content");
-        if (content) {
-            content.style.width = "100%";
-            content.style.boxSizing = "border-box";
-
-            const pre = content.querySelector("pre");
-            if (pre) {
-                pre.style.width = "100%";
-                pre.style.boxSizing = "border-box";
-            }
-        }
-    });
 
     return debugPanel;
 }

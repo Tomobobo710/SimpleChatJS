@@ -23,8 +23,8 @@
 /* Assistant turn styling */
 .turn.response-turn, .message.assistant {
     align-self: flex-start;
-    background: #4a4a4a;
-    color: #e0e0e0;
+    background: var(--bg-elevated);
+    color: var(--text);
 }
 
 /* Content containers */
@@ -63,7 +63,7 @@
 /* Block System Styling */
 .streaming-content {
     opacity: 0.7;
-    border-left: 2px solid #666;
+    border-left: 2px solid var(--border-bright);
     padding-left: 8px;
     font-style: italic;
 }
@@ -71,7 +71,7 @@
 /* Block debugging */
 .block-debug {
     font-size: 12px;
-    color: #666;
+    color: var(--border-bright);
     font-family: monospace;
     background: rgba(255, 255, 255, 0.05);
     padding: 4px 6px;
@@ -92,7 +92,7 @@
 /* Code blocks */
 .text pre {
     background: rgba(0, 0, 0, 0.3);
-    border: 1px solid #555;
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
     padding: 10px;
     margin: 10px 0;
@@ -114,15 +114,15 @@
 /* Dropdown styling */
 details {
     margin: 4px 0;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border);
     border-radius: 4px;
-    background: #2a2a2a;
+    background: var(--bg-panel);
     overflow: hidden;
 }
 
 details summary {
     padding: 8px 12px;
-    background: #333;
+    background: var(--bg-raised);
     cursor: pointer;
     font-weight: bold;
     font-size: 11px;
@@ -133,15 +133,18 @@ details summary {
 }
 
 details summary:hover {
-    background: #3a3a3a;
+    background: var(--border);
 }
 
-details div {
-    padding: 4px 6px;
-    font-size: 10px;
+/* Nested grey boxes inside tool dropdowns: the .dropdown-inner wrapper, each
+   .tool-section, and the section titles. Only the box look (bg/padding/radius) —
+   NOT font-size/color, so the blue .tool-section-title keeps its own styling.
+   The shell console mirrors these exact props in simpletools.css for its raw view.
+   (Was a broad `details div` shotgun; scoped to the dropdown content here.) */
+.streaming-dropdown .dropdown-content div {
     background: rgba(255, 255, 255, 0.05);
+    padding: 4px 6px;
     border-radius: 0 0 4px 4px;
-    color: #ccc;
 }
 
 .thinking {
@@ -155,9 +158,9 @@ details div {
 /* Streaming Dropdowns */
 .streaming-dropdown {
     margin: 2px 0;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border);
     border-radius: 4px;
-    background: #2a2a2a;
+    background: var(--bg-panel);
     overflow: hidden;
     font-family: 'Courier New', monospace;
 }
@@ -166,7 +169,7 @@ details div {
     width: 100%;
     background: none;
     border: none;
-    color: #e0e0e0;
+    color: var(--text);
     padding: 6px 10px;
     cursor: pointer;
     display: flex;
@@ -185,38 +188,38 @@ details div {
 }
 
 .dropdown-toggle:hover {
-    background: #333;
+    background: var(--bg-raised);
 }
 
 .thinking-dropdown .dropdown-toggle {
     background: rgba(74, 158, 255, 0.1);
-    border-left: 3px solid #4a9eff;
+    border-left: 3px solid var(--accent-blue);
 }
 
 .tool-dropdown .dropdown-toggle {
     background: rgba(64, 192, 87, 0.1);
-    border-left: 3px solid #40c057;
+    border-left: 3px solid var(--accent-green);
 }
 
 /* Per-tool left-accent color (+ matching faint header tint). shell_run renders as
    its own console (grey bar) and isn't a dropdown, so it's handled separately. */
 .streaming-dropdown[data-tool="read_file"] .dropdown-toggle {
-    background: rgba(74, 158, 255, 0.1);
-    border-left-color: #4a9eff; /* blue */
+    background: rgba(64, 192, 87, 0.1);
+    border-left-color: var(--accent-green); /* green */
 }
 .streaming-dropdown[data-tool="write_file"] .dropdown-toggle {
-    background: rgba(64, 192, 87, 0.1);
-    border-left-color: #40c057; /* green */
+    background: rgba(232, 131, 58, 0.1);
+    border-left-color: var(--accent-orange); /* orange */
 }
 .streaming-dropdown[data-tool="edit_file"] .dropdown-toggle {
     background: rgba(227, 179, 65, 0.1);
-    border-left-color: #e3b341; /* yellow */
+    border-left-color: var(--accent-yellow); /* yellow */
 }
 .streaming-dropdown[data-tool="mcp"] .dropdown-toggle {
     /* Per-tool color seeded from the tool name (set as --mcp-bar/--mcp-tint inline);
        falls back to purple if the vars aren't set. */
     background: var(--mcp-tint, rgba(163, 113, 247, 0.1));
-    border-left-color: var(--mcp-bar, #a371f7);
+    border-left-color: var(--mcp-bar, var(--accent-purple));
 }
 
 details[open] .dropdown-content {
@@ -225,8 +228,8 @@ details[open] .dropdown-content {
 
 .dropdown-content {
     display: none;
-    border-top: 1px solid #555;
-    background: #1a1a1a;
+    border-top: 1px solid var(--border-strong);
+    background: var(--bg-deep);
     max-height: 400px;
     overflow-y: auto;
     padding: 8px;
@@ -239,16 +242,14 @@ details[open] .dropdown-content {
     flex: 1;
     font-weight: 500;
     text-align: left;
+    color: var(--text-soft); /* shared by streaming + debug titles (was inherited via debug.css bleed) */
 }
 
-/* debug.css defines an unscoped `.dropdown-title { font-size: 11px }` that, being
-   applied directly to the title span, overrides the size inherited from
-   .dropdown-toggle. Re-assert inherit at higher specificity so the toggle's
-   font-size actually controls the streaming-dropdown title. */
+/* Tahoma's glyphs sit low in the line box vs the symmetric chevron, so nudge the
+   title text up a hair. (position: relative is what lets `top` take effect.)
+   Font-size is inherited from .dropdown-toggle (14px) — no override needed now that
+   debug.css's .dropdown-title rule is scoped to .debug-dropdown. */
 .streaming-dropdown .dropdown-title {
-    font-size: inherit;
-    /* Tahoma's glyphs sit low in the line box vs the symmetric chevron, so nudge
-       the text up. NOTE: top only works because of position: relative. */
     position: relative;
     top: -1px;
 }
@@ -282,7 +283,7 @@ details[open] .dropdown-content {
     content: "\25b6"; /* ▶ collapsed — rendered in monospace to match the shell console chevron */
     font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
     font-size: 11px;
-    color: #e0e0e0;
+    color: var(--text);
 }
 details[open] .dropdown-toggle::before {
     content: "\25bc"; /* ▼ open */
@@ -299,7 +300,7 @@ details[open] .dropdown-toggle::before {
 
 .tool-section-title {
     font-weight: bold;
-    color: #4a90e2;
+    color: var(--accent-info);
     margin-bottom: 8px;
     font-size: 13px;
     text-transform: uppercase;
@@ -315,7 +316,7 @@ details[open] .dropdown-toggle::before {
     font-family: 'Courier New', monospace;
     font-size: 11px;
     line-height: 1.4;
-    color: #e0e0e0;
+    color: var(--text);
     white-space: pre-wrap;
     word-wrap: break-word;
     overflow-x: auto;
@@ -342,13 +343,13 @@ details[open] .dropdown-toggle::before {
 /* Error Message Styling */
 .turn.response-turn.error, .message.assistant.error {
     background: #4a2a2a;
-    border-left: 4px solid #ff4444;
+    border-left: 4px solid var(--accent-red);
     color: #ffcccc;
 }
 
 .error-dropdown .dropdown-toggle {
     background: #4a1a1a !important; /* Dark red background */
-    border-left: 3px solid #ff4444 !important; /* single red accent bar */
+    border-left: 3px solid var(--accent-red) !important; /* single red accent bar */
     color: #ff9999 !important; /* Light red text */
 }
 
@@ -358,20 +359,20 @@ details[open] .dropdown-toggle::before {
 
 .error-dropdown .dropdown-content {
     background: #2a1a1a;
-    border-color: #555; /* grey separator like the other tools (was red) */
+    border-color: var(--border-strong); /* grey separator like the other tools (was red) */
     color: #ffcccc;
 }
 
 .error-dropdown {
     /* Keep the outer frame dark like the other tool dropdowns so only the 3px
        toggle bar reads as the accent (avoids a double red bar). */
-    border-color: #3a3a3a;
+    border-color: var(--border);
 }
 
 /* System block styling — black background, grey text, system label */
 .system-block {
-    background: #1a1a1a;
-    border: 1px solid #3a3a3a;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
     border-radius: 4px;
     margin: 4px 0;
     padding: 0;
@@ -380,18 +381,18 @@ details[open] .dropdown-toggle::before {
 
 .system-label {
     background: #000;
-    color: #888;
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 1px;
     padding: 4px 10px;
-    border-bottom: 1px solid #3a3a3a;
+    border-bottom: 1px solid var(--border);
 }
 
 .system-content {
     padding: 10px;
-    color: #aaa;
+    color: var(--text-dim);
     font-size: 13px;
     line-height: 1.5;
     white-space: pre-wrap;
@@ -402,8 +403,8 @@ details[open] .dropdown-toggle::before {
 /* Error debug information styling */
 .error-debug {
     background: #4a2a2a;
-    border: 1px solid #ff4444;
-    border-left: 4px solid #ff4444;
+    border: 1px solid var(--accent-red);
+    border-left: 4px solid var(--accent-red);
     border-radius: 4px;
     padding: 12px;
     margin: 8px 0;
@@ -417,8 +418,8 @@ details[open] .dropdown-toggle::before {
     display: inline-block;
     width: 10px;
     height: 10px;
-    border: 2px solid #555;
-    border-top-color: #40c057;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--accent-green);
     border-radius: 50%;
     animation: stream-spin 0.8s linear infinite;
     margin-right: 4px;

@@ -7,8 +7,8 @@
     align-items: center;
     margin-top: 8px;
     padding: 6px 8px;
-    background: #333;
-    border: 1px inset #666;
+    background: var(--bg-raised);
+    border: 1px inset var(--border-bright);
     opacity: 1;
     visibility: visible;
     gap: 12px;
@@ -27,9 +27,9 @@
 .action-btn {
     display: inline-block;
     padding: 4px 8px;
-    background: #444;
-    border: 1px outset #666;
-    color: #e0e0e0;
+    background: var(--border-subtle);
+    border: 1px outset var(--border-bright);
+    color: var(--text);
     font-size: 10px;
     font-weight: 500;
     cursor: pointer;
@@ -37,8 +37,8 @@
 }
 
 .action-btn:hover {
-    background: #555;
-    border: 1px inset #666;
+    background: var(--border-strong);
+    border: 1px inset var(--border-bright);
 }
 
 .action-btn:active {
@@ -49,7 +49,7 @@
 
 /* Specific button colors - 90s style */
 .edit-btn:hover {
-    background: #4a90e2;
+    background: var(--accent-info);
     color: white;
 }
 
@@ -71,9 +71,9 @@
    still show on hover. */
 .chat-streaming .retry-btn,
 .chat-streaming .edit-retry-btn {
-    background: #2a2a2a;
+    background: var(--bg-panel);
     color: #777;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border);
     cursor: not-allowed;
     position: relative;
 }
@@ -81,9 +81,9 @@
 /* Keep the disabled look on hover (don't show the action-colored hover state). */
 .chat-streaming .retry-btn:hover,
 .chat-streaming .edit-retry-btn:hover {
-    background: #2a2a2a;
+    background: var(--bg-panel);
     color: #777;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border);
 }
 
 /* Hover tooltip explaining why the action is unavailable. */
@@ -96,7 +96,7 @@
     width: 200px;
     padding: 6px 8px;
     background: #1b1b1b;
-    border: 1px solid #555;
+    border: 1px solid var(--border-strong);
     border-radius: 3px;
     color: #ddd;
     font-size: 11px;
@@ -107,14 +107,15 @@
     pointer-events: none;
 }
 
-/* Branch navigation container */
+/* Branch navigation container. The JS show-path clears its inline display so these
+   govern; margin-left was previously overridden inline to 10px on every show. */
 .branch-nav {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 10px;
-    color: #aaa;
-    margin-left: auto; /* Push to right side */
+    color: var(--text-dim);
+    margin-left: 10px;
 }
 
 /* Version navigation container (legacy) */
@@ -123,7 +124,7 @@
     align-items: center;
     gap: 6px;
     font-size: 10px;
-    color: #aaa;
+    color: var(--text-dim);
     margin-left: auto; /* Push to right side */
 }
 
@@ -131,9 +132,9 @@
 .nav-btn {
     width: 20px;
     height: 20px;
-    background: #444;
-    border: 1px outset #666;
-    color: #e0e0e0;
+    background: var(--border-subtle);
+    border: 1px outset var(--border-bright);
+    color: var(--text);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -144,25 +145,25 @@
 }
 
 .nav-btn:hover {
-    background: #555;
-    border: 1px inset #666;
+    background: var(--border-strong);
+    border: 1px inset var(--border-bright);
 }
 
 .nav-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    background: #333;
+    background: var(--bg-raised);
 }
 
 .nav-btn:disabled:hover {
-    background: #333;
-    border: 1px outset #666;
+    background: var(--bg-raised);
+    border: 1px outset var(--border-bright);
 }
 
 /* Branch indicator */
 .branch-indicator {
     font-size: 10px;
-    color: #aaa;
+    color: var(--text-dim);
     font-weight: 500;
     min-width: 30px;
     text-align: center;
@@ -171,7 +172,7 @@
 /* Version indicator (legacy) */
 .version-indicator {
     font-size: 10px;
-    color: #aaa;
+    color: var(--text-dim);
     font-weight: 500;
     min-width: 30px;
     text-align: center;
@@ -186,7 +187,7 @@
 }
 
 .response-turn .message-actions {
-    background: #4a4a4a;
+    background: var(--bg-elevated);
     border: 1px inset #6a6a6a;
 }
 
@@ -203,7 +204,7 @@
 
 /* Primary button styling - 90s style */
 .message-actions .action-btn.primary {
-    background: #4a90e2;
+    background: var(--accent-info);
     border: 1px outset #6ab0ff;
     color: white;
 }

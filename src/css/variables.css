@@ -1,0 +1,43 @@
+/* Design tokens — the shared SimpleChatJS palette.
+ *
+ * These centralize the colors that recur across the UI so the theme can be tuned
+ * in one place. Each token's value is the exact literal it replaced, so adopting a
+ * var() never changes rendering — only where the value is defined.
+ *
+ * Only colors that recur across multiple files live here. One-off shades (specific
+ * error/success tints, status colors, syntax-highlight colors, gradients' rare
+ * stops) stay as literals at their use sites.
+ */
+:root {
+    /* Surfaces (dark → light) */
+    --bg-console:  #0c0c0c;  /* terminal black (shell console) */
+    --bg-deep:     #1a1a1a;  /* dropdown content, deep panels */
+    --bg-app:      #1e1e1e;  /* app/page background */
+    --bg-panel:    #2a2a2a;  /* dropdown/console frame, tool rows, cards */
+    --bg-mid:      #2c2c2c;  /* inputs, sunken areas */
+    --bg-raised:   #333;     /* summary bg, code-lang tab, buttons */
+    --bg-elevated: #4a4a4a;  /* assistant turns, raised buttons, header gradient */
+
+    /* Borders / separators (dark → light) */
+    --border:        #3a3a3a;  /* default frame border */
+    --border-subtle: #444;     /* lighter dividers */
+    --border-strong: #555;     /* content separators, inner borders */
+    --border-bright: #666;     /* lightest borders (buttons, previews) */
+
+    /* Text (bright → dim) */
+    --text:       #e0e0e0;  /* primary text */
+    --text-soft:  #ccc;     /* secondary / dropdown titles */
+    --text-dim:   #aaa;     /* tertiary labels */
+    --text-faint: #999;     /* faint hints */
+    --text-muted: #888;     /* muted labels */
+
+    /* Tool / semantic accents (kept in sync with the reserved hues in
+       chatRenderer.js mcpBarHue — see that comment before changing). */
+    --accent-blue:   #4a9eff;  /* thinking */
+    --accent-green:  #40c057;  /* read_file, success */
+    --accent-orange: #e8833a;  /* write_file */
+    --accent-yellow: #e3b341;  /* edit_file */
+    --accent-purple: #a371f7;  /* MCP fallback */
+    --accent-red:    #ff4444;  /* errors */
+    --accent-info:   #4a90e2;  /* section titles, info, links */
+}

@@ -11,13 +11,13 @@
     align-items: center;
     gap: 8px;
     padding: 8px;
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
 }
 
 .simple-tool-item:hover {
-    background: #333;
+    background: var(--bg-raised);
 }
 
 .simple-tool-toggle {
@@ -35,13 +35,13 @@
 
 .simple-tool-name {
     font-weight: bold;
-    color: #e0e0e0;
+    color: var(--text);
     font-size: 14px;
 }
 
 .simple-tool-desc {
     font-size: 12px;
-    color: #888;
+    color: var(--text-muted);
 }
 
 /* Output size limit (Tools tab) */
@@ -51,14 +51,14 @@
     gap: 4px;
     margin-top: 8px;
     padding: 8px;
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
 }
 
 .simple-tools-limit label {
     font-weight: bold;
-    color: #e0e0e0;
+    color: var(--text);
     font-size: 14px;
 }
 
@@ -80,19 +80,19 @@
 
 .shell-info {
     font-size: 12px;
-    color: #888;
+    color: var(--text-muted);
     font-style: italic;
     word-break: break-all;
 }
 
 /* Live shell console (shell_run tool blocks). Chrome matches .tool-dropdown
-   (green left accent, ▶/▼ marker, #2a2a2a/#3a3a3a frame); body stays terminal-black. */
+   (green left accent, ▶/▼ marker, var(--bg-panel)/var(--border) frame); body stays terminal-black. */
 .shell-console {
     margin: 2px 0;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
-    background: #2a2a2a;
+    background: var(--bg-panel);
     font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
 }
 
@@ -101,9 +101,9 @@
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    background: #0c0c0c;
+    background: var(--bg-console);
     border-left: 3px solid #5a5a5a; /* dark grey — shell_run's accent */
-    color: #e0e0e0;
+    color: var(--text);
     font-size: 13px;
     font-weight: 500;
     line-height: 1;
@@ -122,7 +122,7 @@
 
 .shell-console-chevron {
     flex-shrink: 0;
-    color: #e0e0e0;
+    color: var(--text);
     font-size: 11px;
 }
 
@@ -158,15 +158,15 @@
     color: #ffffff;
     padding-bottom: 8px;
     margin-bottom: 8px;
-    border-bottom: 1px solid #2c2c2c;
+    border-bottom: 1px solid var(--bg-mid);
 }
 
 /* Raw JSON toggle — left of the status badge, only shown when expanded. */
 .shell-console-raw-toggle {
     flex-shrink: 0;
     background: none;
-    border: 1px solid #3a3a3a;
-    color: #888;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
     font-family: "Cascadia Code", "Consolas", monospace;
     font-size: 11px;
     font-weight: bold;
@@ -178,14 +178,14 @@
 }
 
 .shell-console-raw-toggle:hover {
-    color: #e0e0e0;
-    border-color: #555;
+    color: var(--text);
+    border-color: var(--border-strong);
 }
 
 .shell-console-raw-toggle.active {
-    color: #e0e0e0;
-    background: #2a2a2a;
-    border-color: #555;
+    color: var(--text);
+    background: var(--bg-panel);
+    border-color: var(--border-strong);
 }
 
 .shell-console.collapsed .shell-console-raw-toggle {
@@ -242,14 +242,14 @@
     line-height: 1.45;
     white-space: pre-wrap;
     word-break: break-word;
-    background: #0c0c0c;
-    border-top: 1px solid #555;
+    background: var(--bg-console);
+    border-top: 1px solid var(--border-strong);
 }
 
 /* Raw JSON view drops the terminal-black theme for the standard grey dropdown
    content theme, so it matches the other tools. */
 .shell-console.raw-mode .shell-console-body {
-    background: #1a1a1a;
+    background: var(--bg-deep);
     padding: 8px;
 }
 
@@ -275,7 +275,7 @@
 .context-toggles-group h4 {
     margin: 0 0 8px 0;
     font-size: 14px;
-    color: #e0e0e0;
+    color: var(--text);
 }
 
 .context-toggles-group input[type="text"] {

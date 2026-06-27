@@ -11,16 +11,16 @@
 /* Remove nested scrolling - use natural modal scroll */
 #mcpServers {
     /* Remove max-height and overflow to eliminate nested scrolling */
-    border: 1px inset #555;
-    background: #1e1e1e;
+    border: 1px inset var(--border-strong);
+    background: var(--bg-app);
     padding: 8px;
     margin-top: 8px;
 }
 
 /* Server Container - Collapsible Design */
 .mcp-server {
-    background: #2a2a2a;
-    border: 1px solid #444;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
     margin: 6px 0;
     border-radius: 4px;
     overflow: hidden;
@@ -31,15 +31,15 @@
     display: flex;
     align-items: center;
     padding: 8px 12px;
-    background: #333;
+    background: var(--bg-raised);
     user-select: none;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--border-subtle);
     transition: background 0.2s ease;
     gap: 8px;
 }
 
 .mcp-server-header:hover {
-    background: #3a3a3a;
+    background: var(--border);
 }
 
 /* Make only the arrow area clickable for expand/collapse */
@@ -66,7 +66,7 @@
 .mcp-server-name {
     flex: 1;
     font-weight: bold;
-    color: #e0e0e0;
+    color: var(--text);
     font-size: 14px;
 }
 
@@ -84,7 +84,7 @@
 /* Collapse/Expand Indicator */
 .mcp-server-arrow {
     font-size: 12px;
-    color: #999;
+    color: var(--text-faint);
     transition: transform 0.2s ease;
     display: inline-block;
     user-select: none;
@@ -98,8 +98,8 @@
 .mcp-tools {
     display: none;
     padding: 8px 12px;
-    background: #1e1e1e;
-    border-top: 1px solid #444;
+    background: var(--bg-app);
+    border-top: 1px solid var(--border-subtle);
 }
 
 .mcp-server.expanded .mcp-tools {
@@ -113,7 +113,7 @@
     margin: 4px 0;
     padding: 2px 0;
     font-size: 13px;
-    color: #e0e0e0;
+    color: var(--text);
     gap: 6px;
 }
 
@@ -132,13 +132,13 @@
 /* Tool Name */
 .mcp-tool-name {
     flex: 1;
-    color: #ccc;
+    color: var(--text-soft);
 }
 
 /* Tool Description (if we add it later) */
 .mcp-tool-description {
     font-size: 11px;
-    color: #888;
+    color: var(--text-muted);
     margin-left: 22px;
     margin-top: 2px;
 }
@@ -146,7 +146,7 @@
 /* Loading State */
 .mcp-loading {
     text-align: center;
-    color: #999;
+    color: var(--text-faint);
     font-style: italic;
     padding: 20px;
 }
@@ -154,7 +154,7 @@
 /* No Servers State */
 .mcp-no-servers {
     text-align: center;
-    color: #888;
+    color: var(--text-muted);
     padding: 20px;
     font-style: italic;
 }

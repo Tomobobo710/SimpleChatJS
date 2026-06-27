@@ -1,6 +1,7 @@
 /* SimpleChat JS - Organized CSS Structure */
 /* Main style file that imports all component stylesheets */
 
+@import "variables.css";
 @import "base.css";
 @import "layout.css";
 @import "turns.css";

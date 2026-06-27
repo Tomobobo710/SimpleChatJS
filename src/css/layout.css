@@ -4,14 +4,14 @@
 .aim-container {
     display: flex;
     height: 100vh;
-    background: #2c2c2c;
+    background: var(--bg-mid);
 }
 
 /* Chat Sidebar (Buddy List Style) */
 .chat-sidebar {
     width: 250px;
-    background: #3a3a3a;
-    border-right: 2px inset #2c2c2c;
+    background: var(--border);
+    border-right: 2px inset var(--bg-mid);
     display: flex;
     flex-direction: column;
     position: relative;
@@ -20,8 +20,8 @@
 /* Sidebar Tabs (Chat / Code) */
 .sidebar-tabs {
     display: flex;
-    background: #2a2a2a;
-    border-bottom: 1px solid #555;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border-strong);
 }
 
 .sidebar-tab-btn {
@@ -29,13 +29,13 @@
     padding: 6px 8px;
     background: transparent;
     border: none;
-    color: #999;
+    color: var(--text-faint);
     font-size: 12px;
     font-family: Tahoma, Arial, sans-serif;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.15s ease;
-    border-right: 1px solid #444;
+    border-right: 1px solid var(--border-subtle);
 }
 
 .sidebar-tab-btn:last-child {
@@ -43,12 +43,12 @@
 }
 
 .sidebar-tab-btn:hover {
-    background: #3a3a3a;
-    color: #e0e0e0;
+    background: var(--border);
+    color: var(--text);
 }
 
 .sidebar-tab-btn.active {
-    background: #4a4a4a;
+    background: var(--bg-elevated);
     color: #ffffff;
 }
 
@@ -57,8 +57,8 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    background: #1e1e1e;
-    border: 1px inset #2c2c2c;
+    background: var(--bg-app);
+    border: 1px inset var(--bg-mid);
     margin: 3px;
     display: flex;
     flex-direction: column;
@@ -73,9 +73,9 @@
 .project-item {
     display: flex;
     flex-direction: column;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--bg-raised);
     font-size: 15px;
-    color: #e0e0e0;
+    color: var(--text);
     position: relative;
     margin-bottom: 2px;
     cursor: pointer;
@@ -122,7 +122,7 @@
 
 .project-item-path {
     font-size: 12px;
-    color: #999;
+    color: var(--text-faint);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -154,21 +154,21 @@
 
 /* Project chat view header */
 .project-chat-header {
-    background: #4a4a4a;
+    background: var(--bg-elevated);
     padding: 6px 10px;
-    border-bottom: 1px inset #2c2c2c;
+    border-bottom: 1px inset var(--bg-mid);
     font-weight: bold;
     font-size: 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: #e0e0e0;
+    color: var(--text);
 }
 
 .project-chat-back-btn {
     background: rgba(255, 255, 255, 0.1);
     border: none;
-    color: #e0e0e0;
+    color: var(--text);
     font-size: 16px;
     width: 24px;
     height: 24px;
@@ -187,13 +187,13 @@
 
 /* Sidebar bottom bar */
 .sidebar-bottom-bar {
-    background: #4a4a4a;
+    background: var(--bg-elevated);
     padding: 8px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     min-height: 40px;
-    border-top: 1px solid #555;
+    border-top: 1px solid var(--border-strong);
 }
 
 .bottom-bar-left {
@@ -205,7 +205,7 @@
 }
 
 .bottom-bar-arrow {
-    background: #3a3a3a;
+    background: var(--border);
     border: 1px solid #6a6a6a;
     color: white;
     width: 32px;
@@ -235,7 +235,7 @@
 }
 
 .bottom-bar-plus {
-    background: #3a3a3a;
+    background: var(--border);
     border: 1px solid #6a6a6a;
     color: white;
     width: 32px;
@@ -279,40 +279,40 @@
 
 .chat-controls {
     padding: 5px;
-    background: #3a3a3a;
-    border-bottom: 1px inset #2c2c2c;
+    background: var(--border);
+    border-bottom: 1px inset var(--bg-mid);
     display: flex;
     flex-wrap: wrap;
     gap: 3px;
 }
 
 .chat-list-header {
-    background: #4a4a4a;
+    background: var(--bg-elevated);
     padding: 6px 10px;
-    border-bottom: 1px inset #2c2c2c;
+    border-bottom: 1px inset var(--bg-mid);
     font-weight: bold;
     font-size: 14px; /* Increased from 12px */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    color: #e0e0e0;
+    color: var(--text);
 }
 
 .chat-list {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden; /* Prevent horizontal scrolling */
-    background: #1e1e1e;
-    border: 1px inset #2c2c2c;
+    background: var(--bg-app);
+    border: 1px inset var(--bg-mid);
     margin: 3px;
 }
 
 .chat-item {
     display: flex;
     flex-direction: column;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--bg-raised);
     font-size: 15px;
-    color: #e0e0e0;
+    color: var(--text);
     position: relative;
     margin-bottom: 2px;
 }
@@ -368,7 +368,7 @@
 }
 
 .chat-item.active .chat-item-content {
-    background: #4a4a4a;
+    background: var(--bg-elevated);
 }
 
 .chat-item.active .chat-item-content:hover {
@@ -386,7 +386,7 @@
 
 .chat-item-preview {
     font-size: 12px;
-    color: #999;
+    color: var(--text-faint);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -445,16 +445,24 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: #1e1e1e;
+    background: var(--bg-app);
     /* Allow this flex column to shrink below its content's intrinsic width so a
        wide child (e.g. a long shell console command/output) can't push the chat
        area past the viewport. Without this, flex min-width:auto lets it grow. */
     min-width: 0;
 }
 
+/* Live-streaming render container (the temp div blocks stream into during a
+   response). Fills the turn bubble; box-sizing keeps padding inside the width.
+   Previously set inline in turnRequest.js / streamManager.js. */
+.live-stream-container {
+    width: 100%;
+    box-sizing: border-box;
+}
+
 .chat-header {
-    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
-    border-bottom: 1px solid #555;
+    background: linear-gradient(to bottom, var(--bg-elevated), var(--border));
+    border-bottom: 1px solid var(--border-strong);
     padding: 10px 15px;
     min-height: 50px;
     display: flex;
@@ -481,12 +489,12 @@
 .chat-title {
     font-weight: bold;
     font-size: 15px;
-    color: #e0e0e0;
+    color: var(--text);
 }
 
 .chat-info {
     font-size: 12px;
-    color: #999;
+    color: var(--text-faint);
     margin-top: 2px;
 }
 
@@ -495,7 +503,7 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    background: #1e1e1e;
+    background: var(--bg-app);
     padding: 5px;
     height: 0; /* Force flex child to respect parent height */
 }
@@ -510,8 +518,8 @@
 
 /* Input Container */
 .input-container {
-    background: #3a3a3a;
-    border-top: 1px solid #555;
+    background: var(--border);
+    border-top: 1px solid var(--border-strong);
     padding: 15px;
     display: flex;
     flex-direction: column;
@@ -553,10 +561,10 @@
     position: relative;
     width: 60px;
     height: 60px;
-    border: 1px solid #555;
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
     overflow: hidden;
-    background: #2c2c2c;
+    background: var(--bg-mid);
 }
 
 .image-preview img {
@@ -601,8 +609,8 @@
     position: relative;
     display: flex;
     align-items: center;
-    background: #2c2c2c;
-    border: 1px solid #555;
+    background: var(--bg-mid);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
     padding: 8px;
     min-width: 200px;
@@ -613,7 +621,7 @@
     font-family: monospace;
     font-size: 12px;
     font-weight: bold;
-    color: #4a90e2;
+    color: var(--accent-info);
     margin-right: 8px;
     flex-shrink: 0;
 }
@@ -634,7 +642,7 @@
 
 .document-preview .doc-size, .edit-document-preview .doc-size {
     font-size: 11px;
-    color: #999;
+    color: var(--text-faint);
 }
 
 .document-preview .remove-btn, .edit-document-preview .remove-btn {
@@ -660,8 +668,8 @@
 }
 
 .document-preview:hover, .edit-document-preview:hover {
-    border-color: #4a90e2;
-    background: #333;
+    border-color: var(--accent-info);
+    background: var(--bg-raised);
 }
 
 /* Edit Modal Document Previews - Match main chat styling */
@@ -672,7 +680,7 @@
 .edit-documents-header {
     font-size: 13px;
     font-weight: bold;
-    color: #ccc;
+    color: var(--text-soft);
     margin-bottom: 8px;
 }
 
@@ -690,7 +698,7 @@
 /* Input container drag-over state */
 .input-container.drag-over {
     background: rgba(74, 144, 226, 0.05);
-    border: 2px dashed #4a90e2;
+    border: 2px dashed var(--accent-info);
     border-radius: 8px;
     position: relative;
 }
@@ -767,7 +775,7 @@
     font-family: monospace;
     font-size: 11px;
     font-weight: bold;
-    color: #4a90e2;
+    color: var(--accent-info);
     margin-right: 10px;
     min-width: 40px;
     text-align: center;
@@ -809,10 +817,10 @@
     max-width: 300px;
     max-height: 200px;
     border-radius: 8px;
-    border: 1px solid #555;
+    border: 1px solid var(--border-strong);
     cursor: pointer;
     object-fit: contain;
-    background: #2c2c2c;
+    background: var(--bg-mid);
 }
 
 .message-image:hover {

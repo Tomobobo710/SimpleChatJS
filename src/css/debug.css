@@ -7,7 +7,7 @@
     right: 10px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #ccc;
+    color: var(--text-soft);
     width: 28px;
     height: 28px;
     border-radius: 4px;
@@ -28,19 +28,19 @@
 .debug-toggle.active {
     background: rgba(74, 144, 226, 0.3);
     border-color: rgba(74, 144, 226, 0.5);
-    color: #4a90e2;
+    color: var(--accent-info);
 }
 
 /* Main Debug Panel */
 .debug-panel {
-    background: #1a1a1a;
-    border: 1px solid #333;
+    background: var(--bg-deep);
+    border: 1px solid var(--bg-raised);
     border-radius: 4px;
     padding: 15px;
     margin: 10px 0;
     font-family: 'Courier New', monospace;
     font-size: 13px;
-    color: #e0e0e0;
+    color: var(--text);
 }
 
 .debug-panel.hidden {
@@ -54,7 +54,7 @@
 }
 
 .debug-note {
-    color: #888;
+    color: var(--text-muted);
     font-style: italic;
     margin-bottom: 15px;
     font-size: 13px;
@@ -62,7 +62,7 @@
 
 /* HTTP Request/Response Pairs */
 .http-pair {
-    border: 1px solid #444;
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
     margin: 8px 0;
     background: #222;
@@ -71,10 +71,10 @@
 .http-pair h4 {
     margin: 0;
     padding: 10px 15px;
-    background: #333;
+    background: var(--bg-raised);
     color: #4CAF50;
     font-size: 15px;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
 /* Debug Sections */
@@ -90,23 +90,33 @@
 }
 
 .debug-timestamp {
-    color: #888;
+    color: var(--text-muted);
     font-size: 10px;
     margin-bottom: 8px;
+}
+
+/* Container for a turn's debug panel. width/box-sizing keep it (and its dropdowns,
+   content, and <pre> blocks below) from overflowing the turn bubble — previously
+   forced imperatively in JS (createDebugPanel), now owned by CSS. */
+.debug-panel-container {
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* Debug Dropdowns */
 .debug-dropdown {
     margin: 4px 0;
-    border: 1px solid #555;
+    border: 1px solid var(--border-strong);
     border-radius: 3px;
-    background: #2a2a2a;
+    background: var(--bg-panel);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .debug-dropdown-header {
     padding: 6px 8px;
     cursor: pointer;
-    background: #333;
+    background: var(--bg-raised);
     user-select: none;
     display: flex;
     align-items: center;
@@ -118,30 +128,38 @@
     display: none;
 }
 
+/* Chevron matches .dropdown-toggle::before (turns.css) and the shell console:
+   monospace glyphs so the ▶/▼ render identically across all collapsibles. */
 .debug-dropdown-header::before {
-    content: '▶';
-    transition: transform 0.2s;
-    font-size: 10px;
+    content: "\25b6"; /* ▶ collapsed */
+    font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
+    font-size: 11px;
+    color: var(--text);
 }
 
 details[open] .debug-dropdown-header::before {
-    content: '▼';
+    content: "\25bc"; /* ▼ open */
 }
 
 .debug-dropdown-header:hover {
-    background: #444;
+    background: var(--border-subtle);
 }
 
-.dropdown-title {
+/* Scoped to debug dropdowns. Previously unscoped, which bled onto the streaming
+   tool-dropdown titles (debug.css loads after turns.css, so it won by source
+   order) and forced a higher-specificity counter-rule in turns.css. */
+.debug-dropdown .dropdown-title {
     font-size: 11px;
-    color: #ccc;
+    color: var(--text-soft);
 }
 
 .debug-dropdown-content {
-    border-top: 1px solid #555;
-    background: #1a1a1a;
+    border-top: 1px solid var(--border-strong);
+    background: var(--bg-deep);
     max-height: 400px;
     overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .debug-dropdown-content pre {
@@ -153,5 +171,7 @@ details[open] .debug-dropdown-header::before {
     overflow-wrap: anywhere;
     font-size: 11px;
     line-height: 1.3;
-    color: #e0e0e0;
+    color: var(--text);
+    width: 100%;
+    box-sizing: border-box;
 }

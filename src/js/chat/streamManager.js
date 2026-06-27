@@ -171,8 +171,7 @@ class StreamManager {
 
         const { processor } = ss;
         const newTempContainer = document.createElement("div");
-        newTempContainer.style.width = "100%";
-        newTempContainer.style.boxSizing = "border-box";
+        newTempContainer.className = "live-stream-container";
         const newLiveRenderer = new ChatRenderer(newTempContainer);
 
         const newResponseTurnDiv = document.createElement("div");
