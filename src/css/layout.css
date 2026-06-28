@@ -253,6 +253,7 @@
     background: var(--bg-app);
     border: 1px inset var(--bg-mid);
     margin: 3px;
+    padding: 2px; /* match .projects-container — insets rows from the border/scrollbar */
 }
 
 /* Empty / error placeholder shown in the chat or projects list (e.g. "No chats
