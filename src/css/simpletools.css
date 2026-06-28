@@ -272,6 +272,160 @@
     font-style: italic;
 }
 
+/* ===== Edit diff view (edit_file tool blocks) ===== */
+/* Mirrors the shell console frame; body is a unified diff. Yellow accent matches
+   edit_file's data-tool color used by the regular dropdowns. */
+.edit-diff {
+    margin: 2px 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-panel);
+    font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
+}
+
+.edit-diff-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    /* Header carries edit_file's tool color — same accent + faint tint the regular
+       edit_file dropdown uses (turns.css), so all edit_file rows line up. */
+    background: rgba(227, 179, 65, 0.10);
+    border-left: 3px solid var(--accent-yellow);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+    box-sizing: border-box;
+    min-height: 30px;
+}
+
+.edit-diff-header:hover { background: rgba(227, 179, 65, 0.16); }
+
+.edit-diff-chevron { flex-shrink: 0; color: var(--text); font-size: 11px; }
+.edit-diff-chevron::before { content: "\25bc"; }
+.edit-diff.collapsed .edit-diff-chevron::before { content: "\25b6"; }
+
+.edit-diff-clip { overflow: hidden; }
+.edit-diff.collapsed .edit-diff-clip { height: 0; }
+
+.edit-diff-title { flex-shrink: 0; font-weight: 600; }
+
+/* Filename only (full path in the title tooltip). Fills the middle. */
+.edit-diff-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.edit-diff-raw-toggle {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.edit-diff-raw-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.edit-diff-raw-toggle.active { color: var(--text); background: var(--bg-panel); border-color: var(--border-strong); }
+.edit-diff.collapsed .edit-diff-raw-toggle { display: none; }
+
+.edit-diff-status {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+.edit-diff-status.running {
+    color: #e0c060;
+    background: rgba(224, 192, 96, 0.12);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.edit-diff-status.ok { color: #5fd35f; background: rgba(95, 211, 95, 0.12); }
+.edit-diff-status.err { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }
+
+.edit-diff-body {
+    margin: 0;
+    padding: 6px 0;
+    max-height: 360px;
+    overflow: auto;
+    font-size: 12.5px;
+    line-height: 1.5;
+    background: var(--bg-console);
+    border-top: 1px solid var(--border-strong);
+}
+
+/* Raw JSON view drops the diff theme for the standard grey dropdown content theme. */
+.edit-diff.raw-mode .edit-diff-body { background: var(--bg-deep); padding: 8px; }
+.edit-diff.raw-mode .edit-diff-body div {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 6px;
+    border-radius: 0 0 4px 4px;
+}
+
+.edit-diff-hunk { padding: 2px 0; }
+.edit-diff-hunk + .edit-diff-hunk { border-top: 1px solid var(--bg-mid); margin-top: 4px; padding-top: 6px; }
+.edit-diff-hunk-label {
+    padding: 2px 12px 4px;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+.edit-diff-counts .add { color: #5fd35f; }
+.edit-diff-counts .del { color: #ff6b6b; }
+
+.edit-diff-line {
+    display: flex;
+    align-items: flex-start;
+    padding: 0 12px;
+    color: #b8b8b8;
+}
+/* Two line-number gutters (old / new), relative to the snippet. Non-selectable so
+   copying the diff doesn't drag the numbers along. */
+.edit-diff-ln {
+    flex-shrink: 0;
+    width: 2.2em;
+    text-align: right;
+    padding-right: 8px;
+    color: #6a6a6a;
+    user-select: none;
+}
+.edit-diff-ln.new { border-right: 1px solid var(--bg-mid); margin-right: 8px; }
+.edit-diff-sign {
+    flex-shrink: 0;
+    width: 1ch;
+    margin-right: 6px;
+    opacity: 0.6;
+    user-select: none;
+}
+.edit-diff-text {
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.edit-diff-line.add { background: rgba(95, 211, 95, 0.13); color: #c6ecc6; }
+.edit-diff-line.del { background: rgba(255, 107, 107, 0.13); color: #f0bcbc; }
+.edit-diff-line.ctx { color: #8f8f8f; }
+
+.edit-diff-empty { display: block; padding: 10px 12px; color: #777; font-style: italic; }
+
 /* Env context toggles (Tokens tab, System Prompts section) */
 .context-toggles-group {
     margin-top: 16px;

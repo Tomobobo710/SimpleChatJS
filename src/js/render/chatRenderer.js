@@ -272,6 +272,198 @@ function updateShellConsoleElement(el, metadata) {
     armShellCollapse(el, metadata);
 }
 
+// ===== Edit diff view (edit_file tool blocks) =====
+// edit_file renders as a unified diff (the whole point of the tool is "what
+// changed"), with a { } toggle to the raw Arguments/Result JSON — same pattern as
+// the shell console. Args ({path, edits:[{old_string,new_string}]}) arrive parsed at
+// execution-start (live and reload-replay), so the diff renders straight from them.
+
+// Line-level unified diff (LCS) between two strings. Returns [{t:'ctx'|'add'|'del', text}].
+function editLineDiff(a, b) {
+    const A = String(a == null ? '' : a).split('\n');
+    const B = String(b == null ? '' : b).split('\n');
+    const m = A.length, n = B.length;
+    const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) {
+        for (let j = n - 1; j >= 0; j--) {
+            dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+        if (A[i] === B[j]) { out.push({ t: 'ctx', text: A[i] }); i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ t: 'del', text: A[i] }); i++; }
+        else { out.push({ t: 'add', text: B[j] }); j++; }
+    }
+    while (i < m) out.push({ t: 'del', text: A[i++] });
+    while (j < n) out.push({ t: 'add', text: B[j++] });
+    return out;
+}
+
+// Just the filename for the header (full path goes in the title tooltip).
+function editFileName(p) {
+    if (!p) return '';
+    const parts = String(p).split(/[\\/]/);
+    return parts[parts.length - 1] || String(p);
+}
+
+function editDiffStatusHtml(metadata) {
+    const s = metadata.status;
+    if (s === 'success') return `<span class="edit-diff-status ok">applied</span>`;
+    if (s === 'error') return `<span class="edit-diff-status err">failed</span>`;
+    return `<span class="edit-diff-status running">editing<span class="shell-console-spinner"></span></span>`;
+}
+
+// Raw view: Arguments + Result JSON through the SAME formatter the other tools use.
+function editDiffRawHtml(metadata) {
+    const args = metadata.arguments || {};
+    const result = metadata.result != null ? metadata.result
+        : (metadata.error != null ? { error: metadata.error }
+        : (metadata.status === 'success' ? { success: true } : { status: 'running' }));
+    const content = `[edit_file]:\nArguments: ${JSON.stringify(args)}\nResult: ${JSON.stringify(result)}`;
+    return '<div class="dropdown-inner">' + formatToolContent(content, 'edit_file', args) + '</div>';
+}
+
+// Pretty diff body: one hunk per edit, unified +/- lines.
+function editDiffBodyHtml(metadata) {
+    if (metadata.editShowRaw) return editDiffRawHtml(metadata);
+    const args = metadata.arguments;
+    const edits = args && Array.isArray(args.edits) ? args.edits : null;
+    if (!edits || edits.length === 0) {
+        return `<span class="edit-diff-empty">${metadata.status === 'executing' ? '(preparing edit…)' : '(no edits)'}</span>`;
+    }
+    // Real file line where each edit matched (from the backend result). Until the
+    // result lands (mid-stream), fall back to 1 (snippet-relative).
+    const editLines = (metadata.result && Array.isArray(metadata.result.edit_lines)) ? metadata.result.edit_lines : null;
+    let html = '';
+    edits.forEach((edit, idx) => {
+        const diff = editLineDiff(edit.old_string, edit.new_string);
+        let adds = 0, dels = 0;
+        // Two-gutter unified diff: old-side col for context+removed, new-side for
+        // context+added. Real file line comes from the backend result; until it lands
+        // (mid-stream) we DON'T know it — show "?" rather than fake 1-based numbers.
+        const known = !!(editLines && editLines[idx]);
+        let oldNo = known ? editLines[idx] : 0, newNo = known ? editLines[idx] : 0;
+        const lines = diff.map(d => {
+            if (d.t === 'add') adds++; else if (d.t === 'del') dels++;
+            const sign = d.t === 'add' ? '+' : d.t === 'del' ? '-' : ' ';
+            const oldCell = d.t === 'add' ? '' : (known ? oldNo++ : '?');
+            const newCell = d.t === 'del' ? '' : (known ? newNo++ : '?');
+            return `<div class="edit-diff-line ${d.t}">`
+                + `<span class="edit-diff-ln old">${oldCell}</span>`
+                + `<span class="edit-diff-ln new">${newCell}</span>`
+                + `<span class="edit-diff-sign">${sign}</span>`
+                + `<span class="edit-diff-text">${escapeHtml(d.text)}</span></div>`;
+        }).join('');
+        const label = edits.length > 1
+            ? `<div class="edit-diff-hunk-label">Edit ${idx + 1} of ${edits.length} <span class="edit-diff-counts"><span class="add">+${adds}</span> <span class="del">−${dels}</span></span></div>`
+            : '';
+        html += `<div class="edit-diff-hunk">${label}${lines}</div>`;
+    });
+    return html;
+}
+
+// Collapse/expand by tweening the clip height (WAAPI), mirroring the shell console.
+function setEditDiffCollapsed(el, collapsed, animate) {
+    if (!el) return;
+    if (el.classList.contains('collapsed') === collapsed) return;
+    const clip = el.querySelector('.edit-diff-clip');
+    if (el._editAnim) { el._editAnim.cancel(); el._editAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!clip || animate === false || reduce || !clip.animate) { el.classList.toggle('collapsed', collapsed); return; }
+    if (collapsed) {
+        const start = clip.scrollHeight;
+        el.classList.add('collapsed');
+        el._editAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], { duration: 180, easing: 'ease' });
+    } else {
+        el.classList.remove('collapsed');
+        const target = clip.scrollHeight;
+        el._editAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], { duration: 180, easing: 'ease' });
+    }
+    el._editAnim.onfinish = el._editAnim.oncancel = () => { el._editAnim = null; };
+}
+
+function buildEditDiffElement(metadata) {
+    const el = document.createElement('div');
+    el.className = 'edit-diff';
+    el.dataset.tool = 'edit_file';
+    const path = (metadata.arguments && metadata.arguments.path) || '';
+    el.innerHTML = `
+        <div class="edit-diff-header">
+            <span class="edit-diff-chevron"></span>
+            <span class="edit-diff-title">edit_file</span>
+            <span class="edit-diff-path" title="${escapeHtml(path)}">${escapeHtml(editFileName(path))}</span>
+            <button class="edit-diff-raw-toggle" title="Toggle raw JSON">{ }</button>
+            ${editDiffStatusHtml(metadata)}
+        </div>
+        <div class="edit-diff-clip"><div class="edit-diff-body"></div></div>
+    `;
+    const body = el.querySelector('.edit-diff-body');
+    body.innerHTML = editDiffBodyHtml(metadata);
+    el.classList.toggle('raw-mode', !!metadata.editShowRaw);
+    // Closed by default (unlike shell_run, which auto-opens while running). Open/closed
+    // is stored in metadata so it survives the finalize rebuild — without this, opening
+    // it mid-stream snaps shut when the turn re-renders. Default (undefined) = closed.
+    if (metadata.editCollapsed !== false) el.classList.add('collapsed');
+
+    // Scroll position also lives in metadata, so the finalize/reload rebuild restores
+    // it instead of jumping to the top. Recorded on scroll; restored after layout.
+    // Guard on isConnected: removing the element (finalize's tempContainer.remove())
+    // resets scrollTop to 0 and fires a scroll event — without this guard that 0 would
+    // clobber the saved position right before the rebuild restores it.
+    body.addEventListener('scroll', () => { if (body.isConnected) metadata.editScrollTop = body.scrollTop; });
+    if (metadata.editCollapsed === false && metadata.editScrollTop != null) {
+        // Double rAF: a freshly-appended body isn't scrollable on the first frame, so a
+        // single-rAF restore would clamp to 0. Wait for layout to flush.
+        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.editScrollTop; }));
+    }
+
+    const rawBtn = el.querySelector('.edit-diff-raw-toggle');
+    rawBtn.classList.toggle('active', !!metadata.editShowRaw);
+    rawBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        metadata.editShowRaw = !metadata.editShowRaw;
+        rawBtn.classList.toggle('active', metadata.editShowRaw);
+        el.classList.toggle('raw-mode', metadata.editShowRaw);
+        body.innerHTML = editDiffBodyHtml(metadata);
+    });
+
+    el.querySelector('.edit-diff-header').addEventListener('click', () => {
+        const collapsed = !el.classList.contains('collapsed');
+        metadata.editCollapsed = collapsed; // persist so finalize rebuild keeps the choice
+        setEditDiffCollapsed(el, collapsed, true);
+        // On open, jump to the latest so it starts following the stream.
+        if (!collapsed) { const b = el.querySelector('.edit-diff-body'); if (b) b.scrollTop = b.scrollHeight; }
+    });
+    return el;
+}
+
+function updateEditDiffElement(el, metadata) {
+    if (!el) return;
+    const header = el.querySelector('.edit-diff-header');
+    if (header) {
+        const oldStatus = header.querySelector('.edit-diff-status');
+        if (oldStatus) oldStatus.outerHTML = editDiffStatusHtml(metadata);
+        const pathEl = header.querySelector('.edit-diff-path');
+        const path = (metadata.arguments && metadata.arguments.path) || '';
+        const name = editFileName(path);
+        if (pathEl && pathEl.textContent !== name) { pathEl.textContent = name; pathEl.title = path; }
+        const rawBtn = header.querySelector('.edit-diff-raw-toggle');
+        if (rawBtn) rawBtn.classList.toggle('active', !!metadata.editShowRaw);
+    }
+    const body = el.querySelector('.edit-diff-body');
+    if (body) {
+        // Only follow when open (collapsed = hidden, no point). While open, stick to
+        // the bottom unless the user scrolled up to read.
+        const open = !el.classList.contains('collapsed');
+        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
+        body.innerHTML = editDiffBodyHtml(metadata);
+        el.classList.toggle('raw-mode', !!metadata.editShowRaw);
+        if (atBottom) body.scrollTop = body.scrollHeight;
+    }
+}
+
 // ===== Deterministic MCP accent color =====
 // Each MCP tool gets a stable color seeded by its name, kept clear of the hues
 // already used by the built-in tools so they never clash. Fed to CSS via the
@@ -380,10 +572,12 @@ class ChatRenderer {
                 if (blockData.type === "thinking") {
                     stateKey = "thinking_" + thinkingIndex;
                     thinkingIndex++;
-                } else if (blockData.type === "tool" && blockData.metadata?.toolName !== "shell_run") {
-                    // shell_run renders as a console, not a collapsible dropdown, so
-                    // it's excluded from the .streaming-dropdown ordinal state keys
-                    // (which the post-stream capture also skips). Keep indices aligned.
+                } else if (blockData.type === "tool"
+                        && blockData.metadata?.toolName !== "shell_run"
+                        && blockData.metadata?.toolName !== "edit_file") {
+                    // shell_run (console) and edit_file (diff) aren't .streaming-dropdowns,
+                    // so they're excluded from the ordinal state keys (the post-stream
+                    // capture skips them too). Keep indices aligned.
                     stateKey = "tool_" + toolIndex;
                     toolIndex++;
                 }
@@ -505,6 +699,11 @@ class ChatRenderer {
             return buildShellConsoleElement(metadata || {});
         }
 
+        // edit_file renders as a unified diff, not a dropdown.
+        if (toolName === 'edit_file') {
+            return buildEditDiffElement(metadata || {});
+        }
+
         // MCP tools arrive namespaced as mcp__<server>__<tool>. Show the clean
         // tool name in the title and surface an "MCP" badge for transparency.
         const mcpInfo = parseMcpToolName(toolName);
@@ -518,7 +717,7 @@ class ChatRenderer {
 
         const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen, badge);
         // Tag with the tool so CSS can color the left accent bar per tool
-        // (read=blue, write=green, edit=yellow, shell=grey). MCP tools get a color
+        // (read=green, write=orange, edit=yellow, shell=grey). MCP tools get a color
         // seeded from the tool name, fed to CSS via --mcp-bar / --mcp-tint.
         dropdown.element.dataset.tool = mcpInfo.isMcp ? 'mcp' : toolName;
         if (mcpInfo.isMcp) {

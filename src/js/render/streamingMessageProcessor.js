@@ -179,6 +179,13 @@ class StreamingMessageProcessor {
             if (cmd) block.metadata.command = cmd;
             if (block.metadata.shellStatus !== 'done') block.metadata.shellStatus = 'running';
             block.content = `__shell__|args:${(data.arguments || '').length}`;
+        } else if (block.metadata.toolName === 'edit_file') {
+            // Render a live diff as the model types the edit: pull a structured (partial)
+            // {path, edits} out of the streaming JSON. Bump content (with the arg length)
+            // so updateLiveRendering fires the re-render each delta.
+            const parsed = StreamingMessageProcessor._partialEditArgs(data.arguments);
+            if (parsed) block.metadata.arguments = parsed;
+            block.content = `__edit__|args:${(data.arguments || '').length}`;
         } else {
             block.content = `[${data.name}]:\nArguments: ${data.arguments}\nResult: Executing...`;
         }
@@ -194,6 +201,58 @@ class StreamingMessageProcessor {
             try { return JSON.parse('"' + candidate + '"'); } catch (e) { /* keep trying */ }
         }
         return m[1];
+    }
+
+    // Best-effort extraction of { path, edits:[{old_string,new_string}] } from a
+    // partial/streaming JSON args string, so edit_file can render a LIVE diff as the
+    // model types it (mirrors _partialShellCommand). The trailing value may be
+    // unterminated; earlier values are complete. Tolerates a dangling escape.
+    static _partialEditArgs(argsStr) {
+        if (typeof argsStr !== 'string' || !argsStr) return null;
+        const decode = (body) => {
+            for (const c of [body, body.replace(/\\+$/, '')]) {
+                try { return JSON.parse('"' + c + '"'); } catch (e) { /* try next */ }
+            }
+            return body;
+        };
+        // A JSON string body: non-quote/backslash chars or escape pairs, stopping at
+        // the first UNescaped quote (or end of input for the streaming tail).
+        const STR = '((?:[^"\\\\]|\\\\.)*)';
+
+        // Only take the path once it's COMPLETE (trailing quote present). A partial
+        // path would make the header's filename flicker through path segments as it
+        // streams (src → app → foo → foo.js); empty-until-done avoids that.
+        let path = '';
+        const pm = argsStr.match(new RegExp('"path"\\s*:\\s*"' + STR + '"'));
+        if (pm) path = decode(pm[1]);
+
+        // Collect old_string/new_string values in document order: all complete ones,
+        // then any unterminated trailing one.
+        const pairs = [];
+        const complete = new RegExp('"(old_string|new_string)"\\s*:\\s*"' + STR + '"', 'g');
+        let m, lastIndex = 0;
+        while ((m = complete.exec(argsStr)) !== null) {
+            pairs.push({ key: m[1], val: decode(m[2]) });
+            lastIndex = complete.lastIndex;
+        }
+        const tail = argsStr.slice(lastIndex);
+        const tm = tail.match(new RegExp('"(old_string|new_string)"\\s*:\\s*"' + STR + '$'));
+        if (tm) pairs.push({ key: tm[1], val: decode(tm[2]) });
+
+        // Assemble edits: an old_string opens a new edit; new_string fills the current.
+        const edits = [];
+        let cur = null;
+        for (const p of pairs) {
+            if (p.key === 'old_string') {
+                if (cur) edits.push(cur);
+                cur = { old_string: p.val, new_string: '' };
+            } else {
+                if (!cur) cur = { old_string: '', new_string: '' };
+                cur.new_string = p.val;
+            }
+        }
+        if (cur) edits.push(cur);
+        return { path, edits };
     }
 
     _onToolExecutionStart(data) {

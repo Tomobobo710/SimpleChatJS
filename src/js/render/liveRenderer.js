@@ -45,6 +45,9 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     if (currentBlock.metadata?.toolName === 'shell_run' || currentBlock.metadata?.isShellConsole) {
                         // Live shell console: append to the terminal body in place.
                         updateShellConsoleElement(blockElement, currentBlock.metadata || {});
+                    } else if (currentBlock.metadata?.toolName === 'edit_file') {
+                        // Live edit diff: re-render the diff body in place as args/result arrive.
+                        updateEditDiffElement(blockElement, currentBlock.metadata || {});
                     } else {
                         const dropdownInner = blockElement.querySelector('.dropdown-inner');
                         if (dropdownInner) {
