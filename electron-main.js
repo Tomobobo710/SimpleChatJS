@@ -96,10 +96,13 @@ function createWindow() {
     setTimeout(() => {
         mainWindow.loadURL("http://localhost:50505");
         mainWindow.show();
-        // Auto-open DevTools only in unpackaged builds.
-        if (!app.isPackaged) {
-            mainWindow.webContents.openDevTools();
-        }
+        // F12 toggles DevTools in all builds
+        mainWindow.webContents.on("before-input-event", (event, input) => {
+            if (input.type === "keyDown" && input.key === "F12") {
+                mainWindow.webContents.toggleDevTools();
+                event.preventDefault();
+            }
+        });
         // Add find bar to this window
         setFindBar(mainWindow, { darkMode: true });
     }, 2000);
@@ -253,7 +256,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-    // Server runs in the same process, so no cleanup needed
     console.log("App shutting down...");
 });
 
