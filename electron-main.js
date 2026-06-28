@@ -76,8 +76,8 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
-        minWidth: 800,
-        minHeight: 600,
+        minWidth: 200,
+        minHeight: 200,
         icon: path.join(__dirname, "assets", "images", "icon", "simplechaticon512.ico"),
         webPreferences: {
             nodeIntegration: false,

@@ -10,9 +10,10 @@
     
 </head>
 <body>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <div class="aim-container">
         <!-- Chat List Sidebar -->
-        <div class="chat-sidebar">
+        <div class="chat-sidebar" id="chatSidebar">
             <div class="sidebar-header">
                 <div class="user-info">
                     <div class="user-name">SimpleChatJS User</div>
@@ -62,6 +63,7 @@
         <!-- Main Chat Area -->
         <div class="chat-main">
             <div class="chat-header">
+                <button id="sidebarToggleBtn" class="sidebar-toggle-btn" title="Toggle sidebar">&#9776;</button>
                 <div class="chat-title-section">
                     <div class="chat-title" id="chatTitle">Select or create a new chat</div>
                     <div class="chat-info" id="chatInfo"></div>

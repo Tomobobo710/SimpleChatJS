@@ -59,6 +59,38 @@ function initializeElements() {
     saveMcpConfigBtn = document.getElementById('saveMcpConfig');
     testMcpConfigBtn = document.getElementById('testMcpConfig');
         
+    // Sidebar toggle (narrow layout)
+    const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+    const chatSidebar = document.getElementById('chatSidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+    function openSidebar() {
+        chatSidebar.classList.add('sidebar-open');
+        sidebarOverlay.classList.add('sidebar-open');
+    }
+    function closeSidebar() {
+        chatSidebar.classList.remove('sidebar-open');
+        sidebarOverlay.classList.remove('sidebar-open');
+    }
+
+    if (sidebarToggleBtn) {
+        sidebarToggleBtn.addEventListener('click', () => {
+            chatSidebar.classList.contains('sidebar-open') ? closeSidebar() : openSidebar();
+        });
+    }
+    if (sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', closeSidebar);
+    }
+
+    // Close sidebar when a chat is selected in narrow layout
+    if (chatSidebar) {
+        chatSidebar.addEventListener('click', (e) => {
+            if (window.innerWidth <= 600 && e.target.closest('.chat-item, .project-item')) {
+                closeSidebar();
+            }
+        });
+    }
+
     // Log level selector
     const logLevelSelect = document.getElementById('logLevel');
     if (logLevelSelect) {
