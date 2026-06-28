@@ -36,8 +36,19 @@ document.addEventListener("DOMContentLoaded", function () {
     // Initialize bottom bar state
     window.updateBottomBar();
 
-    // Load chat list after a short delay to ensure DOM is ready
-    setTimeout(loadChatList, 300);
+    // Restore last session state after a short delay to ensure DOM is ready
+    setTimeout(async () => {
+        try {
+            const uiState = await fetch(`${API_BASE}/api/ui-state`).then(r => r.json());
+            if (uiState.last_project_id) {
+                openProject(uiState.last_project_id);
+            } else {
+                loadChatList();
+            }
+        } catch {
+            loadChatList();
+        }
+    }, 300);
 
     logger.info("Simple Chat initialized");
 });

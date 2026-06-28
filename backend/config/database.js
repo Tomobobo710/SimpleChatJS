@@ -30,12 +30,7 @@ function initializeDatabase() {
                 project_id TEXT DEFAULT NULL
             )`);
 
-            db.exec(`CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )`);
-
-            db.exec(`CREATE TABLE IF NOT EXISTS projects (
+db.exec(`CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 path TEXT NOT NULL,
