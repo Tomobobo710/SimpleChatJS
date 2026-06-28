@@ -354,6 +354,17 @@ class TurnRequest {
         const blocks = (processor && typeof processor.getBlocks === "function") ? processor.getBlocks() : [];
         const partialContent = (processor && typeof processor.getRawContent === "function") ? (processor.getRawContent() || "") : "";
 
+        // Mirror the system message the backend persists on error, so it shows LIVE
+        // too (not just on reload). Same gate as the backend (only when content
+        // streamed — the zero-content case stays silent) and same per-type wording.
+        if (partialContent.trim() !== "") {
+            const SYSTEM_TEXT = {
+                user_stopped: "Generation stopped by user.",
+                connection_error: "Connection error while receiving response.",
+            };
+            blocks.push(new Block({ type: 'system', content: SYSTEM_TEXT[errorType] || "Error while receiving response." }));
+        }
+
         const errorBlock = new Block({ type: 'error', content: errorText, metadata: { error_type: errorType } });
         blocks.push(errorBlock);
 
