@@ -305,6 +305,12 @@ class StreamingMessageProcessor {
         block.metadata.result = data.status === 'success' ? (data.result ?? null) : null;
         block.metadata.error = data.status === 'success' ? null : (data.error ?? null);
 
+        // edit_file diff uses the same auto-collapse grace period as the shell console;
+        // stamp when it finished (live → now, reload → 0 = collapse immediately).
+        if (block.metadata.toolName === 'edit_file') {
+            block.metadata.editDoneAt = this._live ? Date.now() : 0;
+        }
+
         // Shell consoles keep the terminal view instead of an Arguments/Result
         // dropdown. On reload there were no live chunks, so seed the console body
         // from the stored result output here.

@@ -39,6 +39,21 @@ function saveSettings(settings) {
     }).catch(error => console.warn('Failed to save settings:', error));
 }
 
+// Per-tool display preferences (auto expand / auto collapse) for the tool dropdowns
+// and custom renderers (shell console, edit diff). Stored in settings.toolDisplay,
+// keyed by tool name; all MCP tools share the 'mcp' key. Defaults: expand on,
+// collapse on, 3s. Renderers call this to decide open/close behavior.
+function getToolDisplaySettings(toolName) {
+    const all = (loadSettings().toolDisplay) || {};
+    const isMcp = typeof toolName === 'string' && toolName.startsWith('mcp__');
+    const d = all[isMcp ? 'mcp' : toolName] || {};
+    return {
+        autoExpand: d.autoExpand !== false,
+        autoCollapse: d.autoCollapse !== false,
+        autoCollapseSec: Number.isFinite(d.autoCollapseSec) ? d.autoCollapseSec : 3
+    };
+}
+
 // Escape HTML
 function escapeHtml(text) {
     const div = document.createElement('div');

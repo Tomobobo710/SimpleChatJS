@@ -251,6 +251,7 @@ class StreamingDropdown {
         // the clip height via the Web Animations API instead.
         wrapper.querySelector('.dropdown-toggle').addEventListener('click', (e) => {
             e.preventDefault();
+            this._userToggled = true;   // user's choice wins over the auto-collapse policy
             this.toggleOpen(wrapper);
         });
 
@@ -332,6 +333,22 @@ class StreamingDropdown {
             this._anim.onfinish = () => { this._anim = null; wrapper.open = false; };
             this._anim.oncancel = () => { this._anim = null; };
         }
+    }
+
+    // Auto-collapse this dropdown N seconds after the tool finishes, per the per-tool
+    // display settings. Auto-EXPAND-while-executing is handled at creation (renderToolBlock
+    // opens it for an executing tool); here we just schedule the close. No-op once the
+    // user has toggled it, if already armed, or if the tool isn't done yet.
+    maybeAutoCollapse(toolName, status) {
+        if (this._userToggled || this._autoCollapseArmed) return;
+        if (status !== 'success' && status !== 'error') return;
+        const opts = getToolDisplaySettings(toolName);
+        if (!opts.autoCollapse) return;
+        this._autoCollapseArmed = true;
+        setTimeout(() => {
+            if (this._userToggled) return;
+            if (this.element.classList.contains('dd-open')) this.toggleOpen(this.element);
+        }, opts.autoCollapseSec * 1000);
     }
 
     appendContent(newContent) {

@@ -31,6 +31,53 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Per-tool display preferences (Auto Expand / Auto Collapse), right side of the card
+   and at the bottom of the MCP modal. */
+.tool-display-opts {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+}
+.tool-display-opts.mcp-display-opts {
+    gap: 20px;
+    margin-top: 8px;
+}
+.td-opt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 1;
+    min-height: 24px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    cursor: pointer;
+}
+.td-opt input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    margin: 0;
+    position: relative;
+    top: 2px;   /* font sits ~2px below the geometric center; nudge the box to match */
+}
+/* Beat .settings-section input { width:100% } (forms.css) so the stepper stays small. */
+.tool-display-opts .td-collapse-sec {
+    width: 48px;
+    flex: 0 0 auto;
+    direction: rtl;     /* spinner arrows on the left, value on the right */
+    padding: 2px 4px;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    font-size: 12px;
 }
 
 .simple-tool-name {

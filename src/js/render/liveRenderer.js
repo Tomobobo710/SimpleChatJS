@@ -54,6 +54,11 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                             const formattedContent = formatToolContent(currentBlock.content, currentBlock.metadata?.toolName);
                             dropdownInner.innerHTML = formattedContent;
                         }
+                        // Arm auto-collapse once the tool finishes (per display settings).
+                        const inst = blockElement._streamingDropdownInstance;
+                        if (inst && inst.maybeAutoCollapse) {
+                            inst.maybeAutoCollapse(currentBlock.metadata?.toolName, currentBlock.metadata?.status);
+                        }
                     }
                 } else if (currentBlock.type === 'thinking') {
                     const dropdownInner = blockElement.querySelector('.dropdown-inner');

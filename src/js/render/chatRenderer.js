@@ -137,15 +137,14 @@ function shellConsoleBodyHtml(metadata) {
     return cmdLine + `<div class="shell-console-out">${bodyOut}</div>`;
 }
 
-// Grace period after a command finishes before the console auto-collapses, so the
-// user has a moment to read the output.
-const SHELL_COLLAPSE_DELAY = 2500;
 
-// Collapse state: open while running, collapsed once done (after the grace period)
-// — unless the user has clicked the header, after which their explicit choice wins.
+// Collapse state. User's explicit click always wins. Otherwise driven by the per-tool
+// display settings: while running, open only if Auto Expand; once done, collapsed only
+// after the auto-collapse grace period has fired.
 function shellConsoleIsCollapsed(metadata) {
     if (metadata.shellUserToggled) return !!metadata.shellCollapsed;
-    if (metadata.shellStatus !== 'done') return false;
+    const opts = getToolDisplaySettings('shell_run');
+    if (metadata.shellStatus !== 'done') return !opts.autoExpand;
     return !!metadata.shellAutoCollapsed;
 }
 
@@ -182,10 +181,12 @@ function setShellCollapsed(el, collapsed, animate) {
 function armShellCollapse(el, metadata) {
     if (metadata.shellUserToggled || metadata.shellAutoCollapsed) return;
     if (metadata.shellStatus !== 'done') return;
+    const opts = getToolDisplaySettings('shell_run');
+    if (!opts.autoCollapse) return;          // user disabled auto-collapse for shell_run
     if (el._collapseArmed) return;
     el._collapseArmed = true;
     const doneAt = metadata.shellDoneAt || 0;
-    const remaining = doneAt ? SHELL_COLLAPSE_DELAY - (Date.now() - doneAt) : 0;
+    const remaining = doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) : 0;
     if (remaining <= 0) {
         metadata.shellAutoCollapsed = true;
         setShellCollapsed(el, true, false); // grace already elapsed / reload → instant
@@ -364,6 +365,37 @@ function editDiffBodyHtml(metadata) {
     return html;
 }
 
+// Collapse policy — mirrors the shell console. User's click wins; otherwise driven by
+// the per-tool display settings: open while executing if Auto Expand; collapsed once
+// done after the auto-collapse grace fires.
+function editDiffIsDone(metadata) { return metadata.status === 'success' || metadata.status === 'error'; }
+function editDiffIsCollapsed(metadata) {
+    if (metadata.editUserToggled) return !!metadata.editCollapsed;
+    const opts = getToolDisplaySettings('edit_file');
+    if (!editDiffIsDone(metadata)) return !opts.autoExpand;
+    return !!metadata.editAutoCollapsed;
+}
+function armEditCollapse(el, metadata) {
+    if (metadata.editUserToggled || metadata.editAutoCollapsed) return;
+    if (!editDiffIsDone(metadata)) return;
+    const opts = getToolDisplaySettings('edit_file');
+    if (!opts.autoCollapse) return;
+    if (el._editCollapseArmed) return;
+    el._editCollapseArmed = true;
+    const doneAt = metadata.editDoneAt || 0;
+    const remaining = doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) : 0;
+    if (remaining <= 0) {
+        metadata.editAutoCollapsed = true;
+        setEditDiffCollapsed(el, true, false);
+        return;
+    }
+    setTimeout(() => {
+        if (metadata.editUserToggled) return;
+        metadata.editAutoCollapsed = true;
+        setEditDiffCollapsed(el, true, true);
+    }, remaining);
+}
+
 // Collapse/expand by tweening the clip height (WAAPI), mirroring the shell console.
 function setEditDiffCollapsed(el, collapsed, animate) {
     if (!el) return;
@@ -402,10 +434,9 @@ function buildEditDiffElement(metadata) {
     const body = el.querySelector('.edit-diff-body');
     body.innerHTML = editDiffBodyHtml(metadata);
     el.classList.toggle('raw-mode', !!metadata.editShowRaw);
-    // Closed by default (unlike shell_run, which auto-opens while running). Open/closed
-    // is stored in metadata so it survives the finalize rebuild — without this, opening
-    // it mid-stream snaps shut when the turn re-renders. Default (undefined) = closed.
-    if (metadata.editCollapsed !== false) el.classList.add('collapsed');
+    // Open/closed driven by per-tool display settings (Auto Expand/Collapse), with the
+    // user's explicit toggle persisted in metadata so it survives the finalize rebuild.
+    if (editDiffIsCollapsed(metadata)) el.classList.add('collapsed');
 
     // Scroll position also lives in metadata, so the finalize/reload rebuild restores
     // it instead of jumping to the top. Recorded on scroll; restored after layout.
@@ -413,7 +444,7 @@ function buildEditDiffElement(metadata) {
     // resets scrollTop to 0 and fires a scroll event — without this guard that 0 would
     // clobber the saved position right before the rebuild restores it.
     body.addEventListener('scroll', () => { if (body.isConnected) metadata.editScrollTop = body.scrollTop; });
-    if (metadata.editCollapsed === false && metadata.editScrollTop != null) {
+    if (!editDiffIsCollapsed(metadata) && metadata.editScrollTop != null) {
         // Double rAF: a freshly-appended body isn't scrollable on the first frame, so a
         // single-rAF restore would clamp to 0. Wait for layout to flush.
         requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.editScrollTop; }));
@@ -431,11 +462,16 @@ function buildEditDiffElement(metadata) {
 
     el.querySelector('.edit-diff-header').addEventListener('click', () => {
         const collapsed = !el.classList.contains('collapsed');
-        metadata.editCollapsed = collapsed; // persist so finalize rebuild keeps the choice
+        metadata.editUserToggled = true;       // user's choice now wins over auto policy
+        metadata.editCollapsed = collapsed;    // persisted so the finalize rebuild keeps it
         setEditDiffCollapsed(el, collapsed, true);
         // On open, jump to the latest so it starts following the stream.
         if (!collapsed) { const b = el.querySelector('.edit-diff-body'); if (b) b.scrollTop = b.scrollHeight; }
     });
+
+    // Apply the auto-collapse timer if this build is already in a done state (reload, or
+    // a finalize rebuild after completion).
+    armEditCollapse(el, metadata);
     return el;
 }
 
@@ -462,6 +498,10 @@ function updateEditDiffElement(el, metadata) {
         el.classList.toggle('raw-mode', !!metadata.editShowRaw);
         if (atBottom) body.scrollTop = body.scrollHeight;
     }
+    // Re-apply open/closed from policy (executing→open if Auto Expand) and arm the
+    // auto-collapse once the edit finishes. No-ops once the user has taken control.
+    setEditDiffCollapsed(el, editDiffIsCollapsed(metadata), true);
+    armEditCollapse(el, metadata);
 }
 
 // ===== Deterministic MCP accent color =====
@@ -715,7 +755,13 @@ class ChatRenderer {
         // Format the content with Arguments and Result sections
         const formattedContent = formatToolContent(content, toolName, metadata?.toolArgs);
 
-        const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen, badge);
+        // Auto-expand while the tool is executing (per display settings). Only the
+        // executing state opens — a done tool on reload stays at its saved state, so
+        // history doesn't flash open. Auto-collapse-after-done is armed in liveRenderer.
+        let open = isOpen;
+        if (metadata?.status === 'executing' && getToolDisplaySettings(toolName).autoExpand) open = true;
+
+        const dropdown = new StreamingDropdown(dropdownId, title, "tool", !open, badge);
         // Tag with the tool so CSS can color the left accent bar per tool
         // (read=green, write=orange, edit=yellow, shell=grey). MCP tools get a color
         // seeded from the tool name, fed to CSS via --mcp-bar / --mcp-tint.
