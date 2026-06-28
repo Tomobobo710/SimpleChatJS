@@ -889,7 +889,14 @@ class ChatRenderer {
             }
         });
 
-        turnDiv.appendChild(debugToggle);
+        // Place the toggle rightmost in the message-actions bar's right cluster (next
+        // to branch nav). Fall back to appending on the turn if the bar isn't present.
+        const rightCluster = turnDiv.querySelector(".message-actions .message-actions-right");
+        if (rightCluster) {
+            rightCluster.appendChild(debugToggle);
+        } else {
+            turnDiv.appendChild(debugToggle);
+        }
 
         // Add turn ID and message ID to debug data
         if (!debugData) {
@@ -958,6 +965,13 @@ class ChatRenderer {
         // Assemble the actions container - add action buttons first (left side)
         actionsContainer.appendChild(actionButtons);
 
+        // Right-side cluster: branch nav + the debug (+) toggle live together here,
+        // pushed to the right by the bar's space-between. The debug toggle is appended
+        // into this cluster by addDebugPanel (which runs after this), landing rightmost
+        // with branch nav to its left.
+        const rightCluster = document.createElement("div");
+        rightCluster.className = "message-actions-right";
+
         // Add branch navigation to both request and response turns (both can be branched)
         if ((identity === "request" || identity === "response") && turnId) {
             // Branch navigation container
@@ -995,17 +1009,20 @@ class ChatRenderer {
                 branchNav.style.display = "none";
             });
 
-            // Add branch nav to actions container after action buttons
-            actionsContainer.appendChild(branchNav);
+            // Branch nav goes in the right cluster (debug toggle slots in to its right)
+            rightCluster.appendChild(branchNav);
         }
 
-        // Insert before debug toggle if it exists, otherwise just append
-        const debugToggle = turnDiv.querySelector(".debug-toggle");
-        if (debugToggle) {
-            turnDiv.insertBefore(actionsContainer, debugToggle);
-        } else {
-            turnDiv.appendChild(actionsContainer);
+        actionsContainer.appendChild(rightCluster);
+
+        // If the debug toggle was already created (re-render order), pull it into the
+        // right cluster so it stays rightmost; otherwise addDebugPanel places it later.
+        const existingDebugToggle = turnDiv.querySelector(".debug-toggle");
+        if (existingDebugToggle) {
+            rightCluster.appendChild(existingDebugToggle);
         }
+
+        turnDiv.appendChild(actionsContainer);
     }
 
     // Handle turn-level editing - show all messages in the turn

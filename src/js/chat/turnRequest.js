@@ -485,7 +485,14 @@ class TurnRequest {
             const dp = lastRequestMessage.querySelector('.debug-panel-container');
             if (dp) { const h = dp.style.display === 'none'; dp.style.display = h ? 'block' : 'none'; debugToggle.innerHTML = h ? '−' : '+'; debugToggle.classList.toggle('active', h); }
         });
-        lastRequestMessage.appendChild(debugToggle);
+        // Place the toggle rightmost in the message-actions bar (next to branch nav),
+        // matching addDebugPanel. Fall back to the turn if the bar isn't present yet.
+        const rightCluster = lastRequestMessage.querySelector('.message-actions .message-actions-right');
+        if (rightCluster) {
+            rightCluster.appendChild(debugToggle);
+        } else {
+            lastRequestMessage.appendChild(debugToggle);
+        }
         lastRequestMessage.appendChild(createDebugPanel(lastRequestMessage, messageId, requestDebugData, 0));
     }
 
