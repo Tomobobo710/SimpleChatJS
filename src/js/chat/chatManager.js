@@ -538,6 +538,12 @@ async function loadChatHistory(chatId) {
         chatTitle.textContent = title;
         chatInfo.textContent = `Chat ID: ${chatId} | ${history.messages.length} messages`;
 
+        window.updateChatMessageCount = () => {
+            if (!currentChatId) return;
+            const count = document.querySelectorAll('#messages .request-turn, #messages .response-turn').length;
+            chatInfo.textContent = `Chat ID: ${currentChatId} | ${count} turns`;
+        };
+
         logger.info("[UNIFIED-RENDERING] Loading chat history through Turn.renderable()");
 
         const allTurns = groupMessagesByTurn(history.messages);
@@ -550,6 +556,7 @@ async function loadChatHistory(chatId) {
             chatRenderer.renderTurn(turn.renderable(), false, branchMap);
         });
 
+        window.updateChatMessageCount();
         scrollToBottom(scrollContainer);
     } catch (error) {
         logger.error("Error loading chat history:", error, true);
