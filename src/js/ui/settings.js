@@ -68,36 +68,39 @@ async function loadInitialSettings() {
 // Load settings into modal
 async function loadSettingsIntoModal() {
     try {
-        // Get fresh settings from backend (not cached)
-        const response = await fetch(`${window.location.origin}/api/settings`);
-        const settings = await response.json();
+        // Fetch all three configs in parallel
+        const [response, simpleConfig, shellConfig] = await Promise.all([
+            fetch(`${window.location.origin}/api/settings`).then(r => r.json()),
+            loadSimpleToolsConfig(),
+            loadShellConfig(),
+        ]);
+        const settings = response;
         logger.info('Loading fresh settings into modal:', settings);
-        
+
         // Load settings directly - crash if they don't exist
         apiUrlInput.value = settings.apiUrl;
         apiKeyInput.value = settings.apiKey;
         modelNameInput.value = settings.modelName;
         debugPanelsInput.checked = settings.debugPanels;
         systemBlocksInput.checked = settings.showSystemBlocks;
-        
+
         // Provider-specific thinking mode settings
         loadProviderThinkingSettings(settings);
-        
+
         // System prompt settings
         loadSystemPromptSettings(settings);
-        
+
         // Update main model dropdown
         mainModelSelect.value = settings.modelName;
-        
+
         // Show/hide thinking controls based on provider
         updateThinkingControlsVisibility(settings.apiUrl);
         // Setup thinking control event handlers
         setupThinkingEventHandlers();
         // Setup system prompt event handlers
         setupSystemPromptEventHandlers();
-        
-        // Load SimpleTools config
-        const simpleConfig = await loadSimpleToolsConfig();
+
+        // SimpleTools config
         document.getElementById('st-read-file').checked = simpleConfig.read_file !== false;
         document.getElementById('st-write-file').checked = simpleConfig.write_file !== false;
         document.getElementById('st-edit-file').checked = simpleConfig.edit_file !== false;
@@ -114,8 +117,7 @@ async function loadSettingsIntoModal() {
             el.querySelector('.td-collapse-sec').value = Number.isFinite(d.autoCollapseSec) ? d.autoCollapseSec : 3;
         });
 
-        // Load shell config (separate from main settings)
-        const shellConfig = await loadShellConfig();
+        // Shell config
         // The select shows 'auto' only if the saved value isn't one of the
         // concrete names (saved value is always concrete after init).
         const concreteNames = ['bash', 'pwsh', 'powershell', 'cmd'];

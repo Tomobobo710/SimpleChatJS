@@ -102,8 +102,8 @@ function setupEventListeners() {
     // Settings modal (old settings button removed from sidebar, kept for compatibility)
     if (settingsBtn) {
         settingsBtn.addEventListener('click', async () => {
-            await loadSettingsIntoModal();
             settingsModal.classList.remove('hidden');
+            loadSettingsIntoModal();
         });
     }
     
@@ -239,8 +239,8 @@ function setupEventListeners() {
     // Settings button in input bar
     if (settingsBtnInput) {
         settingsBtnInput.addEventListener('click', async () => {
-            await loadSettingsIntoModal();
             settingsModal.classList.remove('hidden');
+            loadSettingsIntoModal();
         });
     }
     
