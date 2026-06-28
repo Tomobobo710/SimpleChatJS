@@ -392,7 +392,7 @@ class TurnRequest {
     }
 
     _updateChatTitleFromMessage() {
-        const first = this.messages[0];
+        const first = this.messages.find(m => m.role !== 'system');
         if (!first?.content) return;
         const content = first.content;
         const currentTitle = document.getElementById('chatTitle').textContent;

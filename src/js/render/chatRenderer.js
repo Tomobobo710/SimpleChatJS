@@ -885,7 +885,7 @@ class ChatRenderer {
             this.handleTurnMeta(
                 identity,
                 finalBlocks
-                    .filter((b) => b.type === "chat")
+                    .filter((b) => b.type === "chat" && typeof b.content === "string")
                     .map((b) => b.content)
                     .join(" ")
             );
