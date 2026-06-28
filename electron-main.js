@@ -70,14 +70,43 @@ function startServer() {
     }
 }
 
+// Window state persistence
+const WINDOW_STATE_PATH = path.join(userdataPath, "window_state.json");
+
+function loadWindowState() {
+    try {
+        if (fs.existsSync(WINDOW_STATE_PATH)) {
+            return JSON.parse(fs.readFileSync(WINDOW_STATE_PATH, "utf8"));
+        }
+    } catch (e) {
+        console.error("Failed to load window state:", e);
+    }
+    return null;
+}
+
+function saveWindowState() {
+    if (!mainWindow) return;
+    try {
+        const isMaximized = mainWindow.isMaximized();
+        const bounds = mainWindow.getNormalBounds();
+        fs.writeFileSync(WINDOW_STATE_PATH, JSON.stringify({ ...bounds, isMaximized }), "utf8");
+    } catch (e) {
+        console.error("Failed to save window state:", e);
+    }
+}
+
 // Create the main application window
 function createWindow() {
+    const savedState = loadWindowState();
+
     // Create the browser window
     mainWindow = new BrowserWindow({
-        width: 1400,
-        height: 900,
-        minWidth: 800,
-        minHeight: 600,
+        width: savedState ? savedState.width : 1400,
+        height: savedState ? savedState.height : 900,
+        x: savedState ? savedState.x : undefined,
+        y: savedState ? savedState.y : undefined,
+        minWidth: 200,
+        minHeight: 200,
         icon: path.join(__dirname, "assets", "images", "icon", "simplechaticon512.ico"),
         webPreferences: {
             nodeIntegration: false,
@@ -92,14 +121,28 @@ function createWindow() {
         show: false // Don't show until ready
     });
 
+    // Persist window state on move/resize/maximize
+    const saveState = () => saveWindowState();
+    mainWindow.on("resize", saveState);
+    mainWindow.on("move", saveState);
+    mainWindow.on("maximize", saveState);
+    mainWindow.on("unmaximize", saveState);
+
     // Wait a moment for server to start, then load the URL
     setTimeout(() => {
         mainWindow.loadURL("http://localhost:50505");
-        mainWindow.show();
-        // Auto-open DevTools only in unpackaged builds.
-        if (!app.isPackaged) {
-            mainWindow.webContents.openDevTools();
+        // Maximize on first launch (no saved state), otherwise restore saved state
+        if (!savedState || savedState.isMaximized) {
+            mainWindow.maximize();
         }
+        mainWindow.show();
+        // F12 toggles DevTools in all builds
+        mainWindow.webContents.on("before-input-event", (event, input) => {
+            if (input.type === "keyDown" && input.key === "F12") {
+                mainWindow.webContents.toggleDevTools();
+                event.preventDefault();
+            }
+        });
         // Add find bar to this window
         setFindBar(mainWindow, { darkMode: true });
     }, 2000);
@@ -253,7 +296,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-    // Server runs in the same process, so no cleanup needed
     console.log("App shutting down...");
 });
 

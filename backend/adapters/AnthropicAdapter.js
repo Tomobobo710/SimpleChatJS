@@ -52,7 +52,8 @@ class AnthropicAdapter extends BaseResponseAdapter {
         // Process messages and extract system prompt
         for (const message of unifiedRequest.messages) {
             if (message.role === 'system') {
-                systemPrompt = message.content;
+                // Only the first system message becomes the system prompt; subsequent ones are dropped.
+                if (systemPrompt === null) systemPrompt = message.content;
             } else if (message.role === 'tool') {
                 // Convert tool results to Anthropic format
                 anthropicMessages.push({
@@ -129,15 +130,14 @@ class AnthropicAdapter extends BaseResponseAdapter {
             }));
         }
         
-        // Add thinking mode for supported models
-        const modelSupportsThinking = this.supportsThinking(unifiedRequest.model);
+        // Add thinking mode if enabled — let the API reject unsupported models
         const thinkingEnabled = settings.enableThinkingAnthropic === true;
         const rawBudget = settings.thinkingBudgetAnthropic;
         const thinkingBudget = rawBudget !== undefined && rawBudget !== null
             ? Math.max(1024, Math.min(32000, parseInt(rawBudget) || 1024))
             : 1024;
-        
-        if (modelSupportsThinking && thinkingEnabled) {
+
+        if (thinkingEnabled) {
             request.thinking = {
                 type: 'enabled',
                 budget_tokens: thinkingBudget
@@ -145,24 +145,6 @@ class AnthropicAdapter extends BaseResponseAdapter {
         }
         
         return request;
-    }
-
-    /**
-     * Check if a model supports thinking mode
-     */
-    supportsThinking(modelName) {
-        const thinkingModels = [
-            'claude-3-7-sonnet',
-            'claude-3.7-sonnet', 
-            'claude-sonnet-4',
-            'claude-4-sonnet',
-            'claude-opus-4',
-            'claude-4-opus'
-        ];
-        
-        return thinkingModels.some(thinkingModel => 
-            modelName.toLowerCase().includes(thinkingModel.toLowerCase())
-        );
     }
 
     processChunk(chunk, response, context) {
@@ -280,12 +262,14 @@ class AnthropicAdapter extends BaseResponseAdapter {
                         };
                     
                     default:
-                        throw new Error(`[ANTHROPIC-ADAPTER] Unknown content part type: ${part.type}`);
+                        console.warn(`[ANTHROPIC-ADAPTER] Skipping unknown content part type: ${part.type}`);
+                        return null;
                 }
-            });
+            }).filter(Boolean);
         }
-        
-        throw new Error(`[ANTHROPIC-ADAPTER] Unexpected content format: ${typeof content}`);
+
+        console.warn(`[ANTHROPIC-ADAPTER] Unexpected content format: ${typeof content}`);
+        return [];
     }
 
   }

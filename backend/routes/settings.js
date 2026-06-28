@@ -2,6 +2,21 @@
 const express = require('express');
 const https = require('https');
 const http = require('http');
+const fs = require('fs');
+const { getUserdataPath } = require('../utils/pathUtils');
+
+const UI_STATE_PATH = getUserdataPath('ui_state.json');
+
+function loadUiState() {
+    try {
+        return JSON.parse(fs.readFileSync(UI_STATE_PATH, 'utf8'));
+    } catch { return {}; }
+}
+
+function saveUiState(data) {
+    const current = loadUiState();
+    fs.writeFileSync(UI_STATE_PATH, JSON.stringify({ ...current, ...data }, null, 2), 'utf8');
+}
 const { 
     getActiveProfileSettings,
     updateActiveProfile,
@@ -211,6 +226,20 @@ router.delete('/profiles/:profileName', (req, res) => {
         }
     } catch (error) {
         log('[PROFILES] Delete profile error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// UI state (last active chat, etc.)
+router.get('/ui-state', (req, res) => {
+    res.json(loadUiState());
+});
+
+router.post('/ui-state', (req, res) => {
+    try {
+        saveUiState(req.body);
+        res.json({ success: true });
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });

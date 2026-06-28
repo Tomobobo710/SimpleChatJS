@@ -25,6 +25,7 @@ function getDefaultProfileSettings() {
         apiUrl: 'http://127.0.0.1:11434/v1',
         apiKey: '',
         modelName: '',
+        adapterType: 'auto',
         debugPanels: true,
         showSystemBlocks: true,
         

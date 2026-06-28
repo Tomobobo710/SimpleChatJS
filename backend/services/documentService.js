@@ -39,7 +39,10 @@ async function processDocumentFile(buffer, filename, mimetype) {
             format = 'office';
             log(`[DOCUMENT-API] Used officeparser for ${ext} file: ${filename}`);
         } else {
-            throw new Error(`Unsupported file format: ${ext}`);
+            // Fall back to raw text for any unknown extension
+            extractedText = buffer.toString('utf8');
+            format = 'text';
+            log(`[DOCUMENT-API] Used raw text fallback for ${ext} file: ${filename}`);
         }
 
         return {

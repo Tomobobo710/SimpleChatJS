@@ -229,6 +229,7 @@ class TurnRequest {
             streamManager.unregister(activeChatId);
             streamEntry.tempContainer.remove();
             streamEntry.responseTurnDiv.remove();
+            if (typeof window.updateChatMessageCount === "function") window.updateChatMessageCount();
             return { err, processor, requestTurnInfo, savedResponseTurn };
         };
 
@@ -297,6 +298,7 @@ class TurnRequest {
 
             if (toolEventSource) toolEventSource.close();
             streamManager.unregister(activeChatId);
+            if (typeof window.updateChatMessageCount === "function") window.updateChatMessageCount();
 
             const responseDebugData = collectedResponseDebug.length ? collectedResponseDebug : null;
 
@@ -330,6 +332,7 @@ class TurnRequest {
                 streamManager.unregister(activeChatId);
                 streamEntry.tempContainer.remove();
                 streamEntry.responseTurnDiv.remove();
+                if (typeof window.updateChatMessageCount === "function") window.updateChatMessageCount();
                 const responseDebugData = collectedResponseDebug.length ? collectedResponseDebug : null;
                 error.responseDebugData = responseDebugData;
                 await this.fireError(error, { processor, requestTurnInfo, savedResponseTurn, responseDebugData });
@@ -392,7 +395,7 @@ class TurnRequest {
     }
 
     _updateChatTitleFromMessage() {
-        const first = this.messages[0];
+        const first = this.messages.find(m => m.role !== 'system');
         if (!first?.content) return;
         const content = first.content;
         const currentTitle = document.getElementById('chatTitle').textContent;

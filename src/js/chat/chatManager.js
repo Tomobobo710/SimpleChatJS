@@ -153,10 +153,16 @@ async function loadChatList() {
             addChatToListAtEnd(chat.chat_id, chat.title, chat.last_message, new Date(chat.last_updated));
         });
 
-        // Auto-select the most recent chat
+        // Restore last active chat, falling back to most recent
         if (chats.length > 0) {
-            const mostRecent = chats[0];
-            currentChatId = mostRecent.chat_id;
+            let targetId = chats[0].chat_id;
+            try {
+                const uiState = await fetch(`${API_BASE}/api/ui-state`).then(r => r.json());
+                if (uiState.last_chat_id && chats.some(c => c.chat_id === uiState.last_chat_id)) {
+                    targetId = uiState.last_chat_id;
+                }
+            } catch {}
+            currentChatId = targetId;
             selectChat(currentChatId);
             loadChatHistory(currentChatId);
         }
@@ -311,6 +317,7 @@ async function switchToChat(chatId) {
 
     currentChatId = chatId;
     selectChat(chatId);
+    fetch(`${API_BASE}/api/ui-state`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ last_chat_id: chatId }) });
 
     // Load chat history
     await loadChatHistory(chatId);
@@ -531,6 +538,12 @@ async function loadChatHistory(chatId) {
         chatTitle.textContent = title;
         chatInfo.textContent = `Chat ID: ${chatId} | ${history.messages.length} messages`;
 
+        window.updateChatMessageCount = () => {
+            if (!currentChatId) return;
+            const count = document.querySelectorAll('#messages .request-turn, #messages .response-turn').length;
+            chatInfo.textContent = `Chat ID: ${currentChatId} | ${count} turns`;
+        };
+
         logger.info("[UNIFIED-RENDERING] Loading chat history through Turn.renderable()");
 
         const allTurns = groupMessagesByTurn(history.messages);
@@ -543,6 +556,7 @@ async function loadChatHistory(chatId) {
             chatRenderer.renderTurn(turn.renderable(), false, branchMap);
         });
 
+        window.updateChatMessageCount();
         scrollToBottom(scrollContainer);
     } catch (error) {
         logger.error("Error loading chat history:", error, true);
@@ -730,6 +744,9 @@ function renderProjects() {
 function openProject(projectId) {
     window.currentProjectId = projectId;
     window.sidebarView = "code";
+    document.querySelectorAll(".sidebar-tab-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.view === "code");
+    });
 
     const project = window.projects.find((p) => p.id === projectId);
     const projectName = project ? project.name || project.path.split("\\").pop().split("/").pop() : "Project";
@@ -751,6 +768,7 @@ function openProject(projectId) {
 
     // Load project-scoped chats
     loadProjectChats(projectId);
+    fetch(`${API_BASE}/api/ui-state`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ last_project_id: projectId }) });
 
     // Update bottom bar
     updateBottomBar();
@@ -761,6 +779,7 @@ function openProject(projectId) {
 // Close current project, go back to projects list
 function closeProject() {
     window.currentProjectId = null;
+    fetch(`${API_BASE}/api/ui-state`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ last_project_id: null, last_chat_id: null }) });
 
     // Hide project chat header
     const projectChatHeader = document.getElementById("projectChatHeader");
@@ -821,6 +840,18 @@ async function loadProjectChats(projectId) {
         chats.forEach((chat) => {
             addChatToListAtEnd(chat.chat_id, chat.title, chat.last_message, new Date(chat.last_updated));
         });
+
+        let targetId = chats[0].chat_id;
+        try {
+            const uiState = await fetch(`${API_BASE}/api/ui-state`).then(r => r.json());
+            if (uiState.last_chat_id && chats.some(c => c.chat_id === uiState.last_chat_id)) {
+                targetId = uiState.last_chat_id;
+            }
+        } catch {}
+        currentChatId = targetId;
+        selectChat(currentChatId);
+        loadChatHistory(currentChatId);
+
         streamManager.reapplyIndicators();
     } catch (error) {
         logger.error("Error loading project chats:", error);

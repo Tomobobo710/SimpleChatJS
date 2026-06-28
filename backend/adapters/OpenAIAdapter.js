@@ -170,12 +170,7 @@ class OpenAIAdapter extends BaseResponseAdapter {
                     
                     case 'image':
                         // Convert to OpenAI's image_url format with data URL
-                        // HACK: Ollama/OpenAI-compatible APIs often support WebP data but expect JPEG/PNG MIME types
-                        let mimeType = part.mimeType || 'image/jpeg';
-                        if (mimeType === 'image/webp') {
-                            mimeType = 'image/jpeg'; // Lie about WebP being JPEG for compatibility
-                        }
-                        const dataUrl = `data:${mimeType};base64,${part.imageData}`;
+                        const dataUrl = `data:${part.mimeType || 'image/jpeg'};base64,${part.imageData}`;
                         
                         return {
                             type: 'image_url',
@@ -185,12 +180,14 @@ class OpenAIAdapter extends BaseResponseAdapter {
                         };
                     
                     default:
-                        throw new Error(`[OPENAI-ADAPTER] Unknown content part type: ${part.type}`);
+                        console.warn(`[OPENAI-ADAPTER] Skipping unknown content part type: ${part.type}`);
+                        return null;
                 }
-            });
+            }).filter(Boolean);
         }
-        
-        throw new Error(`[OPENAI-ADAPTER] Unexpected content format: ${typeof content}`);
+
+        console.warn(`[OPENAI-ADAPTER] Unexpected content format: ${typeof content}`);
+        return [];
     }
 
   }

@@ -147,26 +147,15 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
             // active_edit_version just tracks which version we're on.
 
             // Process saved messages to ensure AI gets correct content
-            let finalContent = row.content;
+            let finalContent = parseContent(row.content);
 
-            // If this message has original content and file metadata, we need to process it for AI
-            if (row.original_content && row.file_metadata) {
+            // If content is an array, always run it through processMessageForAI so that
+            // {type:"files"} parts get folded into text and images stay as images.
+            if (Array.isArray(finalContent)) {
                 try {
-                    const originalContent =
-                        typeof row.original_content === "string" && row.original_content.startsWith("[")
-                            ? JSON.parse(row.original_content)
-                            : row.original_content;
-                    const fileMetadata = JSON.parse(row.file_metadata);
-
-                    // If there are files, re-process for AI to get concatenated content
-                    if (fileMetadata.hasFiles) {
-                        const processedMessage = processMessageForAI(originalContent);
-                        finalContent = processedMessage.aiContent;
-                        log(`[CHAT-HISTORY] Reprocessed message with ${fileMetadata.fileCount} file(s) for AI`);
-                    }
+                    finalContent = processMessageForAI(finalContent).aiContent;
                 } catch (e) {
-                    log(`[CHAT-HISTORY] Error processing file metadata: ${e.message}`);
-                    // Fall back to stored content
+                    log(`[CHAT-HISTORY] Error processing multimodal content: ${e.message}`);
                 }
             }
 
@@ -176,8 +165,7 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
                 includeErrorState: false,
             });
 
-            // Override content with AI-processed content
-            message.content = parseContent(finalContent);
+            message.content = finalContent;
 
             return message;
         });

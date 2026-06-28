@@ -885,7 +885,7 @@ class ChatRenderer {
             this.handleTurnMeta(
                 identity,
                 finalBlocks
-                    .filter((b) => b.type === "chat")
+                    .filter((b) => b.type === "chat" && typeof b.content === "string")
                     .map((b) => b.content)
                     .join(" ")
             );
@@ -925,6 +925,18 @@ class ChatRenderer {
                 return this.renderErrorBlock(content, metadata);
             case "system":
                 return this.renderSystemBlock(content);
+
+            case "image": {
+                const imageDiv = document.createElement("div");
+                imageDiv.className = "content-part image-part";
+                const img = document.createElement("img");
+                img.src = `data:${metadata.mimeType};base64,${metadata.imageData}`;
+                img.className = "message-image";
+                img.loading = "lazy";
+                img.onclick = () => this.openImageModal(img.src);
+                imageDiv.appendChild(img);
+                return imageDiv;
+            }
 
             case "chat":
             default:
@@ -2097,9 +2109,9 @@ class ChatRenderer {
             documentsContainer.appendChild(documentsHeader);
             documentsContainer.appendChild(documentsGrid);
 
-            // Insert before textarea
+            // Insert before textarea (textarea lives inside contentSection, not messageContainer directly)
             const textarea = messageContainer.querySelector(".message-content-textarea");
-            messageContainer.insertBefore(documentsContainer, textarea);
+            textarea.parentNode.insertBefore(documentsContainer, textarea);
         }
 
         // Update documents grid

@@ -68,36 +68,47 @@ async function loadInitialSettings() {
 // Load settings into modal
 async function loadSettingsIntoModal() {
     try {
-        // Get fresh settings from backend (not cached)
-        const response = await fetch(`${window.location.origin}/api/settings`);
-        const settings = await response.json();
+        // Fetch all three configs in parallel
+        const [response, simpleConfig, shellConfig] = await Promise.all([
+            fetch(`${window.location.origin}/api/settings`).then(r => r.json()),
+            loadSimpleToolsConfig(),
+            loadShellConfig(),
+        ]);
+        const settings = response;
         logger.info('Loading fresh settings into modal:', settings);
-        
+
         // Load settings directly - crash if they don't exist
         apiUrlInput.value = settings.apiUrl;
         apiKeyInput.value = settings.apiKey;
         modelNameInput.value = settings.modelName;
+        const adapterTypeSelect = document.getElementById('adapterType');
+        adapterTypeSelect.value = settings.adapterType || 'auto';
+        adapterTypeSelect.dataset.userSet = '0';
         debugPanelsInput.checked = settings.debugPanels;
         systemBlocksInput.checked = settings.showSystemBlocks;
-        
+
         // Provider-specific thinking mode settings
         loadProviderThinkingSettings(settings);
-        
+
         // System prompt settings
         loadSystemPromptSettings(settings);
-        
+
         // Update main model dropdown
         mainModelSelect.value = settings.modelName;
-        
+
         // Show/hide thinking controls based on provider
         updateThinkingControlsVisibility(settings.apiUrl);
+
+        // Mark dirty when user manually changes adapter type
+        adapterTypeSelect.addEventListener('change', () => {
+            adapterTypeSelect.dataset.userSet = '1';
+        }, { once: false });
         // Setup thinking control event handlers
         setupThinkingEventHandlers();
         // Setup system prompt event handlers
         setupSystemPromptEventHandlers();
-        
-        // Load SimpleTools config
-        const simpleConfig = await loadSimpleToolsConfig();
+
+        // SimpleTools config
         document.getElementById('st-read-file').checked = simpleConfig.read_file !== false;
         document.getElementById('st-write-file').checked = simpleConfig.write_file !== false;
         document.getElementById('st-edit-file').checked = simpleConfig.edit_file !== false;
@@ -114,8 +125,7 @@ async function loadSettingsIntoModal() {
             el.querySelector('.td-collapse-sec').value = Number.isFinite(d.autoCollapseSec) ? d.autoCollapseSec : 3;
         });
 
-        // Load shell config (separate from main settings)
-        const shellConfig = await loadShellConfig();
+        // Shell config
         // The select shows 'auto' only if the saved value isn't one of the
         // concrete names (saved value is always concrete after init).
         const concreteNames = ['bash', 'pwsh', 'powershell', 'cmd'];
@@ -176,6 +186,7 @@ async function handleSaveSettings() {
         apiUrl: apiUrlInput.value.trim(),
         apiKey: apiKeyInput.value.trim(),
         modelName: modelNameInput.value.trim(),
+        adapterType: document.getElementById('adapterType').value,
         debugPanels: debugPanelsInput.checked,
         showSystemBlocks: systemBlocksInput.checked,
         // Provider-specific thinking settings
@@ -818,6 +829,19 @@ function setupSystemPromptEventHandlers() {
 }
 
 // Show/hide provider-specific thinking controls based on API provider
+function inferAdapterFromUrl(url) {
+    const lower = (url || '').toLowerCase();
+    if (lower.includes('anthropic.com')) return 'anthropic';
+    if (lower.includes('google') || lower.includes('googleapis.com')) return 'google';
+    return 'openai-compatible';
+}
+
+function updateAdapterTypeFromUrl(url) {
+    const select = document.getElementById('adapterType');
+    if (!select || select.dataset.userSet === '1') return;
+    select.value = inferAdapterFromUrl(url);
+}
+
 function updateThinkingControlsVisibility(apiUrl) {
     const anthropicSection = document.querySelector('.thinking-section[data-provider="anthropic"]');
     const googleSection = document.querySelector('.thinking-section[data-provider="google"]');
