@@ -81,12 +81,47 @@ let isUserAtBottom = true;
 
 // Initialize smart scrolling on the scroll container
 function initSmartScroll(container) {
+    // Direction-aware bottom tracking. We must NOT infer "user scrolled away" from a
+    // plain position check: while content streams, our own auto-scroll defers to rAF,
+    // and by the time that scroll event fires more content has been appended, so
+    // scrollTop+clientHeight momentarily trails scrollHeight — a position check would
+    // read that as "not at bottom" and wrongly pause the follow (the second streaming
+    // dropdown getting cut off). Growth never moves scrollTop UP, so we only disarm
+    // when the user actually scrolls up; reaching the bottom re-arms. A shrink guard
+    // keeps a collapsing dropdown (browser clamps scrollTop down) from disarming us.
+    let lastScrollTop = container.scrollTop;
+    let lastScrollHeight = container.scrollHeight;
     container.addEventListener('scroll', () => {
-        // Check if user is at bottom (within 10px tolerance)
-        const scrollPosition = container.scrollTop + container.clientHeight;
-        const scrollHeight = container.scrollHeight;
-        isUserAtBottom = scrollPosition >= scrollHeight - 10;
+        const st = container.scrollTop;
+        const sh = container.scrollHeight;
+        const atBottom = st + container.clientHeight >= sh - 10;
+        const shrank = sh < lastScrollHeight - 1;
+        if (!shrank && st < lastScrollTop - 2) {
+            isUserAtBottom = false;   // genuine upward scroll → pause follow
+        } else if (atBottom) {
+            isUserAtBottom = true;    // back at the bottom → resume follow
+        }
+        lastScrollTop = st;
+        lastScrollHeight = sh;
     });
+
+    // Auto-follow ANY growth of the content — not just main-stream SSE events. Tool
+    // dropdowns stream over a separate channel and other render paths mutate the DOM
+    // without calling the scroll helpers; observing the content's size catches them
+    // all in one place. Gated on isUserAtBottom so scrolling up to read keeps it paused.
+    //
+    // Scroll SYNCHRONOUSLY here (not via smartScrollToBottom's rAF): a ResizeObserver
+    // callback runs after layout but before paint, so adjusting scrollTop now lands in
+    // the same frame the content grew — no visible jump. Deferring to rAF paints the
+    // grown content at the old position for one frame, then snaps down: that's the
+    // jitter. RO already coalesces multiple mutations per frame, so no throttle needed.
+    const content = container.querySelector('.messages') || container.firstElementChild;
+    if (content && typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(() => {
+            if (isUserAtBottom) container.scrollTop = container.scrollHeight;
+        });
+        observer.observe(content);
+    }
 }
 
 // Smart scroll - only scrolls if user is at bottom
@@ -95,8 +130,10 @@ function smartScrollToBottom(element) {
     if (isUserAtBottom && !scrollPending) {
         scrollPending = true;
         requestAnimationFrame(() => {
-            element.scrollTop = element.scrollHeight;
-            scrollPending = false;
+            // finally so a throw can't strand scrollPending=true and kill all
+            // future auto-scrolls for the session.
+            try { element.scrollTop = element.scrollHeight; }
+            finally { scrollPending = false; }
         });
     }
 }
