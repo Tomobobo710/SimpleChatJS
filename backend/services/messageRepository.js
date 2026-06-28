@@ -24,8 +24,8 @@ async function saveMessage(chatId, messageData, turnInfo = null, errorState = nu
         // Insert message with turn info
         const insertStmt = db.prepare(`
             INSERT INTO messages
-            (chat_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state, turn_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (chat_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state, turn_type, debug_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = insertStmt.run(
@@ -41,7 +41,8 @@ async function saveMessage(chatId, messageData, turnInfo = null, errorState = nu
             serialized.originalContent,
             serialized.fileMetadata,
             errorState,
-            turnType
+            turnType,
+            serialized.debugData
         );
 
         // Update chat's updated_at timestamp
@@ -189,54 +190,43 @@ function getChatHistoryForAPI(chat_id, maxTurnId = null) {
     }
 }
 
-// Save debug data to turn_debug table (keyed by chat_id + turn_id)
-async function saveTurnDebugData(chatId, turnId, debugData) {
+// Attach debug data to an already-saved message, identified by turn. Used for the
+// REQUEST message: it's persisted before the provider call, so its request wire-debug
+// (the sequence) is written on afterward. Targets the message of the given turn_type
+// in that turn (the request turn's user message).
+function setMessageDebugByTurn(chatId, turnId, turnType, debugData) {
     const { db } = require('../config/database');
-
     try {
-        if (!turnId) {
-            log(`[TURN-DEBUG] Skipping debug save: no turnId`);
-            return null;
-        }
-
-        const debugDataJson = JSON.stringify(debugData);
-
+        if (!turnId) return null;
+        const json = debugData ? JSON.stringify(debugData) : null;
         const stmt = db.prepare(`
-            INSERT OR REPLACE INTO turn_debug (chat_id, turn_id, debug_data)
-            VALUES (?, ?, ?)
+            UPDATE messages SET debug_data = ?
+            WHERE chat_id = ? AND turn_id = ? AND (? IS NULL OR turn_type = ?)
         `);
-        const result = stmt.run(chatId, turnId, debugDataJson);
-
-        log(`[TURN-DEBUG] Saved debug data for turn_id=${turnId} in chat ${chatId}`);
+        const result = stmt.run(json, chatId, turnId, turnType || null, turnType || null);
+        log(`[MSG-DEBUG] Set debug on ${result.changes} message(s) for turn_id=${turnId}`);
         return result;
     } catch (err) {
-        log("[TURN-DEBUG] Error saving debug data:", err);
-        throw err;
+        log("[MSG-DEBUG] Error setting message debug:", err);
+        return null;
     }
 }
 
-// Get turn debug data (request and/or response)
-function getTurnDebugData(chatId, turnId) {
+// Attach debug data to the most-recently-saved message of a turn (highest id). Used
+// by error paths, which save an assistant error message and then need to hang the
+// error wire-debug on exactly that message.
+function setLatestMessageDebug(chatId, turnId, debugData) {
     const { db } = require('../config/database');
-
     try {
+        if (!turnId) return null;
+        const json = debugData ? JSON.stringify(debugData) : null;
         const stmt = db.prepare(`
-            SELECT debug_data
-            FROM turn_debug
-            WHERE chat_id = ? AND turn_id = ?
+            UPDATE messages SET debug_data = ?
+            WHERE id = (SELECT MAX(id) FROM messages WHERE chat_id = ? AND turn_id = ?)
         `);
-        const result = stmt.get(chatId, turnId);
-
-        if (result && result.debug_data) {
-            const debugData = JSON.parse(result.debug_data);
-            log(`[TURN-DEBUG] Retrieved debug data for turn_id=${turnId} in chat ${chatId}`);
-            return debugData;
-        } else {
-            log(`[TURN-DEBUG] No debug data found for turn_id=${turnId} in chat ${chatId}`);
-            return null;
-        }
+        return stmt.run(json, chatId, turnId);
     } catch (err) {
-        log("[TURN-DEBUG] Error getting turn debug data:", err);
+        log("[MSG-DEBUG] Error setting latest message debug:", err);
         return null;
     }
 }
@@ -244,6 +234,6 @@ function getTurnDebugData(chatId, turnId) {
 module.exports = {
     saveMessage,
     getChatHistoryForAPI,
-    saveTurnDebugData,
-    getTurnDebugData
+    setMessageDebugByTurn,
+    setLatestMessageDebug
 };

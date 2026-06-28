@@ -8,7 +8,7 @@ const router = express.Router();
 
 // Database schema debug endpoint
 // Only expose tables that are known to be safe for inspection.
-const ALLOWED_DEBUG_TABLES = new Set(['chats', 'messages', 'projects', 'chat_branch_selections', 'mcp_servers', 'turn_debug']);
+const ALLOWED_DEBUG_TABLES = new Set(['chats', 'messages', 'projects', 'chat_branch_selections', 'mcp_servers']);
 
 router.get('/debug/schema', (req, res) => {
     try {
@@ -43,53 +43,8 @@ router.get('/debug/schema', (req, res) => {
     }
 });
 
-// Get request debug data for a turn (returns the sequence part)
-router.get('/debug/request/:chatId/:turnId', (req, res) => {
-    const { chatId, turnId } = req.params;
-    try {
-        const stmt = db.prepare(`
-            SELECT debug_data FROM turn_debug
-            WHERE chat_id = ? AND turn_id = ?
-        `);
-        const row = stmt.get(chatId, turnId);
-        
-        if (row && row.debug_data) {
-            try {
-                const data = JSON.parse(row.debug_data);
-                // Return just the request part (sequence for request debug)
-                return res.json(data);
-            } catch (_) {}
-        }
-        res.status(404).json({ error: 'Request debug not found' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Get response debug data for a turn (returns array of responses and errors in sequence)
-router.get('/debug/response/:chatId/:turnId', (req, res) => {
-    const { chatId, turnId } = req.params;
-    try {
-        const stmt = db.prepare(`
-            SELECT debug_data FROM turn_debug
-            WHERE chat_id = ? AND turn_id = ?
-        `);
-        const row = stmt.get(chatId, turnId);
-        
-        if (row && row.debug_data) {
-            try {
-                const data = JSON.parse(row.debug_data);
-                // Return responses array - it already contains both responses and error entries in sequence
-                if (data.responses && Array.isArray(data.responses)) {
-                    return res.json(data.responses);
-                }
-            } catch (_) {}
-        }
-        res.status(404).json({ error: 'Response debug not found' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+// Debug data now lives per-message (messages.debug_data) and rides along with the
+// chat history load — no separate request/response debug endpoints needed.
 
 // Logging endpoint for frontend
 router.post('/log', (req, res) => {

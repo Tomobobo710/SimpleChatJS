@@ -190,6 +190,10 @@ class TurnRequest {
         // an awaiting steer never hangs. Double-resolve is a no-op.
         const announce = (id) => { if (announceResponseTurnId) announceResponseTurnId(id || null); };
 
+        // Per-round response wire-debug, delivered live over the same SSE channel
+        // (mirrors request_debug). Persisted on each assistant message too; this is
+        // just the live feed so the panel has it at finalization without a re-fetch.
+        const collectedResponseDebug = [];
         let toolEventSource = null;
         try {
             toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
@@ -263,14 +267,9 @@ class TurnRequest {
                 const streamError = new Error(errorText || `Backend stream error: ${streamErrorType}`);
                 streamError.streamErrorType = streamErrorType;
                 streamError.errorText = errorText;
-                let responseDebugData = null;
-                try {
-                    const tId = savedResponseTurn?.turn_id || null;
-                    if (tId) {
-                        const r = await fetch(`${window.location.origin}/api/debug/response/${activeChatId}/${tId}`);
-                        if (r.ok) responseDebugData = await r.json();
-                    }
-                } catch (_) {}
+                // Any rounds that completed before the error fed collectedResponseDebug
+                // live; the error itself is persisted on its message (shown on reload).
+                const responseDebugData = collectedResponseDebug.length ? collectedResponseDebug : null;
                 streamError.responseDebugData = responseDebugData;
                 const ctx = cleanupAndError(streamError);
                 ctx.responseDebugData = responseDebugData;
@@ -285,6 +284,7 @@ class TurnRequest {
                         case 'reasoning_delta': processor.addReasoningDelta(event.data.blockId, event.data.text); break;
                         case 'reasoning_end': processor.finishReasoningBlock(event.data.blockId); break;
                         case 'content_delta': processor.addContentDelta(event.data.text); break;
+                        case 'response_debug': if (event.data) collectedResponseDebug.push(event.data); break;
                         case 'done': processor.finalize(event.data); break;
                     }
                     const sseSs = streamManager.getStream(activeChatId);
@@ -298,14 +298,7 @@ class TurnRequest {
             if (toolEventSource) toolEventSource.close();
             streamManager.unregister(activeChatId);
 
-            let responseDebugData = null;
-            try {
-                const tId = savedResponseTurn?.turn_id || null;
-                if (tId) {
-                    const r = await fetch(`${window.location.origin}/api/debug/response/${activeChatId}/${tId}`);
-                    if (r.ok) responseDebugData = await r.json();
-                }
-            } catch (_) {}
+            const responseDebugData = collectedResponseDebug.length ? collectedResponseDebug : null;
 
             const dropdownStates = {};
             const streamingDropdowns = streamEntry.tempContainer.querySelectorAll(".streaming-dropdown");
@@ -323,7 +316,8 @@ class TurnRequest {
 
             const rto = RenderableTurnObject.fromStreamingProcessor({
                 processor, turnId: savedResponseTurn?.turn_id || null,
-                parentTurnId: savedResponseTurn?.parent_turn_id || null, responseDebugData, dropdownStates
+                parentTurnId: savedResponseTurn?.parent_turn_id || null, responseDebugData,
+                turnMessages: processor.getToolMessages(), dropdownStates
             });
 
             if (currentChatId === activeChatId) chatRenderer.renderTurn(rto, true);
@@ -336,14 +330,7 @@ class TurnRequest {
                 streamManager.unregister(activeChatId);
                 streamEntry.tempContainer.remove();
                 streamEntry.responseTurnDiv.remove();
-                let responseDebugData = null;
-                if (savedResponseTurn) {
-                    try {
-                        const tId = savedResponseTurn.turn_id;
-                        const r = await fetch(`${window.location.origin}/api/debug/response/${activeChatId}/${tId}`);
-                        if (r.ok) responseDebugData = await r.json();
-                    } catch (_) {}
-                }
+                const responseDebugData = collectedResponseDebug.length ? collectedResponseDebug : null;
                 error.responseDebugData = responseDebugData;
                 await this.fireError(error, { processor, requestTurnInfo, savedResponseTurn, responseDebugData });
             }

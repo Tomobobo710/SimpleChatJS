@@ -63,6 +63,7 @@ function initializeDatabase() {
                 edit_history TEXT DEFAULT '[]',
                 active_edit_version INTEGER DEFAULT 0,
                 turn_type TEXT DEFAULT NULL,
+                debug_data TEXT DEFAULT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (id)
             )`);
 
@@ -80,15 +81,6 @@ function initializeDatabase() {
                 parent_key TEXT NOT NULL,
                 selected_turn_id TEXT NOT NULL,
                 PRIMARY KEY (chat_id, parent_key)
-            )`);
-
-            db.exec(`CREATE TABLE IF NOT EXISTS turn_debug (
-                id INTEGER PRIMARY KEY,
-                chat_id TEXT NOT NULL,
-                turn_id TEXT NOT NULL,
-                debug_data TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(chat_id, turn_id)
             )`);
 
             log("[DB] Database initialized successfully");

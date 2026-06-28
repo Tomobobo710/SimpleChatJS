@@ -240,6 +240,12 @@ class StreamingMessageProcessor {
         const block = this._findToolBlock(data.id);
         if (!block) return;
 
+        // Keep the raw result/error on metadata so getToolMessages() can reconstruct
+        // the tool-role message (the debug panel's source for tool results) on the
+        // live path, matching what the DB stores for the reload path.
+        block.metadata.result = data.status === 'success' ? (data.result ?? null) : null;
+        block.metadata.error = data.status === 'success' ? null : (data.error ?? null);
+
         // Shell consoles keep the terminal view instead of an Arguments/Result
         // dropdown. On reload there were no live chunks, so seed the console body
         // from the stored result output here.
@@ -302,6 +308,23 @@ class StreamingMessageProcessor {
     }
 
     // ===== GETTERS FOR RENDERING =====
+
+    // Tool-role messages reconstructed from this turn's tool blocks, shaped like the
+    // DB's tool messages ({ role, tool_call_id, tool_name, content }). Lets the live
+    // debug panel read tool results from the same single source the reload path uses.
+    getToolMessages() {
+        const msgs = [];
+        for (const item of this._blockSequence) {
+            if (item.type !== 'tool') continue;
+            const md = (item.ref && item.ref.metadata) || {};
+            if (!md.id) continue;
+            const content = md.status === 'success'
+                ? JSON.stringify(md.result ?? null)
+                : JSON.stringify({ error: md.error ?? 'error' });
+            msgs.push({ role: 'tool', tool_call_id: md.id, tool_name: md.toolName, content });
+        }
+        return msgs;
+    }
 
     getBlocks() {
         const blocks = [];

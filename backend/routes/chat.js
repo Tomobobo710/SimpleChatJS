@@ -2,7 +2,7 @@
 const express = require("express");
 const { db } = require("../config/database");
 const { processRequest, cancelInFlightRequest, flagSteerBreak } = require("../services/chatStreamService");
-const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("../services/messageRepository");
+const { saveMessage, setMessageDebugByTurn } = require("../services/messageRepository");
 const { getTurnInfo, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
 const { log } = require("../utils/logger");
 
@@ -194,7 +194,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Build query with optional error filtering
         let query = `
-            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history, turn_type
+            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history, turn_type, debug_data
             FROM messages
             WHERE chat_id = ?
         `;
@@ -302,8 +302,8 @@ router.post("/message", async (req, res) => {
     }
 });
 
-// Turn data endpoints — keyed on turn_id for sibling safety.
-// Save turn data
+// Save a request turn's debug onto its request message (edit-retry builds the
+// request sequence client-side and posts it here).
 router.post("/chat/:id/turns/:turnId", async (req, res) => {
     try {
         const { id: chatId, turnId } = req.params;
@@ -316,32 +316,10 @@ router.post("/chat/:id/turns/:turnId", async (req, res) => {
             return res.status(400).json({ error: "data is required" });
         }
 
-        await saveTurnDebugData(chatId, turnId, data);
+        setMessageDebugByTurn(chatId, turnId, 'request', data);
         res.json({ success: true });
     } catch (error) {
         log("[TURN-DATA-SAVE] Error:", error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get turn data
-router.get("/chat/:id/turns/:turnId", (req, res) => {
-    try {
-        const { id: chatId, turnId } = req.params;
-
-        if (!turnId) {
-            return res.status(400).json({ error: "turnId is required" });
-        }
-
-        const turnData = getTurnDebugData(chatId, turnId);
-
-        if (turnData) {
-            res.json(turnData);
-        } else {
-            res.status(404).json({ error: "Turn data not found" });
-        }
-    } catch (error) {
-        log("[TURN-DATA-GET] Error:", error);
         res.status(500).json({ error: error.message });
     }
 });
