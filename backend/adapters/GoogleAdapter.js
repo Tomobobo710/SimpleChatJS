@@ -77,28 +77,24 @@ class GoogleAdapter extends BaseResponseAdapter {
             geminiTools = [{ functionDeclarations }];
         }
         
-        // Add thinking mode for supported models
-        const modelSupportsThinking = this.supportsThinking(unifiedRequest.model);
+        // Add thinking mode if enabled — let the API reject unsupported models
         const thinkingEnabled = settings.enableThinkingGoogle !== false;
         const rawBudget = settings.thinkingBudgetGoogle;
         const thinkingBudget = rawBudget === -1 || rawBudget === '-1'
             ? -1
             : Math.max(0, Math.min(24576, parseInt(rawBudget) || 8192));
-        
+
         const request = {
             contents,
             ...(geminiTools.length > 0 ? { tools: geminiTools } : {})
         };
-        
-        // Add thinking configuration for supported models
-        if (modelSupportsThinking && thinkingEnabled && thinkingBudget !== 0) {
+
+        if (thinkingEnabled && thinkingBudget !== 0) {
             request.generationConfig = {
                 thinkingConfig: {
                     includeThoughts: true
                 }
             };
-            
-            // Only set thinkingBudget if it's not -1 (auto mode)
             if (thinkingBudget !== -1) {
                 request.generationConfig.thinkingConfig.thinkingBudget = thinkingBudget;
             }
@@ -194,12 +190,11 @@ class GoogleAdapter extends BaseResponseAdapter {
                     
                     const parts = candidate.content?.parts || [];
                     
-                    const isThinkingModel = this.supportsThinking(context.model || '');
                     const tc = context.thinkingConfig || {};
-                    
+
                     for (const part of parts) {
                         if (part.text) {
-                            if (isThinkingModel && tc.enabled && tc.budget !== 0 && part.thought) {
+                            if (tc.enabled && tc.budget !== 0 && part.thought) {
                                 const lines = part.text.split('\n');
                                 const detailedThoughts = lines.slice(2).join('\n').trim();
                                 if (detailedThoughts) {
@@ -231,7 +226,7 @@ class GoogleAdapter extends BaseResponseAdapter {
                     }
                     
                     // Handle finish reason
-                    if (candidate.finishReason === 'STOP') {
+                    if (candidate.finishReason) {
                         response.setComplete(true);
                     }
                     
@@ -304,12 +299,14 @@ class GoogleAdapter extends BaseResponseAdapter {
                         };
                     
                     default:
-                        throw new Error(`[GOOGLE-ADAPTER] Unknown content part type: ${part.type}`);
+                        console.warn(`[GOOGLE-ADAPTER] Skipping unknown content part type: ${part.type}`);
+                        return null;
                 }
-            });
+            }).filter(Boolean);
         }
-        
-        throw new Error(`[GOOGLE-ADAPTER] Unexpected content format: ${typeof content}`);
+
+        console.warn(`[GOOGLE-ADAPTER] Unexpected content format: ${typeof content}`);
+        return [];
     }
 
     /**
@@ -344,12 +341,6 @@ class GoogleAdapter extends BaseResponseAdapter {
         return cleaned;
     }
 
-    /**
-     * Check if a model supports thinking mode
-     */
-    supportsThinking(modelName) {
-        return modelName.toLowerCase().includes('2.5');
-   }
 }
 
 module.exports = GoogleAdapter;

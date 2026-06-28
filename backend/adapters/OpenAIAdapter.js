@@ -180,12 +180,14 @@ class OpenAIAdapter extends BaseResponseAdapter {
                         };
                     
                     default:
-                        throw new Error(`[OPENAI-ADAPTER] Unknown content part type: ${part.type}`);
+                        console.warn(`[OPENAI-ADAPTER] Skipping unknown content part type: ${part.type}`);
+                        return null;
                 }
-            });
+            }).filter(Boolean);
         }
-        
-        throw new Error(`[OPENAI-ADAPTER] Unexpected content format: ${typeof content}`);
+
+        console.warn(`[OPENAI-ADAPTER] Unexpected content format: ${typeof content}`);
+        return [];
     }
 
   }
