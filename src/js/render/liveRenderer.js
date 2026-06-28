@@ -24,7 +24,9 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         if (currentBlock.type !== renderedBlock.type) {
             const oldElement = tempContainer._blockElements[i];
             if (oldElement) {
-                const newElement = liveRenderer.renderBlock(currentBlock);
+                // Live rendering is always a streaming RESPONSE — tag blocks accordingly
+                // so chat blocks get response-only blank-line collapsing.
+                const newElement = liveRenderer.renderBlock(currentBlock, false, 'response');
                 oldElement.replaceWith(newElement);
                 tempContainer._blockElements[i] = newElement;
                 tempContainer._renderedBlocks[i] = { ...currentBlock };
@@ -117,8 +119,8 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                         }
                     }
                 } else {
-                    // Regular chat block
-                    blockElement.innerHTML = formatMessage(escapeHtml(currentBlock.content));
+                    // Regular chat block — live is always a response, so collapse blank lines.
+                    blockElement.innerHTML = formatMessage(escapeHtml(collapseResponseBlankLines(currentBlock.content)));
                 }
                 
                 // Update our tracked version
@@ -133,7 +135,7 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         logger.info(`[LIVE-RENDER] Adding ${newBlocks.length} new blocks`);
         
         newBlocks.forEach(blockData => {
-            const blockElement = liveRenderer.renderBlock(blockData);
+            const blockElement = liveRenderer.renderBlock(blockData, false, 'response');
             tempContainer.appendChild(blockElement);
             tempContainer._renderedBlocks.push({ ...blockData });
             tempContainer._blockElements.push(blockElement);

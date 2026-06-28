@@ -845,7 +845,7 @@ class ChatRenderer {
                     isOpen = dropdownStates[stateKey] || false;
                 }
 
-                const blockElement = this.renderBlock(blockData, isOpen);
+                const blockElement = this.renderBlock(blockData, isOpen, identity);
                 contentDiv.appendChild(blockElement);
             });
 
@@ -906,8 +906,10 @@ class ChatRenderer {
         }
     }
 
-    // Render individual block based on type
-    renderBlock(blockData, isOpen = false) {
+    // Render individual block based on type. identity ("request" | "response") is passed
+    // so chat blocks can apply response-only formatting (blank-line collapse). The live
+    // renderer always streams a response, so it passes "response".
+    renderBlock(blockData, isOpen = false, identity = null) {
         const { type, content, metadata = {} } = blockData;
 
         switch (type) {
@@ -926,7 +928,7 @@ class ChatRenderer {
 
             case "chat":
             default:
-                return this.renderChatBlock(content);
+                return this.renderChatBlock(content, identity);
         }
     }
 
@@ -1177,7 +1179,7 @@ class ChatRenderer {
         document.addEventListener("keydown", escHandler);
     }
 
-    renderChatBlock(content) {
+    renderChatBlock(content, identity = null) {
         const div = document.createElement("div");
         div.className = "chat-block";
 
@@ -1191,8 +1193,11 @@ class ChatRenderer {
             }
         }
 
-        // Strip trailing newlines from chat content so they don't render as empty <br>s
+        // Whitespace normalization. Requests: only strip trailing newlines (existing
+        // behavior — leave the user's own blank lines alone). Responses: collapse ALL
+        // blank lines so the model's paragraph gaps never render as empty <br>s.
         const stripTrailingNewlines = (str) => typeof str === 'string' ? str.replace(/\n+$/, '') : str;
+        const normalize = identity === "response" ? collapseResponseBlankLines : stripTrailingNewlines;
 
         // Handle multimodal content (array) or simple text content (string)
         if (Array.isArray(processedContent)) {
@@ -1202,7 +1207,7 @@ class ChatRenderer {
                         if (part.text !== undefined && part.text !== null && part.text !== "") {
                             const textDiv = document.createElement("div");
                             textDiv.className = "content-part text-part";
-                            textDiv.innerHTML = formatMessage(escapeHtml(stripTrailingNewlines(part.text)));
+                            textDiv.innerHTML = formatMessage(escapeHtml(normalize(part.text)));
                             div.appendChild(textDiv);
                         }
                         break;
@@ -1277,7 +1282,7 @@ class ChatRenderer {
             });
         } else {
             // Simple text content (backward compatible)
-            div.innerHTML = formatMessage(escapeHtml(stripTrailingNewlines(String(processedContent || ""))));
+            div.innerHTML = formatMessage(escapeHtml(normalize(String(processedContent || ""))));
         }
 
         return div;
