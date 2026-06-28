@@ -272,12 +272,20 @@
                                     <span class="simple-tool-name">read_file</span>
                                     <span class="simple-tool-desc">Read a UTF-8 text file and return its content</span>
                                 </div>
+                                <div class="tool-display-opts" data-tool="read_file">
+                                    <label class="td-opt"><input type="checkbox" class="td-expand"> Auto Expand</label>
+                                    <label class="td-opt"><input type="checkbox" class="td-collapse"> Auto Collapse <input type="number" class="td-collapse-sec" min="0" step="1" value="3">s</label>
+                                </div>
                             </div>
                             <div class="simple-tool-item">
                                 <input type="checkbox" id="st-write-file" class="simple-tool-toggle" data-tool="write_file" checked>
                                 <div class="simple-tool-info">
                                     <span class="simple-tool-name">write_file</span>
                                     <span class="simple-tool-desc">Create or overwrite a file with given content</span>
+                                </div>
+                                <div class="tool-display-opts" data-tool="write_file">
+                                    <label class="td-opt"><input type="checkbox" class="td-expand"> Auto Expand</label>
+                                    <label class="td-opt"><input type="checkbox" class="td-collapse"> Auto Collapse <input type="number" class="td-collapse-sec" min="0" step="1" value="3">s</label>
                                 </div>
                             </div>
                             <div class="simple-tool-item">
@@ -286,12 +294,20 @@
                                     <span class="simple-tool-name">edit_file</span>
                                     <span class="simple-tool-desc">Replace exact string in an existing file</span>
                                 </div>
+                                <div class="tool-display-opts" data-tool="edit_file">
+                                    <label class="td-opt"><input type="checkbox" class="td-expand"> Auto Expand</label>
+                                    <label class="td-opt"><input type="checkbox" class="td-collapse"> Auto Collapse <input type="number" class="td-collapse-sec" min="0" step="1" value="3">s</label>
+                                </div>
                             </div>
                             <div class="simple-tool-item">
                                 <input type="checkbox" id="st-shell-run" class="simple-tool-toggle" data-tool="shell_run" checked>
                                 <div class="simple-tool-info">
                                     <span class="simple-tool-name">shell_run</span>
                                     <span class="simple-tool-desc">Run a shell command and return output</span>
+                                </div>
+                                <div class="tool-display-opts" data-tool="shell_run">
+                                    <label class="td-opt"><input type="checkbox" class="td-expand"> Auto Expand</label>
+                                    <label class="td-opt"><input type="checkbox" class="td-collapse"> Auto Collapse <input type="number" class="td-collapse-sec" min="0" step="1" value="3">s</label>
                                 </div>
                             </div>
                         </div>
@@ -393,6 +409,14 @@
     }
   }
 }'></textarea>
+                </div>
+
+                <div class="settings-section">
+                    <label>Display (applies to all MCP tools)</label>
+                    <div class="tool-display-opts mcp-display-opts" data-tool="mcp">
+                        <label class="td-opt"><input type="checkbox" class="td-expand" id="mcp-td-expand"> Auto Expand</label>
+                        <label class="td-opt"><input type="checkbox" class="td-collapse" id="mcp-td-collapse"> Auto Collapse <input type="number" class="td-collapse-sec" id="mcp-td-collapse-sec" min="0" step="1" value="3">s</label>
+                    </div>
                 </div>
 
                 <div class="button-group">

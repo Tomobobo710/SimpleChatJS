@@ -370,6 +370,10 @@ async function doEdit(args) {
     // result of the previous one. All-or-nothing: if any edit fails to match,
     // nothing is written and the error names which edit and against what state.
     let working = content;
+    // 1-based file line where each edit's old_string matched, in the content as it
+    // existed when that edit applied (edit 2 sees edit 1's result). Lets the UI show
+    // real file line numbers in the diff, not snippet-relative ones.
+    const editLines = [];
     for (let i = 0; i < edits.length; i++) {
         const edit = edits[i] || {};
         const oldString = edit.old_string;
@@ -383,7 +387,8 @@ async function doEdit(args) {
             throw new Error(`Edit ${pos} is missing new_string. No changes were written.`);
         }
 
-        if (!working.includes(oldString)) {
+        const matchIndex = working.indexOf(oldString);
+        if (matchIndex === -1) {
             const snippet = oldString.length > 200 ? oldString.slice(0, 200) + '…' : oldString;
             const against = i === 0 ? 'the original file' : `the file as modified by edits 1–${i}`;
             throw new Error(
@@ -393,7 +398,9 @@ async function doEdit(args) {
             );
         }
 
-        working = working.replace(oldString, newString);
+        // Line number = how many newlines precede the match, + 1.
+        editLines.push(working.slice(0, matchIndex).split('\n').length);
+        working = working.slice(0, matchIndex) + newString + working.slice(matchIndex + oldString.length);
     }
 
     try {
@@ -401,7 +408,8 @@ async function doEdit(args) {
         return {
             success: true,
             path: filePath,
-            edits_applied: edits.length
+            edits_applied: edits.length,
+            edit_lines: editLines
         };
     } catch (error) {
         throw new Error(`Failed to write file '${filePath}': ${error.message}`);

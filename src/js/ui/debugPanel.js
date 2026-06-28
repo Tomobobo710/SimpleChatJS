@@ -131,6 +131,11 @@ class DebugPanel {
             allEntries.push(debugData);
         }
 
+        // Tool results come from the turn's tool-role messages — the single source
+        // (same data the chat's tool dropdowns render). Key by tool_call_id so each
+        // response's tool_calls can be paired against them below.
+        const toolResults = this.toolResultsFromMessages(debugData.turnMessages);
+
         // Render sequential response timeline
         for (let i = 0; i < allEntries.length; i++) {
             const entry = allEntries[i];
@@ -194,7 +199,7 @@ class DebugPanel {
 
                 // Tool calls with results
                 if (resp.toolCalls && resp.toolCalls.length > 0) {
-                    const toolCallHtml = this.renderToolCallsWithResults(resp.toolCalls, entry.toolResults || null);
+                    const toolCallHtml = this.renderToolCallsWithResults(resp.toolCalls, toolResults);
                     content += toolCallHtml;
                 }
 
@@ -240,6 +245,33 @@ class DebugPanel {
 
         content += '</div>';
         return content;
+    }
+
+    // Convert the turn's tool-role messages into the {toolId, status, result|error}
+    // shape renderToolCallsWithResults expects. This is the only place tool results
+    // are sourced from — they are not duplicated into the debug blob.
+    toolResultsFromMessages(turnMessages) {
+        if (!Array.isArray(turnMessages)) return [];
+        const results = [];
+        for (const m of turnMessages) {
+            const toolId = m.tool_call_id || m.toolCallId;
+            if (!toolId) continue;
+            let parsed = m.content;
+            if (typeof parsed === 'string') {
+                try { parsed = JSON.parse(parsed); } catch (_) { /* keep raw string */ }
+            }
+            // Only a TRUTHY error counts — some tools (e.g. shell_run) always include
+            // an `error` key set to null on success, which must not read as a failure.
+            const isError = parsed && typeof parsed === 'object' && parsed.error != null && parsed.error !== '';
+            results.push({
+                toolId,
+                toolName: m.tool_name || m.toolName || 'unknown',
+                status: isError ? 'error' : 'success',
+                result: isError ? null : parsed,
+                error: isError ? parsed.error : null
+            });
+        }
+        return results;
     }
 
     renderToolCallsWithResults(toolCalls, toolResults) {

@@ -24,7 +24,9 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         if (currentBlock.type !== renderedBlock.type) {
             const oldElement = tempContainer._blockElements[i];
             if (oldElement) {
-                const newElement = liveRenderer.renderBlock(currentBlock);
+                // Live rendering is always a streaming RESPONSE — tag blocks accordingly
+                // so chat blocks get response-only blank-line collapsing.
+                const newElement = liveRenderer.renderBlock(currentBlock, false, 'response');
                 oldElement.replaceWith(newElement);
                 tempContainer._blockElements[i] = newElement;
                 tempContainer._renderedBlocks[i] = { ...currentBlock };
@@ -45,11 +47,22 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     if (currentBlock.metadata?.toolName === 'shell_run' || currentBlock.metadata?.isShellConsole) {
                         // Live shell console: append to the terminal body in place.
                         updateShellConsoleElement(blockElement, currentBlock.metadata || {});
+                    } else if (currentBlock.metadata?.toolName === 'edit_file') {
+                        // Live edit diff: re-render the diff body in place as args/result arrive.
+                        updateEditDiffElement(blockElement, currentBlock.metadata || {});
+                    } else if (currentBlock.metadata?.toolName === 'read_file' || currentBlock.metadata?.toolName === 'write_file') {
+                        // Live file view: write_file streams its content in; read_file fills on result.
+                        updateFileViewElement(blockElement, currentBlock.metadata || {}, currentBlock.metadata.toolName);
                     } else {
                         const dropdownInner = blockElement.querySelector('.dropdown-inner');
                         if (dropdownInner) {
                             const formattedContent = formatToolContent(currentBlock.content, currentBlock.metadata?.toolName);
                             dropdownInner.innerHTML = formattedContent;
+                        }
+                        // Arm auto-collapse once the tool finishes (per display settings).
+                        const inst = blockElement._streamingDropdownInstance;
+                        if (inst && inst.maybeAutoCollapse) {
+                            inst.maybeAutoCollapse(currentBlock.metadata?.toolName, currentBlock.metadata?.status);
                         }
                     }
                 } else if (currentBlock.type === 'thinking') {
@@ -106,8 +119,8 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                         }
                     }
                 } else {
-                    // Regular chat block
-                    blockElement.innerHTML = formatMessage(escapeHtml(currentBlock.content));
+                    // Regular chat block — live is always a response, so collapse blank lines.
+                    blockElement.innerHTML = formatMessage(escapeHtml(collapseResponseBlankLines(currentBlock.content)));
                 }
                 
                 // Update our tracked version
@@ -122,7 +135,7 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         logger.info(`[LIVE-RENDER] Adding ${newBlocks.length} new blocks`);
         
         newBlocks.forEach(blockData => {
-            const blockElement = liveRenderer.renderBlock(blockData);
+            const blockElement = liveRenderer.renderBlock(blockData, false, 'response');
             tempContainer.appendChild(blockElement);
             tempContainer._renderedBlocks.push({ ...blockData });
             tempContainer._blockElements.push(blockElement);

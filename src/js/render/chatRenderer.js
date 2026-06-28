@@ -137,15 +137,14 @@ function shellConsoleBodyHtml(metadata) {
     return cmdLine + `<div class="shell-console-out">${bodyOut}</div>`;
 }
 
-// Grace period after a command finishes before the console auto-collapses, so the
-// user has a moment to read the output.
-const SHELL_COLLAPSE_DELAY = 2500;
 
-// Collapse state: open while running, collapsed once done (after the grace period)
-// — unless the user has clicked the header, after which their explicit choice wins.
+// Collapse state. User's explicit click always wins. Otherwise driven by the per-tool
+// display settings: while running, open only if Auto Expand; once done, collapsed only
+// after the auto-collapse grace period has fired.
 function shellConsoleIsCollapsed(metadata) {
     if (metadata.shellUserToggled) return !!metadata.shellCollapsed;
-    if (metadata.shellStatus !== 'done') return false;
+    const opts = getToolDisplaySettings('shell_run');
+    if (metadata.shellStatus !== 'done') return !opts.autoExpand;
     return !!metadata.shellAutoCollapsed;
 }
 
@@ -182,10 +181,12 @@ function setShellCollapsed(el, collapsed, animate) {
 function armShellCollapse(el, metadata) {
     if (metadata.shellUserToggled || metadata.shellAutoCollapsed) return;
     if (metadata.shellStatus !== 'done') return;
+    const opts = getToolDisplaySettings('shell_run');
+    if (!opts.autoCollapse) return;          // user disabled auto-collapse for shell_run
     if (el._collapseArmed) return;
     el._collapseArmed = true;
     const doneAt = metadata.shellDoneAt || 0;
-    const remaining = doneAt ? SHELL_COLLAPSE_DELAY - (Date.now() - doneAt) : 0;
+    const remaining = doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) : 0;
     if (remaining <= 0) {
         metadata.shellAutoCollapsed = true;
         setShellCollapsed(el, true, false); // grace already elapsed / reload → instant
@@ -270,6 +271,454 @@ function updateShellConsoleElement(el, metadata) {
     // per-chunk live update.
     setShellCollapsed(el, shellConsoleIsCollapsed(metadata), true);
     armShellCollapse(el, metadata);
+}
+
+// ===== Edit diff view (edit_file tool blocks) =====
+// edit_file renders as a unified diff (the whole point of the tool is "what
+// changed"), with a { } toggle to the raw Arguments/Result JSON — same pattern as
+// the shell console. Args ({path, edits:[{old_string,new_string}]}) arrive parsed at
+// execution-start (live and reload-replay), so the diff renders straight from them.
+
+// Line-level unified diff (LCS) between two strings. Returns [{t:'ctx'|'add'|'del', text}].
+function editLineDiff(a, b) {
+    const A = String(a == null ? '' : a).split('\n');
+    const B = String(b == null ? '' : b).split('\n');
+    const m = A.length, n = B.length;
+    const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) {
+        for (let j = n - 1; j >= 0; j--) {
+            dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+        if (A[i] === B[j]) { out.push({ t: 'ctx', text: A[i] }); i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ t: 'del', text: A[i] }); i++; }
+        else { out.push({ t: 'add', text: B[j] }); j++; }
+    }
+    while (i < m) out.push({ t: 'del', text: A[i++] });
+    while (j < n) out.push({ t: 'add', text: B[j++] });
+    return out;
+}
+
+// Just the filename for the header (full path goes in the title tooltip).
+function editFileName(p) {
+    if (!p) return '';
+    const parts = String(p).split(/[\\/]/);
+    return parts[parts.length - 1] || String(p);
+}
+
+function editDiffStatusHtml(metadata) {
+    const s = metadata.status;
+    if (s === 'success') return `<span class="edit-diff-status ok">applied</span>`;
+    if (s === 'error') return `<span class="edit-diff-status err">failed</span>`;
+    return `<span class="edit-diff-status running">editing<span class="shell-console-spinner"></span></span>`;
+}
+
+// Raw view: Arguments + Result JSON through the SAME formatter the other tools use.
+function editDiffRawHtml(metadata) {
+    const args = metadata.arguments || {};
+    const result = metadata.result != null ? metadata.result
+        : (metadata.error != null ? { error: metadata.error }
+        : (metadata.status === 'success' ? { success: true } : { status: 'running' }));
+    const content = `[edit_file]:\nArguments: ${JSON.stringify(args)}\nResult: ${JSON.stringify(result)}`;
+    return '<div class="dropdown-inner">' + formatToolContent(content, 'edit_file', args) + '</div>';
+}
+
+// Pretty diff body: one hunk per edit, unified +/- lines.
+function editDiffBodyHtml(metadata) {
+    if (metadata.editShowRaw) return editDiffRawHtml(metadata);
+    const args = metadata.arguments;
+    const edits = args && Array.isArray(args.edits) ? args.edits : null;
+    if (!edits || edits.length === 0) {
+        return `<span class="edit-diff-empty">${metadata.status === 'executing' ? '(preparing edit…)' : '(no edits)'}</span>`;
+    }
+    // Real file line where each edit matched (from the backend result). Until the
+    // result lands (mid-stream), fall back to 1 (snippet-relative).
+    const editLines = (metadata.result && Array.isArray(metadata.result.edit_lines)) ? metadata.result.edit_lines : null;
+    let html = '';
+    edits.forEach((edit, idx) => {
+        const diff = editLineDiff(edit.old_string, edit.new_string);
+        let adds = 0, dels = 0;
+        // Two-gutter unified diff: old-side col for context+removed, new-side for
+        // context+added. Real file line comes from the backend result; until it lands
+        // (mid-stream) we DON'T know it — show "?" rather than fake 1-based numbers.
+        const known = !!(editLines && editLines[idx]);
+        let oldNo = known ? editLines[idx] : 0, newNo = known ? editLines[idx] : 0;
+        const lines = diff.map(d => {
+            if (d.t === 'add') adds++; else if (d.t === 'del') dels++;
+            const sign = d.t === 'add' ? '+' : d.t === 'del' ? '-' : ' ';
+            const oldCell = d.t === 'add' ? '' : (known ? oldNo++ : '?');
+            const newCell = d.t === 'del' ? '' : (known ? newNo++ : '?');
+            return `<div class="edit-diff-line ${d.t}">`
+                + `<span class="edit-diff-ln old">${oldCell}</span>`
+                + `<span class="edit-diff-ln new">${newCell}</span>`
+                + `<span class="edit-diff-sign">${sign}</span>`
+                + `<span class="edit-diff-text">${escapeHtml(d.text)}</span></div>`;
+        }).join('');
+        const label = edits.length > 1
+            ? `<div class="edit-diff-hunk-label">Edit ${idx + 1} of ${edits.length} <span class="edit-diff-counts"><span class="add">+${adds}</span> <span class="del">−${dels}</span></span></div>`
+            : '';
+        html += `<div class="edit-diff-hunk">${label}${lines}</div>`;
+    });
+    return html;
+}
+
+// Collapse policy — mirrors the shell console. User's click wins; otherwise driven by
+// the per-tool display settings: open while executing if Auto Expand; collapsed once
+// done after the auto-collapse grace fires.
+function editDiffIsDone(metadata) { return metadata.status === 'success' || metadata.status === 'error'; }
+function editDiffIsCollapsed(metadata) {
+    if (metadata.editUserToggled) return !!metadata.editCollapsed;
+    const opts = getToolDisplaySettings('edit_file');
+    if (!editDiffIsDone(metadata)) return !opts.autoExpand;
+    return !!metadata.editAutoCollapsed;
+}
+function armEditCollapse(el, metadata) {
+    if (metadata.editUserToggled || metadata.editAutoCollapsed) return;
+    if (!editDiffIsDone(metadata)) return;
+    const opts = getToolDisplaySettings('edit_file');
+    if (!opts.autoCollapse) return;
+    if (el._editCollapseArmed) return;
+    el._editCollapseArmed = true;
+    const doneAt = metadata.editDoneAt || 0;
+    const remaining = doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) : 0;
+    if (remaining <= 0) {
+        metadata.editAutoCollapsed = true;
+        setEditDiffCollapsed(el, true, false);
+        return;
+    }
+    setTimeout(() => {
+        if (metadata.editUserToggled) return;
+        metadata.editAutoCollapsed = true;
+        setEditDiffCollapsed(el, true, true);
+    }, remaining);
+}
+
+// Collapse/expand by tweening the clip height (WAAPI), mirroring the shell console.
+function setEditDiffCollapsed(el, collapsed, animate) {
+    if (!el) return;
+    if (el.classList.contains('collapsed') === collapsed) return;
+    const clip = el.querySelector('.edit-diff-clip');
+    if (el._editAnim) { el._editAnim.cancel(); el._editAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!clip || animate === false || reduce || !clip.animate) { el.classList.toggle('collapsed', collapsed); return; }
+    if (collapsed) {
+        const start = clip.scrollHeight;
+        el.classList.add('collapsed');
+        el._editAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], { duration: 180, easing: 'ease' });
+    } else {
+        el.classList.remove('collapsed');
+        const target = clip.scrollHeight;
+        el._editAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], { duration: 180, easing: 'ease' });
+    }
+    el._editAnim.onfinish = el._editAnim.oncancel = () => { el._editAnim = null; };
+}
+
+function buildEditDiffElement(metadata) {
+    const el = document.createElement('div');
+    el.className = 'edit-diff';
+    el.dataset.tool = 'edit_file';
+    const path = (metadata.arguments && metadata.arguments.path) || '';
+    el.innerHTML = `
+        <div class="edit-diff-header">
+            <span class="edit-diff-chevron"></span>
+            <span class="edit-diff-title">edit_file</span>
+            <span class="edit-diff-path" title="${escapeHtml(path)}">${escapeHtml(editFileName(path))}</span>
+            <button class="edit-diff-raw-toggle" title="Toggle raw JSON">{ }</button>
+            ${editDiffStatusHtml(metadata)}
+        </div>
+        <div class="edit-diff-clip"><div class="edit-diff-body"></div></div>
+    `;
+    const body = el.querySelector('.edit-diff-body');
+    body.innerHTML = editDiffBodyHtml(metadata);
+    el.classList.toggle('raw-mode', !!metadata.editShowRaw);
+    // Open/closed driven by per-tool display settings (Auto Expand/Collapse), with the
+    // user's explicit toggle persisted in metadata so it survives the finalize rebuild.
+    if (editDiffIsCollapsed(metadata)) el.classList.add('collapsed');
+
+    // Scroll position also lives in metadata, so the finalize/reload rebuild restores
+    // it instead of jumping to the top. Recorded on scroll; restored after layout.
+    // Guard on isConnected: removing the element (finalize's tempContainer.remove())
+    // resets scrollTop to 0 and fires a scroll event — without this guard that 0 would
+    // clobber the saved position right before the rebuild restores it.
+    body.addEventListener('scroll', () => { if (body.isConnected) metadata.editScrollTop = body.scrollTop; });
+    if (!editDiffIsCollapsed(metadata) && metadata.editScrollTop != null) {
+        // Double rAF: a freshly-appended body isn't scrollable on the first frame, so a
+        // single-rAF restore would clamp to 0. Wait for layout to flush.
+        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.editScrollTop; }));
+    }
+
+    const rawBtn = el.querySelector('.edit-diff-raw-toggle');
+    rawBtn.classList.toggle('active', !!metadata.editShowRaw);
+    rawBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        metadata.editShowRaw = !metadata.editShowRaw;
+        rawBtn.classList.toggle('active', metadata.editShowRaw);
+        el.classList.toggle('raw-mode', metadata.editShowRaw);
+        body.innerHTML = editDiffBodyHtml(metadata);
+    });
+
+    el.querySelector('.edit-diff-header').addEventListener('click', () => {
+        const collapsed = !el.classList.contains('collapsed');
+        metadata.editUserToggled = true;       // user's choice now wins over auto policy
+        metadata.editCollapsed = collapsed;    // persisted so the finalize rebuild keeps it
+        setEditDiffCollapsed(el, collapsed, true);
+        // On open, jump to the latest so it starts following the stream.
+        if (!collapsed) { const b = el.querySelector('.edit-diff-body'); if (b) b.scrollTop = b.scrollHeight; }
+    });
+
+    // Apply the auto-collapse timer if this build is already in a done state (reload, or
+    // a finalize rebuild after completion).
+    armEditCollapse(el, metadata);
+    return el;
+}
+
+function updateEditDiffElement(el, metadata) {
+    if (!el) return;
+    const header = el.querySelector('.edit-diff-header');
+    if (header) {
+        const oldStatus = header.querySelector('.edit-diff-status');
+        if (oldStatus) oldStatus.outerHTML = editDiffStatusHtml(metadata);
+        const pathEl = header.querySelector('.edit-diff-path');
+        const path = (metadata.arguments && metadata.arguments.path) || '';
+        const name = editFileName(path);
+        if (pathEl && pathEl.textContent !== name) { pathEl.textContent = name; pathEl.title = path; }
+        const rawBtn = header.querySelector('.edit-diff-raw-toggle');
+        if (rawBtn) rawBtn.classList.toggle('active', !!metadata.editShowRaw);
+    }
+    const body = el.querySelector('.edit-diff-body');
+    if (body) {
+        // Only follow when open (collapsed = hidden, no point). While open, stick to
+        // the bottom unless the user scrolled up to read.
+        const open = !el.classList.contains('collapsed');
+        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
+        body.innerHTML = editDiffBodyHtml(metadata);
+        el.classList.toggle('raw-mode', !!metadata.editShowRaw);
+        if (atBottom) body.scrollTop = body.scrollHeight;
+    }
+    // Re-apply open/closed from policy (executing→open if Auto Expand) and arm the
+    // auto-collapse once the edit finishes. No-ops once the user has taken control.
+    setEditDiffCollapsed(el, editDiffIsCollapsed(metadata), true);
+    armEditCollapse(el, metadata);
+}
+
+// ===== File view (read_file / write_file tool blocks) =====
+// read_file and write_file render the file contents with a line-number gutter and
+// light syntax highlighting, plus a { } toggle to the raw Arguments/Result JSON —
+// the same frame and collapse/scroll machinery as the edit diff and shell console.
+// write_file streams its content live as the model types it (_partialWriteArgs);
+// read_file fills in once the backend result lands. Both render straight from the
+// block metadata so live, post-stream, and reload share one path.
+
+const FILE_VIEW_TITLES = { read_file: 'read_file', write_file: 'write_file' };
+
+// File extension → SimpleSyntax language token (its aliases already accept most
+// raw extensions: js/ts/py/go/css/sql/sh/...). Empty when there's no extension,
+// which makes SimpleSyntax return plain escaped text rather than guessing.
+function fileViewLang(p) {
+    const m = String(p || '').match(/\.([a-z0-9_+]+)$/i);
+    return m ? m[1].toLowerCase() : '';
+}
+
+// Resolve { text, firstLine, status, errText } for display. read: from the backend
+// result (content + start_line). write: from the (possibly partial, streaming)
+// arguments.content. status: 'running' | 'ok' | 'err'.
+function fileViewData(metadata, toolName) {
+    const args = metadata.arguments || {};
+    if (toolName === 'write_file') {
+        const text = typeof args.content === 'string' ? args.content : '';
+        if (metadata.status === 'error') return { text: '', firstLine: 1, status: 'err', errText: metadata.error };
+        const done = metadata.status === 'success';
+        return { text, firstLine: 1, status: done ? 'ok' : 'running' };
+    }
+    // read_file
+    const result = metadata.result;
+    if (result && typeof result === 'object') {
+        // read_file can succeed-the-call but refuse (file/range too large): success:false.
+        if (result.success === false) return { text: '', firstLine: 1, status: 'err', errText: result.message || result.error };
+        if (typeof result.content === 'string') return { text: result.content, firstLine: result.start_line || 1, status: 'ok' };
+    }
+    if (metadata.status === 'error') return { text: '', firstLine: 1, status: 'err', errText: metadata.error };
+    return { text: '', firstLine: 1, status: 'running' };
+}
+
+function fileViewStatusHtml(metadata, toolName) {
+    const d = fileViewData(metadata, toolName);
+    if (d.status === 'running') {
+        const verb = toolName === 'write_file' ? 'writing' : 'reading';
+        return `<span class="file-view-status running">${verb}<span class="shell-console-spinner"></span></span>`;
+    }
+    if (d.status === 'err') return `<span class="file-view-status err">failed</span>`;
+    const lines = d.text ? d.text.replace(/\n$/, '').split('\n').length : 0;
+    let label;
+    if (toolName === 'write_file') {
+        const bytes = (metadata.result && metadata.result.bytes_written != null) ? metadata.result.bytes_written : null;
+        label = bytes != null ? `${bytes} B · ${lines} ln` : `${lines} ln`;
+    } else {
+        const size = (metadata.result && metadata.result.size != null) ? metadata.result.size : d.text.length;
+        label = `${size} B · ${lines} ln`;
+    }
+    return `<span class="file-view-status ok">${escapeHtml(label)}</span>`;
+}
+
+// Raw view: Arguments + Result JSON through the SAME formatter the other tools use.
+function fileViewRawHtml(metadata, toolName) {
+    const args = metadata.arguments || {};
+    const result = metadata.result != null ? metadata.result
+        : (metadata.error != null ? { error: metadata.error }
+        : (metadata.status === 'success' ? { success: true } : { status: 'running' }));
+    const content = `[${toolName}]:\nArguments: ${JSON.stringify(args)}\nResult: ${JSON.stringify(result)}`;
+    return '<div class="dropdown-inner">' + formatToolContent(content, toolName, args) + '</div>';
+}
+
+// Pretty body: file contents with a line-number gutter and light highlighting.
+function fileViewBodyHtml(metadata, toolName) {
+    if (metadata.fileShowRaw) return fileViewRawHtml(metadata, toolName);
+    const d = fileViewData(metadata, toolName);
+    if (d.status === 'err') return `<div class="file-view-error">${escapeHtml(d.errText || 'failed')}</div>`;
+    let text = d.text;
+    if (!text) {
+        const verb = toolName === 'write_file' ? 'writing' : 'reading';
+        const msg = d.status === 'running' ? `(${verb}…)` : '(empty file)';
+        return `<span class="file-view-empty">${msg}</span>`;
+    }
+    // Drop one trailing newline so a file ending in "\n" doesn't show a blank last row.
+    text = text.replace(/\n$/, '');
+    const lang = fileViewLang((metadata.arguments && metadata.arguments.path) || '');
+    // Highlight the whole text once (so block-comment state carries across lines),
+    // then split — highlight() joins lines with "\n" so the counts line up.
+    const hlLines = (window.SimpleSyntax && lang)
+        ? SimpleSyntax.highlight(text, lang).split('\n')
+        : text.split('\n').map(escapeHtml);
+    let html = '';
+    for (let i = 0; i < hlLines.length; i++) {
+        html += `<div class="file-view-line"><span class="file-view-ln">${d.firstLine + i}</span>`
+            + `<span class="file-view-text">${hlLines[i] || ''}</span></div>`;
+    }
+    return html;
+}
+
+// Collapse policy — mirrors the edit diff. User's click wins; otherwise driven by the
+// per-tool display settings (Auto Expand while running, Auto Collapse after done).
+function fileViewIsDone(metadata) { return metadata.status === 'success' || metadata.status === 'error'; }
+function fileViewIsCollapsed(metadata, toolName) {
+    if (metadata.fileUserToggled) return !!metadata.fileCollapsed;
+    const opts = getToolDisplaySettings(toolName);
+    if (!fileViewIsDone(metadata)) return !opts.autoExpand;
+    return !!metadata.fileAutoCollapsed;
+}
+function armFileCollapse(el, metadata, toolName) {
+    if (metadata.fileUserToggled || metadata.fileAutoCollapsed) return;
+    if (!fileViewIsDone(metadata)) return;
+    const opts = getToolDisplaySettings(toolName);
+    if (!opts.autoCollapse) return;
+    if (el._fileCollapseArmed) return;
+    el._fileCollapseArmed = true;
+    const doneAt = metadata.fileDoneAt || 0;
+    const remaining = doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) : 0;
+    if (remaining <= 0) { metadata.fileAutoCollapsed = true; setFileViewCollapsed(el, true, false); return; }
+    setTimeout(() => {
+        if (metadata.fileUserToggled) return;
+        metadata.fileAutoCollapsed = true;
+        setFileViewCollapsed(el, true, true);
+    }, remaining);
+}
+
+// Collapse/expand by tweening the clip height (WAAPI), mirroring the edit diff.
+function setFileViewCollapsed(el, collapsed, animate) {
+    if (!el) return;
+    if (el.classList.contains('collapsed') === collapsed) return;
+    const clip = el.querySelector('.file-view-clip');
+    if (el._fileAnim) { el._fileAnim.cancel(); el._fileAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!clip || animate === false || reduce || !clip.animate) { el.classList.toggle('collapsed', collapsed); return; }
+    if (collapsed) {
+        const start = clip.scrollHeight;
+        el.classList.add('collapsed');
+        el._fileAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], { duration: 180, easing: 'ease' });
+    } else {
+        el.classList.remove('collapsed');
+        const target = clip.scrollHeight;
+        el._fileAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], { duration: 180, easing: 'ease' });
+    }
+    el._fileAnim.onfinish = el._fileAnim.oncancel = () => { el._fileAnim = null; };
+}
+
+function buildFileViewElement(metadata, toolName) {
+    const el = document.createElement('div');
+    el.className = 'file-view';
+    el.dataset.tool = toolName;
+    const path = (metadata.arguments && metadata.arguments.path) || '';
+    el.innerHTML = `
+        <div class="file-view-header">
+            <span class="file-view-chevron"></span>
+            <span class="file-view-title">${FILE_VIEW_TITLES[toolName] || escapeHtml(toolName)}</span>
+            <span class="file-view-path" title="${escapeHtml(path)}">${escapeHtml(editFileName(path))}</span>
+            <button class="file-view-raw-toggle" title="Toggle raw JSON">{ }</button>
+            ${fileViewStatusHtml(metadata, toolName)}
+        </div>
+        <div class="file-view-clip"><div class="file-view-body"></div></div>
+    `;
+    const body = el.querySelector('.file-view-body');
+    body.innerHTML = fileViewBodyHtml(metadata, toolName);
+    el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
+    if (fileViewIsCollapsed(metadata, toolName)) el.classList.add('collapsed');
+
+    // Scroll position persists in metadata (survives the finalize rebuild). isConnected
+    // guard: element removal fires a scroll-to-0 that would clobber the saved value.
+    body.addEventListener('scroll', () => { if (body.isConnected) metadata.fileScrollTop = body.scrollTop; });
+    if (!fileViewIsCollapsed(metadata, toolName) && metadata.fileScrollTop != null) {
+        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.fileScrollTop; }));
+    }
+
+    const rawBtn = el.querySelector('.file-view-raw-toggle');
+    rawBtn.classList.toggle('active', !!metadata.fileShowRaw);
+    rawBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        metadata.fileShowRaw = !metadata.fileShowRaw;
+        rawBtn.classList.toggle('active', metadata.fileShowRaw);
+        el.classList.toggle('raw-mode', metadata.fileShowRaw);
+        body.innerHTML = fileViewBodyHtml(metadata, toolName);
+    });
+
+    el.querySelector('.file-view-header').addEventListener('click', () => {
+        const collapsed = !el.classList.contains('collapsed');
+        metadata.fileUserToggled = true;
+        metadata.fileCollapsed = collapsed;
+        setFileViewCollapsed(el, collapsed, true);
+        if (!collapsed) { const b = el.querySelector('.file-view-body'); if (b) b.scrollTop = b.scrollHeight; }
+    });
+
+    armFileCollapse(el, metadata, toolName);
+    return el;
+}
+
+function updateFileViewElement(el, metadata, toolName) {
+    if (!el) return;
+    const header = el.querySelector('.file-view-header');
+    if (header) {
+        const oldStatus = header.querySelector('.file-view-status');
+        if (oldStatus) oldStatus.outerHTML = fileViewStatusHtml(metadata, toolName);
+        const pathEl = header.querySelector('.file-view-path');
+        const path = (metadata.arguments && metadata.arguments.path) || '';
+        const name = editFileName(path);
+        if (pathEl && pathEl.textContent !== name) { pathEl.textContent = name; pathEl.title = path; }
+        const rawBtn = header.querySelector('.file-view-raw-toggle');
+        if (rawBtn) rawBtn.classList.toggle('active', !!metadata.fileShowRaw);
+    }
+    const body = el.querySelector('.file-view-body');
+    if (body) {
+        // While open, stick to the bottom as content streams unless the user scrolled up.
+        const open = !el.classList.contains('collapsed');
+        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
+        body.innerHTML = fileViewBodyHtml(metadata, toolName);
+        el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
+        if (atBottom) body.scrollTop = body.scrollHeight;
+    }
+    setFileViewCollapsed(el, fileViewIsCollapsed(metadata, toolName), true);
+    armFileCollapse(el, metadata, toolName);
 }
 
 // ===== Deterministic MCP accent color =====
@@ -380,10 +829,14 @@ class ChatRenderer {
                 if (blockData.type === "thinking") {
                     stateKey = "thinking_" + thinkingIndex;
                     thinkingIndex++;
-                } else if (blockData.type === "tool" && blockData.metadata?.toolName !== "shell_run") {
-                    // shell_run renders as a console, not a collapsible dropdown, so
-                    // it's excluded from the .streaming-dropdown ordinal state keys
-                    // (which the post-stream capture also skips). Keep indices aligned.
+                } else if (blockData.type === "tool"
+                        && blockData.metadata?.toolName !== "shell_run"
+                        && blockData.metadata?.toolName !== "edit_file"
+                        && blockData.metadata?.toolName !== "read_file"
+                        && blockData.metadata?.toolName !== "write_file") {
+                    // shell_run (console), edit_file (diff), and read_file/write_file (file
+                    // view) aren't .streaming-dropdowns, so they're excluded from the ordinal
+                    // state keys (the post-stream capture skips them too). Keep indices aligned.
                     stateKey = "tool_" + toolIndex;
                     toolIndex++;
                 }
@@ -392,7 +845,7 @@ class ChatRenderer {
                     isOpen = dropdownStates[stateKey] || false;
                 }
 
-                const blockElement = this.renderBlock(blockData, isOpen);
+                const blockElement = this.renderBlock(blockData, isOpen, identity);
                 contentDiv.appendChild(blockElement);
             });
 
@@ -453,8 +906,10 @@ class ChatRenderer {
         }
     }
 
-    // Render individual block based on type
-    renderBlock(blockData, isOpen = false) {
+    // Render individual block based on type. identity ("request" | "response") is passed
+    // so chat blocks can apply response-only formatting (blank-line collapse). The live
+    // renderer always streams a response, so it passes "response".
+    renderBlock(blockData, isOpen = false, identity = null) {
         const { type, content, metadata = {} } = blockData;
 
         switch (type) {
@@ -473,7 +928,7 @@ class ChatRenderer {
 
             case "chat":
             default:
-                return this.renderChatBlock(content);
+                return this.renderChatBlock(content, identity);
         }
     }
 
@@ -505,6 +960,16 @@ class ChatRenderer {
             return buildShellConsoleElement(metadata || {});
         }
 
+        // edit_file renders as a unified diff, not a dropdown.
+        if (toolName === 'edit_file') {
+            return buildEditDiffElement(metadata || {});
+        }
+
+        // read_file / write_file render as a file view (gutter + highlight), not a dropdown.
+        if (toolName === 'read_file' || toolName === 'write_file') {
+            return buildFileViewElement(metadata || {}, toolName);
+        }
+
         // MCP tools arrive namespaced as mcp__<server>__<tool>. Show the clean
         // tool name in the title and surface an "MCP" badge for transparency.
         const mcpInfo = parseMcpToolName(toolName);
@@ -516,9 +981,15 @@ class ChatRenderer {
         // Format the content with Arguments and Result sections
         const formattedContent = formatToolContent(content, toolName, metadata?.toolArgs);
 
-        const dropdown = new StreamingDropdown(dropdownId, title, "tool", !isOpen, badge);
+        // Auto-expand while the tool is executing (per display settings). Only the
+        // executing state opens — a done tool on reload stays at its saved state, so
+        // history doesn't flash open. Auto-collapse-after-done is armed in liveRenderer.
+        let open = isOpen;
+        if (metadata?.status === 'executing' && getToolDisplaySettings(toolName).autoExpand) open = true;
+
+        const dropdown = new StreamingDropdown(dropdownId, title, "tool", !open, badge);
         // Tag with the tool so CSS can color the left accent bar per tool
-        // (read=blue, write=green, edit=yellow, shell=grey). MCP tools get a color
+        // (read=green, write=orange, edit=yellow, shell=grey). MCP tools get a color
         // seeded from the tool name, fed to CSS via --mcp-bar / --mcp-tint.
         dropdown.element.dataset.tool = mcpInfo.isMcp ? 'mcp' : toolName;
         if (mcpInfo.isMcp) {
@@ -708,7 +1179,7 @@ class ChatRenderer {
         document.addEventListener("keydown", escHandler);
     }
 
-    renderChatBlock(content) {
+    renderChatBlock(content, identity = null) {
         const div = document.createElement("div");
         div.className = "chat-block";
 
@@ -722,8 +1193,11 @@ class ChatRenderer {
             }
         }
 
-        // Strip trailing newlines from chat content so they don't render as empty <br>s
+        // Whitespace normalization. Requests: only strip trailing newlines (existing
+        // behavior — leave the user's own blank lines alone). Responses: collapse ALL
+        // blank lines so the model's paragraph gaps never render as empty <br>s.
         const stripTrailingNewlines = (str) => typeof str === 'string' ? str.replace(/\n+$/, '') : str;
+        const normalize = identity === "response" ? collapseResponseBlankLines : stripTrailingNewlines;
 
         // Handle multimodal content (array) or simple text content (string)
         if (Array.isArray(processedContent)) {
@@ -733,7 +1207,7 @@ class ChatRenderer {
                         if (part.text !== undefined && part.text !== null && part.text !== "") {
                             const textDiv = document.createElement("div");
                             textDiv.className = "content-part text-part";
-                            textDiv.innerHTML = formatMessage(escapeHtml(stripTrailingNewlines(part.text)));
+                            textDiv.innerHTML = formatMessage(escapeHtml(normalize(part.text)));
                             div.appendChild(textDiv);
                         }
                         break;
@@ -808,7 +1282,7 @@ class ChatRenderer {
             });
         } else {
             // Simple text content (backward compatible)
-            div.innerHTML = formatMessage(escapeHtml(stripTrailingNewlines(String(processedContent || ""))));
+            div.innerHTML = formatMessage(escapeHtml(normalize(String(processedContent || ""))));
         }
 
         return div;
@@ -889,7 +1363,14 @@ class ChatRenderer {
             }
         });
 
-        turnDiv.appendChild(debugToggle);
+        // Place the toggle rightmost in the message-actions bar's right cluster (next
+        // to branch nav). Fall back to appending on the turn if the bar isn't present.
+        const rightCluster = turnDiv.querySelector(".message-actions .message-actions-right");
+        if (rightCluster) {
+            rightCluster.appendChild(debugToggle);
+        } else {
+            turnDiv.appendChild(debugToggle);
+        }
 
         // Add turn ID and message ID to debug data
         if (!debugData) {
@@ -958,6 +1439,13 @@ class ChatRenderer {
         // Assemble the actions container - add action buttons first (left side)
         actionsContainer.appendChild(actionButtons);
 
+        // Right-side cluster: branch nav + the debug (+) toggle live together here,
+        // pushed to the right by the bar's space-between. The debug toggle is appended
+        // into this cluster by addDebugPanel (which runs after this), landing rightmost
+        // with branch nav to its left.
+        const rightCluster = document.createElement("div");
+        rightCluster.className = "message-actions-right";
+
         // Add branch navigation to both request and response turns (both can be branched)
         if ((identity === "request" || identity === "response") && turnId) {
             // Branch navigation container
@@ -995,17 +1483,20 @@ class ChatRenderer {
                 branchNav.style.display = "none";
             });
 
-            // Add branch nav to actions container after action buttons
-            actionsContainer.appendChild(branchNav);
+            // Branch nav goes in the right cluster (debug toggle slots in to its right)
+            rightCluster.appendChild(branchNav);
         }
 
-        // Insert before debug toggle if it exists, otherwise just append
-        const debugToggle = turnDiv.querySelector(".debug-toggle");
-        if (debugToggle) {
-            turnDiv.insertBefore(actionsContainer, debugToggle);
-        } else {
-            turnDiv.appendChild(actionsContainer);
+        actionsContainer.appendChild(rightCluster);
+
+        // If the debug toggle was already created (re-render order), pull it into the
+        // right cluster so it stays rightmost; otherwise addDebugPanel places it later.
+        const existingDebugToggle = turnDiv.querySelector(".debug-toggle");
+        if (existingDebugToggle) {
+            rightCluster.appendChild(existingDebugToggle);
         }
+
+        turnDiv.appendChild(actionsContainer);
     }
 
     // Handle turn-level editing - show all messages in the turn

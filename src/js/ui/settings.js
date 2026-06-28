@@ -105,6 +105,15 @@ async function loadSettingsIntoModal() {
         document.getElementById('st-output-limit').value =
             Number.isFinite(simpleConfig.output_limit_kb) ? simpleConfig.output_limit_kb : 99;
 
+        // Per-tool display preferences (auto expand / auto collapse)
+        const toolDisplay = settings.toolDisplay || {};
+        document.querySelectorAll('#toolsTab .tool-display-opts').forEach(el => {
+            const d = toolDisplay[el.dataset.tool] || {};
+            el.querySelector('.td-expand').checked = d.autoExpand !== false;
+            el.querySelector('.td-collapse').checked = d.autoCollapse !== false;
+            el.querySelector('.td-collapse-sec').value = Number.isFinite(d.autoCollapseSec) ? d.autoCollapseSec : 3;
+        });
+
         // Load shell config (separate from main settings)
         const shellConfig = await loadShellConfig();
         // The select shows 'auto' only if the saved value isn't one of the
@@ -200,7 +209,19 @@ async function handleSaveSettings() {
         shellToSave = selectedShell;
     }
     settings.shell = shellToSave;
-    
+
+    // Per-tool display preferences. Seed from existing settings so the MCP modal's
+    // 'mcp' key (managed separately) isn't dropped, then overwrite the built-in tools.
+    settings.toolDisplay = { ...((window.cachedSettings() || {}).toolDisplay || {}) };
+    document.querySelectorAll('#toolsTab .tool-display-opts').forEach(el => {
+        const sec = parseInt(el.querySelector('.td-collapse-sec').value, 10);
+        settings.toolDisplay[el.dataset.tool] = {
+            autoExpand: el.querySelector('.td-expand').checked,
+            autoCollapse: el.querySelector('.td-collapse').checked,
+            autoCollapseSec: Number.isFinite(sec) ? Math.max(0, sec) : 3
+        };
+    });
+
     logger.info('Attempting to save settings:', settings);
     
     // Validate required fields (only API URL is required)

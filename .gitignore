@@ -10,3 +10,6 @@ dist-electron/
 !BUILD.md
 !README.md
 opencode.json
+
+# Claude Code
+.claude/

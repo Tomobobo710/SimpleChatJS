@@ -12,16 +12,16 @@ const shellService = require("./shellService");
 const projectService = require("./projectService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
-const { saveMessage, saveTurnDebugData, getTurnDebugData } = require("./messageRepository");
+const { saveMessage, setMessageDebugByTurn, setLatestMessageDebug } = require("./messageRepository");
 const { getTurnInfo } = require("./turnService");
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
 
+// Hang error wire-debug on the error message just saved for this turn (its latest
+// row) — the per-message debug model. Callers save the assistant error message
+// first, then call this.
 async function pushTurnError(chatId, turnInfo, responsePayload, errorPayload) {
-    let debug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
-    if (!debug.responses) debug.responses = [];
-    debug.responses.push({ response: responsePayload, error: errorPayload });
-    await saveTurnDebugData(chatId, turnInfo.turn_id, debug);
+    setLatestMessageDebug(chatId, turnInfo.turn_id, { response: responsePayload, error: errorPayload });
 }
 
 // In-flight chat requests, keyed by requestId.
@@ -41,17 +41,11 @@ function flagSteerBreak(requestId) {
     return { found: true };
 }
 
-// Debug data structure stored in turn_debug table (keyed by chat_id + turn_id):
-// {
-//   sequence: [ ... ],           // Request debug sequence
-//   responses: [                 // Response debug entries (each may have both response + error)
-//     {
-//       response: { content, toolCalls, status, rawBody },
-//       error: { type, message, status_code }  // Optional: only if error occurred
-//     },
-//     ...
-//   ]
-// }
+// Debug data lives per-message in messages.debug_data (its own column). Shapes:
+//   request message:  { sequence: [ ... ] }                         // the 3-step request timeline
+//   assistant message: { response: { content, toolCalls, status, rawBody } }
+//   error message:    { response: { ... }, error: { type, message, status_code } }
+// The frontend assembles a turn's panel from its messages' debug_data — no side table.
 
 // Helper: Write SSE event to response
 function writeSSEEvent(res, eventType, data) {
@@ -281,15 +275,11 @@ async function executeStreamingLoop(
         log(`[${adapter.providerName.toUpperCase()}-DEBUG] Request Body:`, JSON.stringify(requestData, null, 2));
     }
 
-    // Store the request sequence in the turn's debug data
+    // Store the request sequence on the REQUEST message itself (its own debug_data).
+    // The request message was already persisted before this call, so we update it.
     if (chatId && requestTurnId) {
         try {
-            let userDebugData = getTurnDebugData(chatId, requestTurnId);
-            if (!userDebugData) {
-                userDebugData = {};
-            }
-            userDebugData.sequence = requestSequence;
-            saveTurnDebugData(chatId, requestTurnId, userDebugData);
+            setMessageDebugByTurn(chatId, requestTurnId, 'request', { sequence: requestSequence });
         } catch (error) {
             log("[DEBUG-STORE] ERROR:", error.message);
         }
@@ -581,52 +571,37 @@ async function executeStreamingLoop(
                     log(`[CHAT-SAVE] reasoning content: "${unifiedResponse.reasoning.substring(0, 100)}..."`);
                     log(`[CHAT-SAVE] Content length: ${unifiedResponse.content.length}`);
                     log(`[CHAT-SAVE] Content preview: "${unifiedResponse.content.substring(0, 200)}..."`);
+                    // Build this round's wire-debug and store it ON the assistant
+                    // message itself (its own debug_data). Persisted for reload and
+                    // emitted live over the SSE channel below.
+                    const debugPayload = buildMessageDebugData({
+                        requestId,
+                        chatId,
+                        turnId: turnInfo?.turn_id,
+                        parentTurnId: turnInfo?.parent_turn_id,
+                        targetUrl,
+                        requestData,
+                        apiRes,
+                        unifiedResponse,
+                        rawResponseBody
+                    });
+                    const responseDebugEntry = { response: debugPayload.response };
                     const finalResponseMessage = {
                         role: "assistant",
                         content: unifiedResponse.content,
-                        reasoning: unifiedResponse.reasoning || null
+                        reasoning: unifiedResponse.reasoning || null,
+                        debug_data: responseDebugEntry
                     };
                     try {
-                        const finalMsgId = await saveMessage(chatId, finalResponseMessage, turnInfo);
+                        await saveMessage(chatId, finalResponseMessage, turnInfo);
                         log(`[CHAT-SAVE] Successfully saved final response to history`);
-
-                        // Build and store debug data for the final response
-                        const debugPayload = buildMessageDebugData({
-                            requestId,
-                            chatId,
-                            turnId: turnInfo?.turn_id,
-                            parentTurnId: turnInfo?.parent_turn_id,
-                            targetUrl,
-                            requestData,
-                            apiRes,
-                            unifiedResponse,
-                            rawResponseBody
-                        });
-
-                        if (turnInfo) {
-                            try {
-                                // Get existing turn debug data
-                                let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
-                                
-                                // Append response to array (wrap in object for consistency)
-                                if (!existingDebug.responses) {
-                                    existingDebug.responses = [];
-                                }
-                                existingDebug.responses.push({
-                                    response: debugPayload.response,
-                                    turnId: debugPayload.turnId,
-                                    parentTurnId: debugPayload.parentTurnId
-                                });
-                                
-                                await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
-                                log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
-                            } catch (error) {
-                                log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
-                            }
-                        }
                     } catch (error) {
                         log(`[CHAT-SAVE] Error saving final response: ${error.message}`);
                     }
+                    // Emit on the MAIN stream (not the tool channel) so it's ordered
+                    // before `done` on the same connection — the tool channel races
+                    // `done` and gets closed before delivery.
+                    writeSSEEvent(res, 'response_debug', responseDebugEntry);
                 } else {
                     log(
                         `[CHAT-SAVE] NOT saving final response - chatId: ${chatId}, content length: ${unifiedResponse.content ? unifiedResponse.content.length : "null"}`
@@ -729,12 +704,32 @@ async function executeToolCallsAndContinue(
     shellInfo = null,
     cwd = null
 ) {
+    // Build this round's wire-debug and store it ON this assistant message (its own
+    // debug_data) — persisted for reload, emitted live below. Tool RESULTS are NOT
+    // here; they're their own tool messages (the single source the panel reads).
+    let responseDebugEntry = null;
+    if (chatId && targetUrl) {
+        const debugPayload = buildMessageDebugData({
+            requestId,
+            chatId,
+            turnId: turnInfo?.turn_id,
+            parentTurnId: turnInfo?.parent_turn_id,
+            targetUrl,
+            requestData,
+            apiRes,
+            unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, reasoning: reasoning || "" },
+            rawResponseBody
+        });
+        responseDebugEntry = { response: debugPayload.response };
+    }
+
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
         role: "assistant",
         content: assistantMessage || "",
         tool_calls: toolCalls,
-        reasoning: reasoning || null
+        reasoning: reasoning || null,
+        debug_data: responseDebugEntry
     };
     log(`[CHAT-SAVE] Saving tool message with reasoning: "${reasoning ? reasoning.substring(0, 100) : 'null'}..."`);
     messages.push(assistantMessageWithTools);
@@ -744,9 +739,14 @@ async function executeToolCallsAndContinue(
         await saveMessage(chatId, assistantMessageWithTools, turnInfo);
         log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
     }
+    // Emit this round's debug on the MAIN stream (ordered with content/done on the same
+    // connection — the tool channel races `done` and can be closed before delivery).
+    if (responseDebugEntry) {
+        writeSSEEvent(res, 'response_debug', responseDebugEntry);
+    }
 
-    // Execute each tool call and collect results
-    const toolResults = [];
+    // Execute each tool call. Results are persisted as tool-role messages (saveMessage
+    // below) and streamed live via tool events — that is the single source the UI reads.
     for (const toolCall of toolCalls) {
         log(`[TOOL-EXECUTION] Executing tool: ${toolCall.function.name}`);
 
@@ -765,12 +765,6 @@ async function executeToolCallsAndContinue(
             if (chatId) {
                 await saveMessage(chatId, errorMessage, turnInfo);
             }
-            toolResults.push({
-                toolId: toolCall.id,
-                toolName: toolCall.function.name,
-                status: "error",
-                error: parseError.message
-            });
             if (requestId) {
                 addToolEvent(requestId, {
                     type: "tool_execution_complete",
@@ -820,13 +814,6 @@ async function executeToolCallsAndContinue(
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
 
-            toolResults.push({
-                toolId: toolCall.id,
-                toolName: toolCall.function.name,
-                status: "success",
-                result: toolResult
-            });
-
             if (requestId) {
                 addToolEvent(requestId, {
                     type: "tool_execution_complete",
@@ -851,12 +838,6 @@ async function executeToolCallsAndContinue(
                 log(`[CHAT-SAVE] Saved tool error for ${toolCall.function.name}`);
             }
 
-            toolResults.push({
-                toolId: toolCall.id,
-                toolName: toolCall.function.name,
-                status: "error",
-                error: error.message
-            });
 
             if (requestId) {
                 addToolEvent(requestId, {
@@ -868,50 +849,7 @@ async function executeToolCallsAndContinue(
         }
     }
 
-    // Tool results are saved — now handle debug data if needed
-    if (chatId && targetUrl) {
-        const debugPayload = buildMessageDebugData({
-            requestId,
-            chatId,
-            turnId: turnInfo?.turn_id,
-            parentTurnId: turnInfo?.parent_turn_id,
-            targetUrl,
-            requestData,
-            apiRes,
-            unifiedResponse: { content: assistantMessage || "", toolCalls, hasToolCalls: () => true, reasoning: reasoning || "" },
-            rawResponseBody
-        });
-
-        // Attach tool results to debug data
-        if (toolResults.length > 0) {
-            debugPayload.toolResults = toolResults;
-        }
-
-        if (turnInfo) {
-            try {
-                // Get existing turn debug data
-                let existingDebug = getTurnDebugData(chatId, turnInfo.turn_id) || {};
-                
-                // Append response to array (wrap in object for consistency)
-                if (!existingDebug.responses) {
-                    existingDebug.responses = [];
-                }
-                existingDebug.responses.push({
-                    response: debugPayload.response,
-                    turnId: debugPayload.turnId,
-                    parentTurnId: debugPayload.parentTurnId
-                });
-                if (debugPayload.toolResults) {
-                    existingDebug.toolResults = debugPayload.toolResults;
-                }
-                
-                await saveTurnDebugData(chatId, turnInfo.turn_id, existingDebug);
-                log(`[ADAPTER-DEBUG] Debug data stored for turn_id=${turnInfo.turn_id}`);
-            } catch (error) {
-                log(`[ADAPTER-DEBUG] Failed to store debug data: ${error.message}`);
-            }
-        }
-    }
+    // (Round wire-debug was already attached to the assistant message above.)
 
     // Steering break: if the user steered during this round, end the turn at this
     // message boundary instead of continuing the agentic loop. The round's tools

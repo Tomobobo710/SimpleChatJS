@@ -35,16 +35,6 @@
     flex-direction: column;
 }
 
-/* Debug panel spacing - applies to both user and assistant equally */
-.turn.has-debug .turn-content, .message.has-debug .message-content {
-    padding-right: 40px;
-}
-
-/* Additional spacing for turns with both actions and debug */
-.turn.has-debug .message-actions {
-    margin-right: 40px; /* Make room for debug toggle */
-}
-
 /* Status turns */
 .message.status {
     width: auto;

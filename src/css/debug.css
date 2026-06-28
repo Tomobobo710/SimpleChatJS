@@ -2,17 +2,15 @@
 
 /* Debug Toggle Button */
 .debug-toggle {
-    position: absolute;
-    top: 4px;
-    right: 10px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: var(--text-soft);
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
     cursor: pointer;
     font-size: 14px;
+    line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;

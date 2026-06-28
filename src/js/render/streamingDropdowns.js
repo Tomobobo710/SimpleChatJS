@@ -251,12 +251,52 @@ class StreamingDropdown {
         // the clip height via the Web Animations API instead.
         wrapper.querySelector('.dropdown-toggle').addEventListener('click', (e) => {
             e.preventDefault();
+            this._userToggled = true;   // user's choice wins over the auto-collapse policy
             this.toggleOpen(wrapper);
         });
 
         wrapper.addEventListener('toggle', () => {
             this.isCollapsed = !wrapper.open;
         });
+
+        // Stick the (internally-scrolling) body to its bottom while content streams.
+        // Defaults to true so a freshly-opened dropdown follows from the start; the
+        // user scrolling up within it pauses the follow, returning to the bottom
+        // resumes it (mirrors the page-level isUserAtBottom rule). Inferring this from
+        // the initial scroll position fails — a fresh scroller starts at the top.
+        this._stickToBottom = true;
+        const scroller = wrapper.querySelector('.dropdown-content');
+        const inner = wrapper.querySelector('.dropdown-inner');
+        if (scroller) {
+            // Direction-aware, same as the page-level tracker (utils.js): a plain
+            // position check races against fast streaming growth and wrongly pauses.
+            // Only an actual upward scroll disarms the follow; reaching bottom re-arms.
+            let lastTop = 0, lastH = 0;
+            scroller.addEventListener('scroll', () => {
+                const st = scroller.scrollTop, sh = scroller.scrollHeight;
+                const atBottom = sh - st - scroller.clientHeight < 30;
+                const shrank = sh < lastH - 1;
+                if (!shrank && st < lastTop - 2) this._stickToBottom = false;
+                else if (atBottom) this._stickToBottom = true;
+                lastTop = st; lastH = sh;
+            });
+            // Follow streaming content by watching the inner body's SIZE rather than
+            // hooking the writes. Live tool streaming sets .dropdown-inner.innerHTML
+            // directly (liveRenderer.js) and never calls updateDisplay(), so a
+            // write-hook misses it; a ResizeObserver catches every growth path. Gated
+            // on _stickToBottom so scrolling up to read pauses the follow.
+            if (inner && typeof ResizeObserver !== 'undefined') {
+                const obs = new ResizeObserver(() => {
+                    // Only follow an OPEN dropdown that's actively growing. Collapsed
+                    // dropdowns (incl. replayed history) are left untouched, so opening
+                    // a finished tool later starts at the top to read, not the bottom.
+                    if (this._stickToBottom && !this.isCollapsed) {
+                        scroller.scrollTop = scroller.scrollHeight;
+                    }
+                });
+                obs.observe(inner);
+            }
+        }
 
         wrapper._streamingDropdownInstance = this;
 
@@ -295,6 +335,22 @@ class StreamingDropdown {
         }
     }
 
+    // Auto-collapse this dropdown N seconds after the tool finishes, per the per-tool
+    // display settings. Auto-EXPAND-while-executing is handled at creation (renderToolBlock
+    // opens it for an executing tool); here we just schedule the close. No-op once the
+    // user has toggled it, if already armed, or if the tool isn't done yet.
+    maybeAutoCollapse(toolName, status) {
+        if (this._userToggled || this._autoCollapseArmed) return;
+        if (status !== 'success' && status !== 'error') return;
+        const opts = getToolDisplaySettings(toolName);
+        if (!opts.autoCollapse) return;
+        this._autoCollapseArmed = true;
+        setTimeout(() => {
+            if (this._userToggled) return;
+            if (this.element.classList.contains('dd-open')) this.toggleOpen(this.element);
+        }, opts.autoCollapseSec * 1000);
+    }
+
     appendContent(newContent) {
         this.content += newContent;
         this.updateDisplay();
@@ -319,6 +375,12 @@ class StreamingDropdown {
                 // Raw content - apply normal formatting
                 contentDiv.innerHTML = formatMessage(escapeHtml(this.content));
             }
+
+            // The dropdown body scrolls internally (max-height + overflow), so the
+            // page-level auto-scroll can't reveal streaming content once it's capped.
+            // Follow it here unless the user scrolled up within the dropdown.
+            const scroller = this.element.querySelector('.dropdown-content');
+            if (this._stickToBottom && scroller) scroller.scrollTop = scroller.scrollHeight;
         }
     }
     

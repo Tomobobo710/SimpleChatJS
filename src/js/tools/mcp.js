@@ -1,7 +1,19 @@
 // MCP (Model Context Protocol) Management
 
+// Populate the MCP modal's global display options from settings.toolDisplay.mcp.
+function loadMcpDisplayOpts() {
+    const d = ((window.cachedSettings() || {}).toolDisplay || {}).mcp || {};
+    const exp = document.getElementById('mcp-td-expand');
+    const col = document.getElementById('mcp-td-collapse');
+    const sec = document.getElementById('mcp-td-collapse-sec');
+    if (exp) exp.checked = d.autoExpand !== false;
+    if (col) col.checked = d.autoCollapse !== false;
+    if (sec) sec.value = Number.isFinite(d.autoCollapseSec) ? d.autoCollapseSec : 3;
+}
+
 // Load MCP config into modal
 async function loadMCPConfigIntoModal() {
+    loadMcpDisplayOpts();
     try {
         const response = await loadMCPConfig();
         
@@ -39,6 +51,24 @@ async function handleSaveMCPConfig() {
         }
         
         await saveMCPConfig(configText);
+
+        // Persist the global MCP display options into settings.toolDisplay.mcp. POST the
+        // FULL merged settings — the backend overwrites the profile, so a partial would
+        // wipe everything else.
+        const cur = window.cachedSettings() || {};
+        const sec = parseInt(document.getElementById('mcp-td-collapse-sec').value, 10);
+        const toolDisplay = { ...(cur.toolDisplay || {}) };
+        toolDisplay.mcp = {
+            autoExpand: document.getElementById('mcp-td-expand').checked,
+            autoCollapse: document.getElementById('mcp-td-collapse').checked,
+            autoCollapseSec: Number.isFinite(sec) ? Math.max(0, sec) : 3
+        };
+        const merged = { ...cur, toolDisplay };
+        window.setCachedSettings(merged);
+        await fetch(`${window.location.origin}/api/settings`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(merged)
+        });
+
         showSuccess('MCP config saved successfully');
         mcpConfigModal.classList.add('hidden');
         

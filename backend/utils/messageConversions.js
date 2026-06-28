@@ -66,6 +66,12 @@ function parseDbRowToMessage(row, options = {}) {
         msg.reasoning = row.reasoning;
     }
 
+    // Per-message debug (wire data: request/response). The single source for the
+    // debug panel — each message carries its own.
+    if (row.debug_data) {
+        msg.debug_data = safeJsonParse(row.debug_data, "debug_data");
+    }
+
     // Conditional fields
     if (includeFileFields) {
         if (row.original_content) {
@@ -103,11 +109,18 @@ function serializeMessageForDb(messageData) {
     const fileMetadataVal = messageData.fileMetadata ?? messageData.file_metadata;
     const fileMetadata = fileMetadataVal ? JSON.stringify(fileMetadataVal) : null;
 
+    // Per-message debug (wire data). Accept an object or pre-stringified JSON.
+    const debugVal = messageData.debug_data ?? messageData.debugData ?? null;
+    const debugData = debugVal
+        ? (typeof debugVal === "string" ? debugVal : JSON.stringify(debugVal))
+        : null;
+
     return {
         content,
         toolCalls,
         originalContent,
         fileMetadata,
+        debugData,
     };
 }
 

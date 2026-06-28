@@ -179,6 +179,28 @@ class StreamingMessageProcessor {
             if (cmd) block.metadata.command = cmd;
             if (block.metadata.shellStatus !== 'done') block.metadata.shellStatus = 'running';
             block.content = `__shell__|args:${(data.arguments || '').length}`;
+        } else if (block.metadata.toolName === 'edit_file') {
+            // Render a live diff as the model types the edit: pull a structured (partial)
+            // {path, edits} out of the streaming JSON. Bump content (with the arg length)
+            // so updateLiveRendering fires the re-render each delta.
+            const parsed = StreamingMessageProcessor._partialEditArgs(data.arguments);
+            if (parsed) block.metadata.arguments = parsed;
+            block.content = `__edit__|args:${(data.arguments || '').length}`;
+        } else if (block.metadata.toolName === 'write_file') {
+            // Stream the file contents into the file view as the model writes them: pull a
+            // best-effort { path, content } out of the partial JSON (content may be the
+            // unterminated trailing value). Bump content so updateLiveRendering fires.
+            const parsed = StreamingMessageProcessor._partialWriteArgs(data.arguments);
+            if (parsed) block.metadata.arguments = parsed;
+            block.content = `__write__|args:${(data.arguments || '').length}`;
+        } else if (block.metadata.toolName === 'read_file') {
+            // read_file args are tiny (path + optional range); just surface the path so the
+            // header filename shows while it runs. Content arrives in the result.
+            // (block.metadata.arguments was set to the raw partial string above; replace
+            // with a parsed object so the build/update functions can read .path safely.)
+            const parsed = StreamingMessageProcessor._partialWriteArgs(data.arguments);
+            if (parsed && parsed.path) block.metadata.arguments = { path: parsed.path };
+            block.content = `__read__|args:${(data.arguments || '').length}`;
         } else {
             block.content = `[${data.name}]:\nArguments: ${data.arguments}\nResult: Executing...`;
         }
@@ -194,6 +216,84 @@ class StreamingMessageProcessor {
             try { return JSON.parse('"' + candidate + '"'); } catch (e) { /* keep trying */ }
         }
         return m[1];
+    }
+
+    // Best-effort extraction of { path, edits:[{old_string,new_string}] } from a
+    // partial/streaming JSON args string, so edit_file can render a LIVE diff as the
+    // model types it (mirrors _partialShellCommand). The trailing value may be
+    // unterminated; earlier values are complete. Tolerates a dangling escape.
+    static _partialEditArgs(argsStr) {
+        if (typeof argsStr !== 'string' || !argsStr) return null;
+        const decode = (body) => {
+            for (const c of [body, body.replace(/\\+$/, '')]) {
+                try { return JSON.parse('"' + c + '"'); } catch (e) { /* try next */ }
+            }
+            return body;
+        };
+        // A JSON string body: non-quote/backslash chars or escape pairs, stopping at
+        // the first UNescaped quote (or end of input for the streaming tail).
+        const STR = '((?:[^"\\\\]|\\\\.)*)';
+
+        // Only take the path once it's COMPLETE (trailing quote present). A partial
+        // path would make the header's filename flicker through path segments as it
+        // streams (src → app → foo → foo.js); empty-until-done avoids that.
+        let path = '';
+        const pm = argsStr.match(new RegExp('"path"\\s*:\\s*"' + STR + '"'));
+        if (pm) path = decode(pm[1]);
+
+        // Collect old_string/new_string values in document order: all complete ones,
+        // then any unterminated trailing one.
+        const pairs = [];
+        const complete = new RegExp('"(old_string|new_string)"\\s*:\\s*"' + STR + '"', 'g');
+        let m, lastIndex = 0;
+        while ((m = complete.exec(argsStr)) !== null) {
+            pairs.push({ key: m[1], val: decode(m[2]) });
+            lastIndex = complete.lastIndex;
+        }
+        const tail = argsStr.slice(lastIndex);
+        const tm = tail.match(new RegExp('"(old_string|new_string)"\\s*:\\s*"' + STR + '$'));
+        if (tm) pairs.push({ key: tm[1], val: decode(tm[2]) });
+
+        // Assemble edits: an old_string opens a new edit; new_string fills the current.
+        const edits = [];
+        let cur = null;
+        for (const p of pairs) {
+            if (p.key === 'old_string') {
+                if (cur) edits.push(cur);
+                cur = { old_string: p.val, new_string: '' };
+            } else {
+                if (!cur) cur = { old_string: '', new_string: '' };
+                cur.new_string = p.val;
+            }
+        }
+        if (cur) edits.push(cur);
+        return { path, edits };
+    }
+
+    // Best-effort { path, content } from a partial/streaming write_file args string, so
+    // the file view can render content LIVE as the model writes it (mirrors the others).
+    // path is taken only when complete (trailing quote) to avoid header flicker; content
+    // is taken complete if closed, else as the unterminated streaming tail.
+    static _partialWriteArgs(argsStr) {
+        if (typeof argsStr !== 'string' || !argsStr) return null;
+        const decode = (body) => {
+            for (const c of [body, body.replace(/\\+$/, '')]) {
+                try { return JSON.parse('"' + c + '"'); } catch (e) { /* try next */ }
+            }
+            return body;
+        };
+        const STR = '((?:[^"\\\\]|\\\\.)*)';
+        let path = '';
+        const pm = argsStr.match(new RegExp('"path"\\s*:\\s*"' + STR + '"'));
+        if (pm) path = decode(pm[1]);
+        let content = '';
+        const cm = argsStr.match(new RegExp('"content"\\s*:\\s*"' + STR + '"'));
+        if (cm) content = decode(cm[1]);
+        else {
+            const tm = argsStr.match(new RegExp('"content"\\s*:\\s*"' + STR + '$'));
+            if (tm) content = decode(tm[1]);
+        }
+        return { path, content };
     }
 
     _onToolExecutionStart(data) {
@@ -239,6 +339,22 @@ class StreamingMessageProcessor {
     _onToolExecutionComplete(data) {
         const block = this._findToolBlock(data.id);
         if (!block) return;
+
+        // Keep the raw result/error on metadata so getToolMessages() can reconstruct
+        // the tool-role message (the debug panel's source for tool results) on the
+        // live path, matching what the DB stores for the reload path.
+        block.metadata.result = data.status === 'success' ? (data.result ?? null) : null;
+        block.metadata.error = data.status === 'success' ? null : (data.error ?? null);
+
+        // edit_file diff uses the same auto-collapse grace period as the shell console;
+        // stamp when it finished (live → now, reload → 0 = collapse immediately).
+        if (block.metadata.toolName === 'edit_file') {
+            block.metadata.editDoneAt = this._live ? Date.now() : 0;
+        }
+        // read_file / write_file file view share the same auto-collapse grace stamp.
+        if (block.metadata.toolName === 'read_file' || block.metadata.toolName === 'write_file') {
+            block.metadata.fileDoneAt = this._live ? Date.now() : 0;
+        }
 
         // Shell consoles keep the terminal view instead of an Arguments/Result
         // dropdown. On reload there were no live chunks, so seed the console body
@@ -302,6 +418,23 @@ class StreamingMessageProcessor {
     }
 
     // ===== GETTERS FOR RENDERING =====
+
+    // Tool-role messages reconstructed from this turn's tool blocks, shaped like the
+    // DB's tool messages ({ role, tool_call_id, tool_name, content }). Lets the live
+    // debug panel read tool results from the same single source the reload path uses.
+    getToolMessages() {
+        const msgs = [];
+        for (const item of this._blockSequence) {
+            if (item.type !== 'tool') continue;
+            const md = (item.ref && item.ref.metadata) || {};
+            if (!md.id) continue;
+            const content = md.status === 'success'
+                ? JSON.stringify(md.result ?? null)
+                : JSON.stringify({ error: md.error ?? 'error' });
+            msgs.push({ role: 'tool', tool_call_id: md.id, tool_name: md.toolName, content });
+        }
+        return msgs;
+    }
 
     getBlocks() {
         const blocks = [];
