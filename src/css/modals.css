@@ -22,8 +22,8 @@
 }
 
 .aim-modal-content {
-    background: #2c2c2c;
-    border: 2px outset #555;
+    background: var(--bg-mid);
+    border: 2px outset var(--border-strong);
     max-width: 700px;
     width: 90%;
     height: 600px; /* Increased height for larger fonts */
@@ -36,7 +36,7 @@
 }
 
 .aim-modal-header {
-    background: linear-gradient(to bottom, #1a4a7a, #0d2d4a);
+    background: linear-gradient(to bottom, var(--navy-top), var(--navy-bottom));
     color: white;
     padding: 8px 12px;
     display: flex;
@@ -62,17 +62,17 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #555;
+    background: var(--border-strong);
     border: 1px outset #777;
-    color: #e0e0e0;
+    color: var(--text);
 }
 
 .close:hover, .close-mcp:hover {
-    background: #666;
+    background: var(--border-bright);
 }
 
 .close:active, .close-mcp:active {
-    border: 1px inset #555;
+    border: 1px inset var(--border-strong);
 }
 
 /* MCP Config Modal specific sizing */
@@ -122,8 +122,8 @@
     word-wrap: normal;
     overflow-wrap: normal;
     line-height: 1.4;
-    background: #1a1a1a;
-    border: 1px inset #333;
+    background: var(--bg-deep);
+    border: 1px inset var(--bg-raised);
     color: #f0f0f0;
     padding: 8px;
     resize: vertical;
@@ -139,8 +139,8 @@
 /* Tab Navigation */
 .tab-navigation {
     display: flex;
-    background: #2c2c2c;
-    border-bottom: 1px solid #555;
+    background: var(--bg-mid);
+    border-bottom: 1px solid var(--border-strong);
     margin: 0;
     padding: 0;
 }
@@ -166,7 +166,7 @@
     position: sticky; /* Keep tabs visible when scrolling */
     top: 32px; /* Position below the header */
     z-index: 5;
-    background: #2c2c2c;
+    background: var(--bg-mid);
 }
 
 /* File Content Modal */
@@ -193,7 +193,7 @@
 }
 
 .modal-content {
-    background: #2a2a2a;
+    background: var(--bg-panel);
     border-radius: 8px;
     max-width: 80vw;
     max-height: 80vh;
@@ -207,7 +207,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 20px;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
 .modal-header h3 {
@@ -219,7 +219,7 @@
 .modal-close {
     background: none;
     border: none;
-    color: #ccc;
+    color: var(--text-soft);
     font-size: 24px;
     cursor: pointer;
     padding: 0;
@@ -232,7 +232,7 @@
 }
 
 .modal-close:hover {
-    background: #444;
+    background: var(--border-subtle);
     color: white;
 }
 
@@ -243,12 +243,12 @@
 }
 
 .file-content {
-    background: #1a1a1a;
-    border: 1px solid #444;
+    background: var(--bg-deep);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
     padding: 15px;
     margin: 0;
-    color: #e0e0e0;
+    color: var(--text);
     font-family: 'Courier New', monospace;
     font-size: 14px;
     line-height: 1.5;

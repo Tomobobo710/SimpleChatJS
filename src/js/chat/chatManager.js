@@ -143,7 +143,7 @@ async function loadChatList() {
             } catch (error) {
                 logger.error("Failed to create initial chat:", error, true);
                 chatList.innerHTML =
-                    '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error creating initial chat.</div>';
+                    '<div class="sidebar-empty">Error creating initial chat.</div>';
             }
             return;
         }
@@ -164,7 +164,7 @@ async function loadChatList() {
     } catch (error) {
         logger.error("Error loading chat list:", error, true);
         chatList.innerHTML =
-            '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No chats available.</div>';
+            '<div class="sidebar-empty">No chats available.</div>';
     }
 }
 
@@ -667,24 +667,35 @@ function getBottomBarState() {
 
 // Update bottom bar label based on current state
 function updateBottomBar() {
+    const bar = document.getElementById("sidebarBottomBar");
     const label = document.getElementById("bottomBarLabel");
     const backBtn = document.getElementById("bottomBarBackBtn");
+    const backLabel = document.getElementById("bottomBarBackLabel");
     const state = getBottomBarState();
 
     if (!label) return;
+
+    // The right-side label always describes the + button; the left-side back label +
+    // arrow only appear inside a project (where + makes a new chat in that project).
+    // `.compact` shrinks the labels so both fit alongside each other in that state.
+    const inProject = state === "projectChat";
+    if (bar) bar.classList.toggle("compact", inProject);
 
     switch (state) {
         case "newChat":
             label.textContent = "New Chat";
             if (backBtn) backBtn.style.display = "none";
+            if (backLabel) backLabel.style.display = "none";
             break;
         case "newProject":
             label.textContent = "New Project";
             if (backBtn) backBtn.style.display = "none";
+            if (backLabel) backLabel.style.display = "none";
             break;
         case "projectChat":
-            label.textContent = "Back to Projects";
+            label.textContent = "New Chat";
             if (backBtn) backBtn.style.display = "flex";
+            if (backLabel) backLabel.style.display = "block";
             break;
     }
 }
@@ -712,7 +723,7 @@ function renderProjects() {
 
     if (window.projects.length === 0) {
         container.innerHTML =
-            '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">No projects yet.</div>';
+            '<div class="sidebar-empty">No projects yet.</div>';
         return;
     }
 
@@ -720,6 +731,7 @@ function renderProjects() {
         const projectItem = document.createElement("div");
         projectItem.className = "project-item";
         projectItem.dataset.projectId = project.id;
+        projectItem.title = project.path; // full path on hover (the row only shows the tail)
 
         const projectName = project.name || project.path.split("\\").pop().split("/").pop();
 
@@ -795,12 +807,18 @@ function closeProject() {
     // Show projects list, hide chat list
     const chatList = document.getElementById("chatList");
     const projectsList = document.getElementById("projectsList");
+    const chatListHeader = document.querySelector(".chat-list-header");
     if (chatList) chatList.style.display = "none";
     if (projectsList) projectsList.style.display = "flex";
 
-    // Update sidebar list title
+    // Show the list-header bar over the projects list (openProject hid it for the
+    // project's own name header).
+    if (chatListHeader) chatListHeader.style.display = "flex";
     const sidebarListTitle = document.getElementById("sidebarListTitle");
-    if (sidebarListTitle) sidebarListTitle.textContent = "Project List";
+    if (sidebarListTitle) sidebarListTitle.textContent = "Projects";
+
+    // Re-fetch so the project just worked in re-sorts to the top by recent activity.
+    loadProjects();
 
     // Update bottom bar
     updateBottomBar();
@@ -833,7 +851,7 @@ async function loadProjectChats(projectId) {
             } catch (error) {
                 logger.error("Failed to create initial project chat:", error, true);
                 chatList.innerHTML =
-                    '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error creating initial chat.</div>';
+                    '<div class="sidebar-empty">Error creating initial chat.</div>';
             }
             return;
         }
@@ -846,7 +864,7 @@ async function loadProjectChats(projectId) {
         logger.error("Error loading project chats:", error);
         const chatList = document.getElementById("chatList");
         chatList.innerHTML =
-            '<div style="padding: 8px; color: #666; font-style: italic; text-align: center;">Error loading chats.</div>';
+            '<div class="sidebar-empty">Error loading chats.</div>';
     }
 }
 
@@ -972,8 +990,8 @@ function switchSidebarView(view) {
     } else {
         chatList.style.display = "none";
         projectsList.style.display = "flex";
-        if (chatListHeader) chatListHeader.style.display = "none";
-        if (sidebarListTitle) sidebarListTitle.textContent = "Project List";
+        if (chatListHeader) chatListHeader.style.display = "flex";
+        if (sidebarListTitle) sidebarListTitle.textContent = "Projects";
         loadProjects();
     }
 

@@ -9,8 +9,8 @@
 body {
     font-family: Tahoma, Arial, sans-serif;
     font-size: 16px; /* Increased from 13px for better readability */
-    background: #2c2c2c;
-    color: #e0e0e0;
+    background: var(--bg-mid);
+    color: var(--text);
     height: 100vh;
     overflow: hidden;
 }
@@ -21,25 +21,25 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: #2c2c2c;
-    border: 1px inset #555;
+    background: var(--bg-mid);
+    border: 1px inset var(--border-strong);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: linear-gradient(to bottom, #4a4a4a, #3a3a3a);
-    border: 1px outset #555;
+    background: linear-gradient(to bottom, var(--bg-elevated), var(--border));
+    border: 1px outset var(--border-strong);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(to bottom, #5a5a5a, #4a4a4a);
+    background: linear-gradient(to bottom, #5a5a5a, var(--bg-elevated));
 }
 
 ::-webkit-scrollbar-thumb:active {
-    border: 1px inset #555;
+    border: 1px inset var(--border-strong);
 }
 
 ::-webkit-scrollbar-corner {
-    background: #2c2c2c;
+    background: var(--bg-mid);
 }
 
 /* Notification system */
@@ -117,7 +117,7 @@ body {
 
 /* Code and whitespace styling */
 code {
-    background: #1a1a1a;
+    background: var(--bg-deep);
     color: #f0f0f0;
     padding: 2px 4px;
     border-radius: 3px;
@@ -128,11 +128,11 @@ code {
 }
 
 pre, pre[class*="language-"] {
-    background: #1a1a1a;
+    background: var(--bg-deep);
     color: #f0f0f0;
     padding: 8px 12px;
     border-radius: 4px;
-    border: 1px solid #444;
+    border: 1px solid var(--border-subtle);
     overflow-x: auto;
     margin: 4px 0;
     white-space: pre-wrap;
@@ -174,16 +174,20 @@ pre code, code[class*="language-"] {
 
 /* Code language label */
 .code-lang {
-    background: #333;
-    color: #ccc;
+    background: var(--bg-raised);
+    color: var(--text-soft);
     padding: 4px 8px;
     font-size: 0.8em;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    border: 1px solid #444;
+    border: 1px solid var(--border-subtle);
     border-bottom: none;
     border-radius: 4px 4px 0 0;
     margin-bottom: 0;
-    display: inline-block;
+    /* Block (shrink-to-fit) rather than inline-block so the .code-copy-wrap + *
+       negative-margin pull-up applies to it — a negative top margin doesn't lift an
+       inline-block's line box. Appearance is unchanged (still left-aligned, tab-width). */
+    display: block;
+    width: fit-content;
     text-transform: lowercase;
 }
 
@@ -196,31 +200,54 @@ pre code, code[class*="language-"] {
 
 /* Live streaming code blocks */
 .live-code-block {
+    /* Sticky-bar height: copy-button height (~21px) + 8px top gap + a few px buffer so
+       sticky sub-pixel slack at the scroll extremes can't let the button poke past the
+       block's bottom edge. Sizes the bar and cancels its layout space (below). */
+    --copy-h: 36px;
     margin: 4px 0;
     position: relative;
 }
 
-/* Copy button rides along on scroll: a zero-height sticky bar pinned near the top
-   of the scroll area, holding the button at the right. Sticks while the code block
-   is in view, releases when you scroll past it. */
+/* Copy button rides along on scroll so it stays reachable while the block is on
+   screen, but is CLAMPED to the block's edges. The trick: the sticky bar has a real
+   height (button + top gap), so the sticky bottom-clamp keeps the whole button inside
+   the block instead of letting it poke past the bottom edge (the old 0-height bar +
+   offset button escaped the clamp at the extremes). */
 .code-copy-wrap {
     position: sticky;
     top: 8px;
-    height: 0;
+    height: var(--copy-h);
     text-align: right;
     z-index: 10;
-    pointer-events: none; /* the 0-height bar shouldn't eat clicks; button re-enables */
+    pointer-events: none; /* the bar shouldn't eat clicks; button re-enables */
 }
 
-/* Code block copy button */
+/* Pull the following content up under the sticky bar so the bar adds no layout space.
+   The negative margin MUST live here, not on the bar itself — a negative margin on a
+   sticky element shrinks its containment box and defeats the bottom clamp. */
+.code-copy-wrap + * {
+    margin-top: calc(-1 * var(--copy-h));
+}
+
+/* The copy wrap sits between the language tab and the code body, so the tab and body
+   are no longer adjacent and `.code-lang + pre` (above) can't seam them. Re-seam the
+   body to the tab here. (`.code-lang + pre` still covers non-live markdown blocks,
+   which have no copy wrap between.) */
+.live-code-block.has-lang pre {
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+}
+
+/* Code block copy button. margin-top is the gap from the top of the code body; it's
+   part of --copy-h above so the button's bottom coincides with the sticky bar's bottom
+   and the clamp holds it inside the block. The wrap sits below the language tab, so the
+   button rests inside the code body rather than poking above it. */
 .code-copy-btn {
-    position: relative;
-    top: 8px; /* no language tab: sit near the code's top-right */
-    margin-right: 8px;
+    margin: 8px 8px 0 0;
     pointer-events: auto;
-    background: #333;
-    border: 1px outset #555;
-    color: #e0e0e0;
+    background: var(--bg-raised);
+    border: 1px outset var(--border-strong);
+    color: var(--text);
     padding: 4px 8px;
     font-size: 10px;
     cursor: pointer;
@@ -229,21 +256,21 @@ pre code, code[class*="language-"] {
     z-index: 10;
 }
 
-/* With a language tab present, drop the button below it into the code area. */
-.live-code-block.has-lang .code-copy-btn {
-    top: 30px;
-}
-
 .code-copy-btn:hover {
-    background: #444;
-    border: 1px inset #555;
+    background: var(--border-subtle);
+    border: 1px inset var(--border-strong);
 }
 
 .code-copy-btn:active {
     background: #222;
 }
 
-.live-code-block:hover .code-copy-btn {
+/* Reveal driven by a JS .code-hover class, not CSS :hover. Chromium doesn't
+   re-evaluate :hover while you scroll with a stationary mouse, so a sticky copy
+   button would linger over a block the cursor has actually left and ride the scroll.
+   initCodeCopyHover() (chatRenderer.js) recomputes the hovered block on mousemove
+   AND scroll, so the button tracks the real pointer position. */
+.live-code-block.code-hover .code-copy-btn {
     opacity: 1;
 }
 

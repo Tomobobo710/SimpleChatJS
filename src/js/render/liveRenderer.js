@@ -73,10 +73,14 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                             langLabel = document.createElement('div');
                             langLabel.className = 'code-lang';
                             langLabel.textContent = blockLang;
-                            // Before the <pre> (keeps `.code-lang + pre` styling) and
-                            // after the sticky copy wrap.
-                            const preEl = blockElement.querySelector('pre');
-                            blockElement.insertBefore(langLabel, preEl);
+                            // Insert at the very top — BEFORE the copy wrap — so the
+                            // order is [lang, copyWrap, pre], matching renderCodeBlock.
+                            // That keeps the copy button inside the code body below the
+                            // tab; inserting before the <pre> instead would leave the
+                            // wrap as the first child and push the button above the tab.
+                            const anchor = blockElement.querySelector('.code-copy-wrap')
+                                || blockElement.querySelector('pre');
+                            blockElement.insertBefore(langLabel, anchor);
                         } else if (langLabel.textContent !== blockLang) {
                             langLabel.textContent = blockLang;
                         }

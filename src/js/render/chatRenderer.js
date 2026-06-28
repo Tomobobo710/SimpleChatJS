@@ -149,6 +149,33 @@ function shellConsoleIsCollapsed(metadata) {
     return !!metadata.shellAutoCollapsed;
 }
 
+// Collapse/expand the console by tweening the clip's pixel height (Web Animations
+// API), matching the tool dropdowns. No-ops when already in the target state, so it's
+// safe to call from the per-chunk live update. Pass animate=false for an instant
+// change (initial render / reload). The .collapsed class holds the resting state
+// (clip height 0 vs auto) and flips the chevron.
+function setShellCollapsed(el, collapsed, animate) {
+    if (!el) return;
+    if (el.classList.contains('collapsed') === collapsed) return; // already there
+    const clip = el.querySelector('.shell-console-clip');
+    if (el._shellAnim) { el._shellAnim.cancel(); el._shellAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!clip || animate === false || reduce || !clip.animate) {
+        el.classList.toggle('collapsed', collapsed);
+        return;
+    }
+    if (collapsed) {
+        const start = clip.scrollHeight;
+        el.classList.add('collapsed');                 // resting height = 0
+        el._shellAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], { duration: 180, easing: 'ease' });
+    } else {
+        el.classList.remove('collapsed');              // resting height = auto
+        const target = clip.scrollHeight;
+        el._shellAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], { duration: 180, easing: 'ease' });
+    }
+    el._shellAnim.onfinish = el._shellAnim.oncancel = () => { el._shellAnim = null; };
+}
+
 // Schedule the auto-collapse of a finished console. Uses the absolute shellDoneAt
 // timestamp so each (re)rendered element collapses at the right moment even if an
 // earlier element was replaced mid-grace-period. shellDoneAt = 0 (reload) → now.
@@ -161,13 +188,13 @@ function armShellCollapse(el, metadata) {
     const remaining = doneAt ? SHELL_COLLAPSE_DELAY - (Date.now() - doneAt) : 0;
     if (remaining <= 0) {
         metadata.shellAutoCollapsed = true;
-        el.classList.add('collapsed');
+        setShellCollapsed(el, true, false); // grace already elapsed / reload → instant
         return;
     }
     setTimeout(() => {
         if (metadata.shellUserToggled) return;
         metadata.shellAutoCollapsed = true;
-        el.classList.add('collapsed');
+        setShellCollapsed(el, true, true);  // animate the auto-collapse
     }, remaining);
 }
 
@@ -181,7 +208,7 @@ function buildShellConsoleElement(metadata) {
             <button class="shell-console-raw-toggle" title="Toggle raw JSON">{ }</button>
             ${shellConsoleStatusHtml(metadata)}
         </div>
-        <div class="shell-console-body"></div>
+        <div class="shell-console-clip"><div class="shell-console-body"></div></div>
     `;
     const body = el.querySelector('.shell-console-body');
     body.innerHTML = shellConsoleBodyHtml(metadata);
@@ -212,7 +239,7 @@ function buildShellConsoleElement(metadata) {
         const nowCollapsed = !el.classList.contains('collapsed');
         metadata.shellUserToggled = true;
         metadata.shellCollapsed = nowCollapsed;
-        el.classList.toggle('collapsed', nowCollapsed);
+        setShellCollapsed(el, nowCollapsed, true);
         if (!nowCollapsed) { const b = el.querySelector('.shell-console-body'); if (b) b.scrollTop = b.scrollHeight; }
     });
 
@@ -239,7 +266,9 @@ function updateShellConsoleElement(el, metadata) {
     }
     // Re-apply auto collapse/expand (running→open, done→collapsed) unless the user
     // has taken control, then arm the delayed auto-collapse for a fresh finish.
-    el.classList.toggle('collapsed', shellConsoleIsCollapsed(metadata));
+    // setShellCollapsed no-ops when the state is unchanged, so this is cheap on the
+    // per-chunk live update.
+    setShellCollapsed(el, shellConsoleIsCollapsed(metadata), true);
     armShellCollapse(el, metadata);
 }
 
@@ -256,9 +285,10 @@ function mcpBarHue(name) {
     let h = 0;
     for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
     let hue = h % 360;
-    // Reserved hues: red(0)/yellow(43)/green(134)/blue(213)/purple(258). Nudge the
-    // hash away from any of them so MCP colors stay distinct from the built-ins.
-    const reserved = [0, 43, 134, 213, 258];
+    // Reserved hues: red(0)/orange(25)/yellow(43)/green(134)/blue(213)/purple(258).
+    // Nudge the hash away from any of them so MCP colors stay distinct from the
+    // built-in tool accents.
+    const reserved = [0, 25, 43, 134, 213, 258];
     let guard = 0;
     while (reserved.some(r => hueCircularDist(hue, r) < 22) && guard < 36) {
         hue = (hue + 11) % 360;
@@ -541,8 +571,10 @@ class ChatRenderer {
         pre.appendChild(code);
         div.appendChild(pre);
 
-        // Copy button in a sticky wrap, inserted FIRST so it pins to the top of the
-        // scroll area and follows you down a long code block (see .code-copy-wrap).
+        // Copy button in a sticky wrap, inserted just before the code body (so with a
+        // language tab it sits INSIDE the body, below the tab — not poking above it).
+        // It rides along near the top of the scroll area while the block is on screen,
+        // clamped to the block's edges (see .code-copy-wrap).
         const copyWrap = document.createElement("div");
         copyWrap.className = "code-copy-wrap";
         const copyBtn = document.createElement("button");
@@ -552,10 +584,12 @@ class ChatRenderer {
             this.copyCodeToClipboard(content);
         });
         copyWrap.appendChild(copyBtn);
-        div.insertBefore(copyWrap, div.firstChild);
+        div.insertBefore(copyWrap, pre);
 
         return div;
     }
+
+    // (see initCodeCopyHover below — copy-button visibility is driven from JS)
 
     // Render error block as dropdown with debug information
     renderErrorBlock(content, metadata, isOpen = false) {
@@ -1685,10 +1719,8 @@ class ChatRenderer {
 
                 const img = document.createElement("img");
                 img.src = `data:${imageData.mimeType};base64,${imageData.imageData}`;
-                img.style.maxWidth = "150px";
-                img.style.maxHeight = "150px";
-                img.style.border = "1px solid #666";
-                img.style.borderRadius = "4px";
+                // Sizing/border/radius come from CSS (.edit-image-preview img and its
+                // container in edit-mode.css) — no inline styles needed.
 
                 // Add remove button
                 const removeBtn = document.createElement("button");
@@ -2357,11 +2389,9 @@ class ChatRenderer {
             branchNavElement._siblings = sortedSiblings;
             branchNavElement._currentIndex = currentIndex;
 
-            // Show navigation
-            branchNavElement.style.display = "flex";
-            branchNavElement.style.alignItems = "center";
-            branchNavElement.style.gap = "6px";
-            branchNavElement.style.marginLeft = "10px";
+            // Show navigation. Clearing the inline display lets the .branch-nav class
+            // (flex/align/gap/margin-left in message-actions.css) govern the layout.
+            branchNavElement.style.display = "";
 
             return true;
         } catch (error) {
@@ -2471,13 +2501,48 @@ if (document.readyState === "loading") {
 }
 
 // Create debug panel DOM element using sequential debug system
+// Drive code-block copy-button visibility from JS instead of CSS :hover. Chromium
+// doesn't re-evaluate :hover while you scroll with a stationary mouse, so the sticky
+// copy button would stay lit over a block the cursor has already left and ride the
+// scroll until you wiggle the mouse. We track the last pointer position and recompute
+// which .live-code-block is actually under it on both mousemove and scroll, toggling
+// .code-hover (rAF-throttled). Call once at startup with the scroll container.
+let _codeHoverX = -1, _codeHoverY = -1, _codeHoverEl = null, _codeHoverRaf = 0;
+
+function _updateCodeHover() {
+    _codeHoverRaf = 0;
+    let block = null;
+    if (_codeHoverX >= 0) {
+        const el = document.elementFromPoint(_codeHoverX, _codeHoverY);
+        block = el ? el.closest('.live-code-block') : null;
+    }
+    if (block === _codeHoverEl) return;
+    if (_codeHoverEl) _codeHoverEl.classList.remove('code-hover');
+    if (block) block.classList.add('code-hover');
+    _codeHoverEl = block;
+}
+
+function _queueCodeHover() {
+    if (_codeHoverRaf) return;
+    _codeHoverRaf = requestAnimationFrame(_updateCodeHover);
+}
+
+function initCodeCopyHover(scrollContainer) {
+    document.addEventListener('mousemove', (e) => {
+        _codeHoverX = e.clientX;
+        _codeHoverY = e.clientY;
+        _queueCodeHover();
+    });
+    if (scrollContainer) {
+        scrollContainer.addEventListener('scroll', _queueCodeHover, { passive: true });
+    }
+}
+
 function createDebugPanel(turnDiv, messageId, debugData) {
     const debugPanel = document.createElement("div");
     debugPanel.className = "debug-panel-container";
     debugPanel.dataset.messageId = messageId;
     debugPanel.style.display = "none"; // Initially hidden
-    debugPanel.style.width = "100%";
-    debugPanel.style.boxSizing = "border-box";
 
     // Add turn ID and message ID to debug data
     if (!debugData) {
@@ -2486,27 +2551,53 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     debugData.turnId = turnDiv.closest(".turn")?.dataset.turnId || "unknown";
     debugData.messageId = messageId || "unknown";
 
-    // Use the new sequential debug panel
+    // Use the new sequential debug panel. Width/box-sizing (so long unbroken content
+    // can't blow out the turn) is handled by CSS now — see .debug-panel-container and
+    // the .debug-dropdown* rules in debug.css.
     debugPanel.innerHTML = createDebugPanelContent(debugData);
 
-    // Force width on all debug dropdowns synchronously.
-    const dropdowns = debugPanel.querySelectorAll(".debug-dropdown");
-    dropdowns.forEach((dropdown) => {
-        dropdown.style.width = "100%";
-        dropdown.style.boxSizing = "border-box";
-
-        const content = dropdown.querySelector(".debug-dropdown-content");
-        if (content) {
-            content.style.width = "100%";
-            content.style.boxSizing = "border-box";
-
-            const pre = content.querySelector("pre");
-            if (pre) {
-                pre.style.width = "100%";
-                pre.style.boxSizing = "border-box";
-            }
-        }
+    // The debug dropdowns are static-HTML <details>; the native summary-click toggle
+    // snaps (no transition), so intercept it (delegated, since the markup is injected
+    // as a string) and animate the clip height instead — mirrors the streaming
+    // dropdowns. preventDefault cancels the native open/close so JS owns the state.
+    debugPanel.addEventListener('click', (e) => {
+        const header = e.target.closest('.debug-dropdown-header');
+        if (!header || !debugPanel.contains(header)) return;
+        const details = header.closest('.debug-dropdown');
+        if (!details) return;
+        e.preventDefault();
+        toggleDebugDropdown(details);
     });
 
     return debugPanel;
+}
+
+// Animate a debug dropdown open/closed by tweening its .debug-dropdown-clip pixel
+// height (Web Animations API). The .dd-open class holds the resting state (height
+// auto vs 0) and flips the chevron; the native `open` attr is kept in sync for
+// semantics (dropped only after a collapse finishes so content stays rendered during
+// the slide). Honors prefers-reduced-motion.
+function toggleDebugDropdown(details) {
+    const clip = details.querySelector('.debug-dropdown-clip');
+    if (!clip) return;
+    if (details._ddAnim) { details._ddAnim.cancel(); details._ddAnim = null; }
+    const opening = !details.classList.contains('dd-open');
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const opts = { duration: 180, easing: 'ease' };
+
+    if (opening) {
+        details.open = true;
+        const target = clip.scrollHeight;
+        details.classList.add('dd-open');
+        if (reduce || !clip.animate) return;
+        details._ddAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], opts);
+        details._ddAnim.onfinish = details._ddAnim.oncancel = () => { details._ddAnim = null; };
+    } else {
+        const start = clip.scrollHeight;
+        details.classList.remove('dd-open');
+        if (reduce || !clip.animate) { details.open = false; return; }
+        details._ddAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], opts);
+        details._ddAnim.onfinish = () => { details._ddAnim = null; details.open = false; };
+        details._ddAnim.oncancel = () => { details._ddAnim = null; };
+    }
 }

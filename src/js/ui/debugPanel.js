@@ -263,6 +263,7 @@ class DebugPanel {
             html += `<summary class="debug-dropdown-header">`;
             html += `<span class="dropdown-title">${toolName} (${toolId})${hasResult ? ' &#10003;' : ''}</span>`;
             html += `</summary>`;
+            html += `<div class="debug-dropdown-clip">`;
             html += `<div class="debug-dropdown-content">`;
 
             const toolInfo = { id: toolId, name: toolName, arguments: args };
@@ -273,6 +274,7 @@ class DebugPanel {
 
             html += `<pre>${JSON.stringify(toolInfo, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
             html += `</div>`;
+            html += `</div>`;
             html += `</details>`;
         }
 
@@ -282,12 +284,14 @@ class DebugPanel {
 
     createDropdown(title, content, isExpanded = false, contentType = 'text') {
         return `
-            <details class="debug-dropdown" data-content-type="${contentType}"${isExpanded ? ' open' : ''}>
+            <details class="debug-dropdown${isExpanded ? ' dd-open' : ''}" data-content-type="${contentType}"${isExpanded ? ' open' : ''}>
                 <summary class="debug-dropdown-header">
                     <span class="dropdown-title">${title}</span>
                 </summary>
-                <div class="debug-dropdown-content">
-                    <pre>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                <div class="debug-dropdown-clip">
+                    <div class="debug-dropdown-content">
+                        <pre>${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                    </div>
                 </div>
             </details>
         `;

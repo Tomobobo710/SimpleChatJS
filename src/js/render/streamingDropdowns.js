@@ -224,29 +224,77 @@ class StreamingDropdown {
     createElement() {
         const wrapper = document.createElement('details');
         wrapper.className = `streaming-dropdown ${this.type}-dropdown`;
-        if (!this.isCollapsed) wrapper.open = true;
+        // Expanded state is the .dd-open class (drives the resting height + chevron in
+        // turns.css); the native `open` attribute is kept in sync for semantics. Set
+        // both up-front when starting open so it renders expanded with no animation.
+        if (!this.isCollapsed) { wrapper.open = true; wrapper.classList.add('dd-open'); }
         const badgeHtml = this.badge
             ? `<span class="dropdown-badge" title="${escapeHtml(this.badge.title || '')}">${escapeHtml(this.badge.text)}</span>`
             : '';
+        // .dropdown-clip (overflow:hidden) is the element whose pixel height is tweened
+        // open/closed by toggleOpen(). .dropdown-content / .dropdown-inner keep all
+        // their styling.
         wrapper.innerHTML = `
             <summary class="dropdown-toggle">
                 <span class="dropdown-title">${this.title}</span>
                 ${badgeHtml}
             </summary>
-            <div class="dropdown-content">
-                <div class="dropdown-inner" id="dropdown-content-${this.id}"></div>
+            <div class="dropdown-clip">
+                <div class="dropdown-content">
+                    <div class="dropdown-inner" id="dropdown-content-${this.id}"></div>
+                </div>
             </div>
         `;
-        
+
+        // Drive open/close ourselves: the native summary-click toggle applies the open
+        // state without running a transition (it snaps), so we intercept it and animate
+        // the clip height via the Web Animations API instead.
+        wrapper.querySelector('.dropdown-toggle').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.toggleOpen(wrapper);
+        });
+
         wrapper.addEventListener('toggle', () => {
             this.isCollapsed = !wrapper.open;
         });
-        
+
         wrapper._streamingDropdownInstance = this;
-        
+
         return wrapper;
     }
-    
+
+    // Animate the dropdown open/closed by tweening the clip's pixel height (Web
+    // Animations API). The .dd-open class holds the resting state (height auto vs 0)
+    // and flips the chevron; `open` tracks semantics. Honors prefers-reduced-motion.
+    toggleOpen(wrapper) {
+        const clip = wrapper.querySelector('.dropdown-clip');
+        if (!clip) return;
+        if (this._anim) { this._anim.cancel(); this._anim = null; }
+        const opening = !wrapper.classList.contains('dd-open');
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const opts = { duration: 180, easing: 'ease' };
+
+        if (opening) {
+            wrapper.open = true;
+            this.isCollapsed = false;
+            const target = clip.scrollHeight;       // full content height (clip is overflow:hidden)
+            wrapper.classList.add('dd-open');        // resting height = auto
+            if (reduce || !clip.animate) return;
+            this._anim = clip.animate([{ height: '0px' }, { height: target + 'px' }], opts);
+            this._anim.onfinish = this._anim.oncancel = () => { this._anim = null; };
+        } else {
+            const start = clip.scrollHeight;
+            this.isCollapsed = true;
+            wrapper.classList.remove('dd-open');     // resting height = 0
+            if (reduce || !clip.animate) { wrapper.open = false; return; }
+            this._anim = clip.animate([{ height: start + 'px' }, { height: '0px' }], opts);
+            // Drop native open only once the collapse finishes (keeps content rendered
+            // during the slide); skip if a re-open cancelled us.
+            this._anim.onfinish = () => { this._anim = null; wrapper.open = false; };
+            this._anim.oncancel = () => { this._anim = null; };
+        }
+    }
+
     appendContent(newContent) {
         this.content += newContent;
         this.updateDisplay();
