@@ -48,6 +48,9 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     } else if (currentBlock.metadata?.toolName === 'edit_file') {
                         // Live edit diff: re-render the diff body in place as args/result arrive.
                         updateEditDiffElement(blockElement, currentBlock.metadata || {});
+                    } else if (currentBlock.metadata?.toolName === 'read_file' || currentBlock.metadata?.toolName === 'write_file') {
+                        // Live file view: write_file streams its content in; read_file fills on result.
+                        updateFileViewElement(blockElement, currentBlock.metadata || {}, currentBlock.metadata.toolName);
                     } else {
                         const dropdownInner = blockElement.querySelector('.dropdown-inner');
                         if (dropdownInner) {

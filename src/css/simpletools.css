@@ -473,6 +473,130 @@
 
 .edit-diff-empty { display: block; padding: 10px 12px; color: #777; font-style: italic; }
 
+/* ===== File view (read_file / write_file tool blocks) ===== */
+/* Same frame as the edit diff; body is the file contents with a line-number gutter.
+   Per-tool accent matches the regular dropdowns: read=green, write=orange. */
+.file-view {
+    margin: 2px 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-panel);
+    font-family: "Cascadia Code", "Consolas", "SF Mono", Menlo, Monaco, monospace;
+}
+
+.file-view-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+    box-sizing: border-box;
+    min-height: 30px;
+    border-left: 3px solid var(--border-strong);
+}
+.file-view[data-tool="read_file"] .file-view-header { background: rgba(64, 192, 87, 0.10); border-left-color: var(--accent-green); }
+.file-view[data-tool="read_file"] .file-view-header:hover { background: rgba(64, 192, 87, 0.16); }
+.file-view[data-tool="write_file"] .file-view-header { background: rgba(232, 131, 58, 0.10); border-left-color: var(--accent-orange); }
+.file-view[data-tool="write_file"] .file-view-header:hover { background: rgba(232, 131, 58, 0.16); }
+
+.file-view-chevron { flex-shrink: 0; color: var(--text); font-size: 11px; }
+.file-view-chevron::before { content: "\25bc"; }
+.file-view.collapsed .file-view-chevron::before { content: "\25b6"; }
+
+.file-view-clip { overflow: hidden; }
+.file-view.collapsed .file-view-clip { height: 0; }
+
+.file-view-title { flex-shrink: 0; font-weight: 600; }
+
+/* Filename only (full path in the title tooltip). Fills the middle. */
+.file-view-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.file-view-raw-toggle {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.file-view-raw-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.file-view-raw-toggle.active { color: var(--text); background: var(--bg-panel); border-color: var(--border-strong); }
+.file-view.collapsed .file-view-raw-toggle { display: none; }
+
+.file-view-status {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: bold;
+}
+.file-view-status.running {
+    color: #c0a060;
+    background: rgba(192, 160, 96, 0.12);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.file-view-status.ok { color: #9aa0a6; background: rgba(255, 255, 255, 0.06); }
+.file-view-status.err { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }
+
+.file-view-body {
+    margin: 0;
+    padding: 6px 0;
+    max-height: 360px;
+    overflow: auto;
+    font-size: 12.5px;
+    line-height: 1.5;
+    background: var(--bg-console);
+    border-top: 1px solid var(--border-strong);
+}
+
+/* Raw JSON view drops the file theme for the standard grey dropdown content theme. */
+.file-view.raw-mode .file-view-body { background: var(--bg-deep); padding: 8px; }
+.file-view.raw-mode .file-view-body div {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 6px;
+    border-radius: 0 0 4px 4px;
+}
+
+.file-view-line { display: flex; align-items: flex-start; padding: 0 12px; color: #cfcfcf; }
+/* Line-number gutter. Non-selectable so copying the file doesn't drag the numbers. */
+.file-view-ln {
+    flex-shrink: 0;
+    width: 3em;
+    text-align: right;
+    padding-right: 12px;
+    margin-right: 8px;
+    color: #6a6a6a;
+    user-select: none;
+    border-right: 1px solid var(--bg-mid);
+}
+.file-view-text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+
+.file-view-empty { display: block; padding: 10px 12px; color: #777; font-style: italic; }
+.file-view-error { padding: 10px 12px; color: #f0bcbc; white-space: pre-wrap; word-break: break-word; }
+
 /* Env context toggles (Tokens tab, System Prompts section) */
 .context-toggles-group {
     margin-top: 16px;

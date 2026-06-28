@@ -504,6 +504,223 @@ function updateEditDiffElement(el, metadata) {
     armEditCollapse(el, metadata);
 }
 
+// ===== File view (read_file / write_file tool blocks) =====
+// read_file and write_file render the file contents with a line-number gutter and
+// light syntax highlighting, plus a { } toggle to the raw Arguments/Result JSON —
+// the same frame and collapse/scroll machinery as the edit diff and shell console.
+// write_file streams its content live as the model types it (_partialWriteArgs);
+// read_file fills in once the backend result lands. Both render straight from the
+// block metadata so live, post-stream, and reload share one path.
+
+const FILE_VIEW_TITLES = { read_file: 'read_file', write_file: 'write_file' };
+
+// File extension → SimpleSyntax language token (its aliases already accept most
+// raw extensions: js/ts/py/go/css/sql/sh/...). Empty when there's no extension,
+// which makes SimpleSyntax return plain escaped text rather than guessing.
+function fileViewLang(p) {
+    const m = String(p || '').match(/\.([a-z0-9_+]+)$/i);
+    return m ? m[1].toLowerCase() : '';
+}
+
+// Resolve { text, firstLine, status, errText } for display. read: from the backend
+// result (content + start_line). write: from the (possibly partial, streaming)
+// arguments.content. status: 'running' | 'ok' | 'err'.
+function fileViewData(metadata, toolName) {
+    const args = metadata.arguments || {};
+    if (toolName === 'write_file') {
+        const text = typeof args.content === 'string' ? args.content : '';
+        if (metadata.status === 'error') return { text: '', firstLine: 1, status: 'err', errText: metadata.error };
+        const done = metadata.status === 'success';
+        return { text, firstLine: 1, status: done ? 'ok' : 'running' };
+    }
+    // read_file
+    const result = metadata.result;
+    if (result && typeof result === 'object') {
+        // read_file can succeed-the-call but refuse (file/range too large): success:false.
+        if (result.success === false) return { text: '', firstLine: 1, status: 'err', errText: result.message || result.error };
+        if (typeof result.content === 'string') return { text: result.content, firstLine: result.start_line || 1, status: 'ok' };
+    }
+    if (metadata.status === 'error') return { text: '', firstLine: 1, status: 'err', errText: metadata.error };
+    return { text: '', firstLine: 1, status: 'running' };
+}
+
+function fileViewStatusHtml(metadata, toolName) {
+    const d = fileViewData(metadata, toolName);
+    if (d.status === 'running') {
+        const verb = toolName === 'write_file' ? 'writing' : 'reading';
+        return `<span class="file-view-status running">${verb}<span class="shell-console-spinner"></span></span>`;
+    }
+    if (d.status === 'err') return `<span class="file-view-status err">failed</span>`;
+    const lines = d.text ? d.text.replace(/\n$/, '').split('\n').length : 0;
+    let label;
+    if (toolName === 'write_file') {
+        const bytes = (metadata.result && metadata.result.bytes_written != null) ? metadata.result.bytes_written : null;
+        label = bytes != null ? `${bytes} B · ${lines} ln` : `${lines} ln`;
+    } else {
+        const size = (metadata.result && metadata.result.size != null) ? metadata.result.size : d.text.length;
+        label = `${size} B · ${lines} ln`;
+    }
+    return `<span class="file-view-status ok">${escapeHtml(label)}</span>`;
+}
+
+// Raw view: Arguments + Result JSON through the SAME formatter the other tools use.
+function fileViewRawHtml(metadata, toolName) {
+    const args = metadata.arguments || {};
+    const result = metadata.result != null ? metadata.result
+        : (metadata.error != null ? { error: metadata.error }
+        : (metadata.status === 'success' ? { success: true } : { status: 'running' }));
+    const content = `[${toolName}]:\nArguments: ${JSON.stringify(args)}\nResult: ${JSON.stringify(result)}`;
+    return '<div class="dropdown-inner">' + formatToolContent(content, toolName, args) + '</div>';
+}
+
+// Pretty body: file contents with a line-number gutter and light highlighting.
+function fileViewBodyHtml(metadata, toolName) {
+    if (metadata.fileShowRaw) return fileViewRawHtml(metadata, toolName);
+    const d = fileViewData(metadata, toolName);
+    if (d.status === 'err') return `<div class="file-view-error">${escapeHtml(d.errText || 'failed')}</div>`;
+    let text = d.text;
+    if (!text) {
+        const verb = toolName === 'write_file' ? 'writing' : 'reading';
+        const msg = d.status === 'running' ? `(${verb}…)` : '(empty file)';
+        return `<span class="file-view-empty">${msg}</span>`;
+    }
+    // Drop one trailing newline so a file ending in "\n" doesn't show a blank last row.
+    text = text.replace(/\n$/, '');
+    const lang = fileViewLang((metadata.arguments && metadata.arguments.path) || '');
+    // Highlight the whole text once (so block-comment state carries across lines),
+    // then split — highlight() joins lines with "\n" so the counts line up.
+    const hlLines = (window.SimpleSyntax && lang)
+        ? SimpleSyntax.highlight(text, lang).split('\n')
+        : text.split('\n').map(escapeHtml);
+    let html = '';
+    for (let i = 0; i < hlLines.length; i++) {
+        html += `<div class="file-view-line"><span class="file-view-ln">${d.firstLine + i}</span>`
+            + `<span class="file-view-text">${hlLines[i] || ''}</span></div>`;
+    }
+    return html;
+}
+
+// Collapse policy — mirrors the edit diff. User's click wins; otherwise driven by the
+// per-tool display settings (Auto Expand while running, Auto Collapse after done).
+function fileViewIsDone(metadata) { return metadata.status === 'success' || metadata.status === 'error'; }
+function fileViewIsCollapsed(metadata, toolName) {
+    if (metadata.fileUserToggled) return !!metadata.fileCollapsed;
+    const opts = getToolDisplaySettings(toolName);
+    if (!fileViewIsDone(metadata)) return !opts.autoExpand;
+    return !!metadata.fileAutoCollapsed;
+}
+function armFileCollapse(el, metadata, toolName) {
+    if (metadata.fileUserToggled || metadata.fileAutoCollapsed) return;
+    if (!fileViewIsDone(metadata)) return;
+    const opts = getToolDisplaySettings(toolName);
+    if (!opts.autoCollapse) return;
+    if (el._fileCollapseArmed) return;
+    el._fileCollapseArmed = true;
+    const doneAt = metadata.fileDoneAt || 0;
+    const remaining = doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) : 0;
+    if (remaining <= 0) { metadata.fileAutoCollapsed = true; setFileViewCollapsed(el, true, false); return; }
+    setTimeout(() => {
+        if (metadata.fileUserToggled) return;
+        metadata.fileAutoCollapsed = true;
+        setFileViewCollapsed(el, true, true);
+    }, remaining);
+}
+
+// Collapse/expand by tweening the clip height (WAAPI), mirroring the edit diff.
+function setFileViewCollapsed(el, collapsed, animate) {
+    if (!el) return;
+    if (el.classList.contains('collapsed') === collapsed) return;
+    const clip = el.querySelector('.file-view-clip');
+    if (el._fileAnim) { el._fileAnim.cancel(); el._fileAnim = null; }
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!clip || animate === false || reduce || !clip.animate) { el.classList.toggle('collapsed', collapsed); return; }
+    if (collapsed) {
+        const start = clip.scrollHeight;
+        el.classList.add('collapsed');
+        el._fileAnim = clip.animate([{ height: start + 'px' }, { height: '0px' }], { duration: 180, easing: 'ease' });
+    } else {
+        el.classList.remove('collapsed');
+        const target = clip.scrollHeight;
+        el._fileAnim = clip.animate([{ height: '0px' }, { height: target + 'px' }], { duration: 180, easing: 'ease' });
+    }
+    el._fileAnim.onfinish = el._fileAnim.oncancel = () => { el._fileAnim = null; };
+}
+
+function buildFileViewElement(metadata, toolName) {
+    const el = document.createElement('div');
+    el.className = 'file-view';
+    el.dataset.tool = toolName;
+    const path = (metadata.arguments && metadata.arguments.path) || '';
+    el.innerHTML = `
+        <div class="file-view-header">
+            <span class="file-view-chevron"></span>
+            <span class="file-view-title">${FILE_VIEW_TITLES[toolName] || escapeHtml(toolName)}</span>
+            <span class="file-view-path" title="${escapeHtml(path)}">${escapeHtml(editFileName(path))}</span>
+            <button class="file-view-raw-toggle" title="Toggle raw JSON">{ }</button>
+            ${fileViewStatusHtml(metadata, toolName)}
+        </div>
+        <div class="file-view-clip"><div class="file-view-body"></div></div>
+    `;
+    const body = el.querySelector('.file-view-body');
+    body.innerHTML = fileViewBodyHtml(metadata, toolName);
+    el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
+    if (fileViewIsCollapsed(metadata, toolName)) el.classList.add('collapsed');
+
+    // Scroll position persists in metadata (survives the finalize rebuild). isConnected
+    // guard: element removal fires a scroll-to-0 that would clobber the saved value.
+    body.addEventListener('scroll', () => { if (body.isConnected) metadata.fileScrollTop = body.scrollTop; });
+    if (!fileViewIsCollapsed(metadata, toolName) && metadata.fileScrollTop != null) {
+        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.fileScrollTop; }));
+    }
+
+    const rawBtn = el.querySelector('.file-view-raw-toggle');
+    rawBtn.classList.toggle('active', !!metadata.fileShowRaw);
+    rawBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        metadata.fileShowRaw = !metadata.fileShowRaw;
+        rawBtn.classList.toggle('active', metadata.fileShowRaw);
+        el.classList.toggle('raw-mode', metadata.fileShowRaw);
+        body.innerHTML = fileViewBodyHtml(metadata, toolName);
+    });
+
+    el.querySelector('.file-view-header').addEventListener('click', () => {
+        const collapsed = !el.classList.contains('collapsed');
+        metadata.fileUserToggled = true;
+        metadata.fileCollapsed = collapsed;
+        setFileViewCollapsed(el, collapsed, true);
+        if (!collapsed) { const b = el.querySelector('.file-view-body'); if (b) b.scrollTop = b.scrollHeight; }
+    });
+
+    armFileCollapse(el, metadata, toolName);
+    return el;
+}
+
+function updateFileViewElement(el, metadata, toolName) {
+    if (!el) return;
+    const header = el.querySelector('.file-view-header');
+    if (header) {
+        const oldStatus = header.querySelector('.file-view-status');
+        if (oldStatus) oldStatus.outerHTML = fileViewStatusHtml(metadata, toolName);
+        const pathEl = header.querySelector('.file-view-path');
+        const path = (metadata.arguments && metadata.arguments.path) || '';
+        const name = editFileName(path);
+        if (pathEl && pathEl.textContent !== name) { pathEl.textContent = name; pathEl.title = path; }
+        const rawBtn = header.querySelector('.file-view-raw-toggle');
+        if (rawBtn) rawBtn.classList.toggle('active', !!metadata.fileShowRaw);
+    }
+    const body = el.querySelector('.file-view-body');
+    if (body) {
+        // While open, stick to the bottom as content streams unless the user scrolled up.
+        const open = !el.classList.contains('collapsed');
+        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
+        body.innerHTML = fileViewBodyHtml(metadata, toolName);
+        el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
+        if (atBottom) body.scrollTop = body.scrollHeight;
+    }
+    setFileViewCollapsed(el, fileViewIsCollapsed(metadata, toolName), true);
+    armFileCollapse(el, metadata, toolName);
+}
+
 // ===== Deterministic MCP accent color =====
 // Each MCP tool gets a stable color seeded by its name, kept clear of the hues
 // already used by the built-in tools so they never clash. Fed to CSS via the
@@ -614,10 +831,12 @@ class ChatRenderer {
                     thinkingIndex++;
                 } else if (blockData.type === "tool"
                         && blockData.metadata?.toolName !== "shell_run"
-                        && blockData.metadata?.toolName !== "edit_file") {
-                    // shell_run (console) and edit_file (diff) aren't .streaming-dropdowns,
-                    // so they're excluded from the ordinal state keys (the post-stream
-                    // capture skips them too). Keep indices aligned.
+                        && blockData.metadata?.toolName !== "edit_file"
+                        && blockData.metadata?.toolName !== "read_file"
+                        && blockData.metadata?.toolName !== "write_file") {
+                    // shell_run (console), edit_file (diff), and read_file/write_file (file
+                    // view) aren't .streaming-dropdowns, so they're excluded from the ordinal
+                    // state keys (the post-stream capture skips them too). Keep indices aligned.
                     stateKey = "tool_" + toolIndex;
                     toolIndex++;
                 }
@@ -742,6 +961,11 @@ class ChatRenderer {
         // edit_file renders as a unified diff, not a dropdown.
         if (toolName === 'edit_file') {
             return buildEditDiffElement(metadata || {});
+        }
+
+        // read_file / write_file render as a file view (gutter + highlight), not a dropdown.
+        if (toolName === 'read_file' || toolName === 'write_file') {
+            return buildFileViewElement(metadata || {}, toolName);
         }
 
         // MCP tools arrive namespaced as mcp__<server>__<tool>. Show the clean

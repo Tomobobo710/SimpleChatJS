@@ -186,6 +186,21 @@ class StreamingMessageProcessor {
             const parsed = StreamingMessageProcessor._partialEditArgs(data.arguments);
             if (parsed) block.metadata.arguments = parsed;
             block.content = `__edit__|args:${(data.arguments || '').length}`;
+        } else if (block.metadata.toolName === 'write_file') {
+            // Stream the file contents into the file view as the model writes them: pull a
+            // best-effort { path, content } out of the partial JSON (content may be the
+            // unterminated trailing value). Bump content so updateLiveRendering fires.
+            const parsed = StreamingMessageProcessor._partialWriteArgs(data.arguments);
+            if (parsed) block.metadata.arguments = parsed;
+            block.content = `__write__|args:${(data.arguments || '').length}`;
+        } else if (block.metadata.toolName === 'read_file') {
+            // read_file args are tiny (path + optional range); just surface the path so the
+            // header filename shows while it runs. Content arrives in the result.
+            // (block.metadata.arguments was set to the raw partial string above; replace
+            // with a parsed object so the build/update functions can read .path safely.)
+            const parsed = StreamingMessageProcessor._partialWriteArgs(data.arguments);
+            if (parsed && parsed.path) block.metadata.arguments = { path: parsed.path };
+            block.content = `__read__|args:${(data.arguments || '').length}`;
         } else {
             block.content = `[${data.name}]:\nArguments: ${data.arguments}\nResult: Executing...`;
         }
@@ -255,6 +270,32 @@ class StreamingMessageProcessor {
         return { path, edits };
     }
 
+    // Best-effort { path, content } from a partial/streaming write_file args string, so
+    // the file view can render content LIVE as the model writes it (mirrors the others).
+    // path is taken only when complete (trailing quote) to avoid header flicker; content
+    // is taken complete if closed, else as the unterminated streaming tail.
+    static _partialWriteArgs(argsStr) {
+        if (typeof argsStr !== 'string' || !argsStr) return null;
+        const decode = (body) => {
+            for (const c of [body, body.replace(/\\+$/, '')]) {
+                try { return JSON.parse('"' + c + '"'); } catch (e) { /* try next */ }
+            }
+            return body;
+        };
+        const STR = '((?:[^"\\\\]|\\\\.)*)';
+        let path = '';
+        const pm = argsStr.match(new RegExp('"path"\\s*:\\s*"' + STR + '"'));
+        if (pm) path = decode(pm[1]);
+        let content = '';
+        const cm = argsStr.match(new RegExp('"content"\\s*:\\s*"' + STR + '"'));
+        if (cm) content = decode(cm[1]);
+        else {
+            const tm = argsStr.match(new RegExp('"content"\\s*:\\s*"' + STR + '$'));
+            if (tm) content = decode(tm[1]);
+        }
+        return { path, content };
+    }
+
     _onToolExecutionStart(data) {
         let block = this._findToolBlock(data.id);
         // Defensive: if no tool_call_detected preceded this (e.g. some adapters),
@@ -309,6 +350,10 @@ class StreamingMessageProcessor {
         // stamp when it finished (live → now, reload → 0 = collapse immediately).
         if (block.metadata.toolName === 'edit_file') {
             block.metadata.editDoneAt = this._live ? Date.now() : 0;
+        }
+        // read_file / write_file file view share the same auto-collapse grace stamp.
+        if (block.metadata.toolName === 'read_file' || block.metadata.toolName === 'write_file') {
+            block.metadata.fileDoneAt = this._live ? Date.now() : 0;
         }
 
         // Shell consoles keep the terminal view instead of an Arguments/Result
