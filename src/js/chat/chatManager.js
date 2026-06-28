@@ -817,6 +817,9 @@ function closeProject() {
     const sidebarListTitle = document.getElementById("sidebarListTitle");
     if (sidebarListTitle) sidebarListTitle.textContent = "Projects";
 
+    // Re-fetch so the project just worked in re-sorts to the top by recent activity.
+    loadProjects();
+
     // Update bottom bar
     updateBottomBar();
 

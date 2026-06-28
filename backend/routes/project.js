@@ -10,15 +10,25 @@ function generateId() {
     return crypto.randomUUID();
 }
 
-// Get all projects
+// Get all projects, most-recently-active first. "Active" = the newest updated_at
+// among the project's chats (same column the chat list bubbles on); projects with no
+// chats yet fall back to their own created_at.
 router.get('/projects', (req, res) => {
     try {
-        const rows = db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all();
+        const rows = db.prepare(`
+            SELECT p.id, p.name, p.path, p.created_at,
+                   MAX(c.updated_at) AS last_activity
+            FROM projects p
+            LEFT JOIN chats c ON c.project_id = p.id
+            GROUP BY p.id
+            ORDER BY COALESCE(MAX(c.updated_at), p.created_at) DESC
+        `).all();
         const projects = (rows || []).map(row => ({
             id: row.id,
             name: row.name,
             path: row.path,
-            created_at: row.created_at
+            created_at: row.created_at,
+            last_activity: row.last_activity || row.created_at
         }));
         log(`[PROJECTS] Found ${projects.length} projects`);
         res.json(projects);
