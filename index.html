@@ -150,6 +150,14 @@
                         
                         <label for="apiUrl">API URL (required):</label>
                         <input type="text" id="apiUrl" placeholder="http://localhost:11434/v1 (Ollama) or https://api.openai.com/v1">
+
+                        <label for="adapterType">Adapter Type:</label>
+                        <select id="adapterType">
+                            <option value="auto">Auto-detect from URL</option>
+                            <option value="openai-compatible">OpenAI Compatible</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="google">Google Gemini</option>
+                        </select>
                         
                         <label for="modelName">Model:</label>
                         <div class="model-selector-container">

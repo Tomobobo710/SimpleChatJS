@@ -81,6 +81,9 @@ async function loadSettingsIntoModal() {
         apiUrlInput.value = settings.apiUrl;
         apiKeyInput.value = settings.apiKey;
         modelNameInput.value = settings.modelName;
+        const adapterTypeSelect = document.getElementById('adapterType');
+        adapterTypeSelect.value = settings.adapterType || 'auto';
+        adapterTypeSelect.dataset.userSet = '0';
         debugPanelsInput.checked = settings.debugPanels;
         systemBlocksInput.checked = settings.showSystemBlocks;
 
@@ -95,6 +98,11 @@ async function loadSettingsIntoModal() {
 
         // Show/hide thinking controls based on provider
         updateThinkingControlsVisibility(settings.apiUrl);
+
+        // Mark dirty when user manually changes adapter type
+        adapterTypeSelect.addEventListener('change', () => {
+            adapterTypeSelect.dataset.userSet = '1';
+        }, { once: false });
         // Setup thinking control event handlers
         setupThinkingEventHandlers();
         // Setup system prompt event handlers
@@ -178,6 +186,7 @@ async function handleSaveSettings() {
         apiUrl: apiUrlInput.value.trim(),
         apiKey: apiKeyInput.value.trim(),
         modelName: modelNameInput.value.trim(),
+        adapterType: document.getElementById('adapterType').value,
         debugPanels: debugPanelsInput.checked,
         showSystemBlocks: systemBlocksInput.checked,
         // Provider-specific thinking settings
@@ -820,6 +829,19 @@ function setupSystemPromptEventHandlers() {
 }
 
 // Show/hide provider-specific thinking controls based on API provider
+function inferAdapterFromUrl(url) {
+    const lower = (url || '').toLowerCase();
+    if (lower.includes('anthropic.com')) return 'anthropic';
+    if (lower.includes('google') || lower.includes('googleapis.com')) return 'google';
+    return 'openai-compatible';
+}
+
+function updateAdapterTypeFromUrl(url) {
+    const select = document.getElementById('adapterType');
+    if (!select || select.dataset.userSet === '1') return;
+    select.value = inferAdapterFromUrl(url);
+}
+
 function updateThinkingControlsVisibility(apiUrl) {
     const anthropicSection = document.querySelector('.thinking-section[data-provider="anthropic"]');
     const googleSection = document.querySelector('.thinking-section[data-provider="google"]');

@@ -217,10 +217,18 @@ function setupEventListeners() {
     let apiUrlTimeout;
     apiUrlInput.addEventListener('input', () => {
         clearTimeout(apiUrlTimeout);
+        // Auto-infer adapter type immediately as user types (if not user-set)
+        if (typeof updateAdapterTypeFromUrl === 'function') {
+            updateAdapterTypeFromUrl(apiUrlInput.value.trim());
+        }
+        // Also update thinking controls visibility
+        if (typeof updateThinkingControlsVisibility === 'function') {
+            updateThinkingControlsVisibility(apiUrlInput.value.trim());
+        }
         apiUrlTimeout = setTimeout(async () => {
             const apiUrl = apiUrlInput.value.trim();
             const apiKey = apiKeyInput.value.trim();
-            
+
             if (apiUrl) {
                 logger.info('API URL changed - auto-fetching models');
                 try {

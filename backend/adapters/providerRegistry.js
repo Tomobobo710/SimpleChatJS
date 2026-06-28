@@ -122,6 +122,11 @@ const PROVIDERS = [
  * Detect provider by URL. Returns the provider definition or null.
  */
 function detectProvider(settings) {
+    // Explicit adapter selection overrides URL detection
+    if (settings.adapterType && settings.adapterType !== 'auto') {
+        const explicit = PROVIDERS.find(p => p.id === settings.adapterType);
+        if (explicit) return explicit;
+    }
     const url = settings.apiUrl || '';
     for (const provider of PROVIDERS) {
         if (provider.canHandle(url)) {
