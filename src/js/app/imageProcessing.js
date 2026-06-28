@@ -42,7 +42,7 @@ async function processImageFile(file) {
                 canvas.getContext('2d').drawImage(img, 0, 0, scaledW, scaledH);
 
                 const blob = await new Promise((resolve, reject) => {
-                    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Blob conversion failed')), 'image/webp', q);
+                    canvas.toBlob(b => b ? resolve(b) : reject(new Error('Blob conversion failed')), 'image/jpeg', q);
                 });
 
                 const base64 = await blobToBase64(blob);

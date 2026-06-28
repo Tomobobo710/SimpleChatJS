@@ -926,6 +926,18 @@ class ChatRenderer {
             case "system":
                 return this.renderSystemBlock(content);
 
+            case "image": {
+                const imageDiv = document.createElement("div");
+                imageDiv.className = "content-part image-part";
+                const img = document.createElement("img");
+                img.src = `data:${metadata.mimeType};base64,${metadata.imageData}`;
+                img.className = "message-image";
+                img.loading = "lazy";
+                img.onclick = () => this.openImageModal(img.src);
+                imageDiv.appendChild(img);
+                return imageDiv;
+            }
+
             case "chat":
             default:
                 return this.renderChatBlock(content, identity);
