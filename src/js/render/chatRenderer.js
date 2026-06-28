@@ -2109,9 +2109,9 @@ class ChatRenderer {
             documentsContainer.appendChild(documentsHeader);
             documentsContainer.appendChild(documentsGrid);
 
-            // Insert before textarea
+            // Insert before textarea (textarea lives inside contentSection, not messageContainer directly)
             const textarea = messageContainer.querySelector(".message-content-textarea");
-            messageContainer.insertBefore(documentsContainer, textarea);
+            textarea.parentNode.insertBefore(documentsContainer, textarea);
         }
 
         // Update documents grid

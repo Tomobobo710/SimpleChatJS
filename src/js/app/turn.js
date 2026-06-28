@@ -133,6 +133,7 @@ class Turn {
                 content.forEach(part => {
                     if (part.type === 'text' && part.text) processor.addChunk(part.text);
                     else if (part.type === 'image') imageBlocks.push(new Block({ type: 'image', content: '', metadata: { imageData: part.imageData, mimeType: part.mimeType } }));
+                    else if (part.type === 'files') imageBlocks.push(new Block({ type: 'chat', content: [part], metadata: {} }));
                 });
             }
         }
