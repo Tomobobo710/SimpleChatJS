@@ -411,6 +411,9 @@
 .edit-diff-body {
     margin: 0;
     padding: 6px 0;
+    /* min-height holds the body steady through the "(preparing edit…)" → first-line
+       transition so it doesn't shrink-then-grow (one-frame scroll dip) as streaming starts. */
+    min-height: 2.6em;
     max-height: 360px;
     overflow: auto;
     font-size: 12.5px;
@@ -471,7 +474,9 @@
 .edit-diff-line.del { background: rgba(255, 107, 107, 0.13); color: #f0bcbc; }
 .edit-diff-line.ctx { color: #8f8f8f; }
 
-.edit-diff-empty { display: block; padding: 10px 12px; color: #777; font-style: italic; }
+/* Compact (single-line) so the placeholder is never taller than the first rendered diff
+   line — otherwise the body shrinks on the placeholder→content swap (a startup scroll dip). */
+.edit-diff-empty { display: block; padding: 0 12px; line-height: 1.5; color: #777; font-style: italic; }
 
 /* ===== File view (read_file / write_file tool blocks) ===== */
 /* Same frame as the edit diff; body is the file contents with a line-number gutter.

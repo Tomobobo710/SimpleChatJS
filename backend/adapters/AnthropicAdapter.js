@@ -130,18 +130,19 @@ class AnthropicAdapter extends BaseResponseAdapter {
             }));
         }
         
-        // Add thinking mode if enabled — let the API reject unsupported models
-        const thinkingEnabled = settings.enableThinkingAnthropic === true;
-        const rawBudget = settings.thinkingBudgetAnthropic;
-        const thinkingBudget = rawBudget !== undefined && rawBudget !== null
-            ? Math.max(1024, Math.min(32000, parseInt(rawBudget) || 1024))
-            : 1024;
-
-        if (thinkingEnabled) {
-            request.thinking = {
-                type: 'enabled',
-                budget_tokens: thinkingBudget
-            };
+        // Add thinking mode if enabled
+        if (settings.enableThinkingAnthropic === true) {
+            const mode = settings.thinkingModeAnthropic || 'adaptive';
+            if (mode === 'budget_tokens') {
+                const budget = Math.max(1024, Math.min(32000, parseInt(settings.thinkingBudgetAnthropic) || 8192));
+                request.thinking = { type: 'enabled', budget_tokens: budget };
+            } else if (mode === 'effort') {
+                request.thinking = { type: 'adaptive' };
+                request.effort = settings.thinkingEffortAnthropic || 'medium';
+            } else {
+                // adaptive (default)
+                request.thinking = { type: 'adaptive' };
+            }
         }
         
         return request;

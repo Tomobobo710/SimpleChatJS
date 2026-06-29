@@ -412,5 +412,31 @@
 @keyframes stream-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+/* Turn footer — token counts and timing stats */
+.turn-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.7;
+    user-select: none;
+}
+
+.turn-footer .footer-stat {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.turn-footer .footer-sep {
+    color: var(--border-strong);
+}
 
 }

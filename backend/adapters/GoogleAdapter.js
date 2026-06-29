@@ -77,26 +77,38 @@ class GoogleAdapter extends BaseResponseAdapter {
             geminiTools = [{ functionDeclarations }];
         }
         
-        // Add thinking mode if enabled — let the API reject unsupported models
-        const thinkingEnabled = settings.enableThinkingGoogle !== false;
-        const rawBudget = settings.thinkingBudgetGoogle;
-        const thinkingBudget = rawBudget === -1 || rawBudget === '-1'
-            ? -1
-            : Math.max(0, Math.min(24576, parseInt(rawBudget) || 8192));
-
         const request = {
             contents,
             ...(geminiTools.length > 0 ? { tools: geminiTools } : {})
         };
 
-        if (thinkingEnabled && thinkingBudget !== 0) {
-            request.generationConfig = {
-                thinkingConfig: {
-                    includeThoughts: true
+        // Add thinking config if enabled
+        if (settings.enableThinkingGoogle !== false) {
+            const googleMode = settings.thinkingModeGoogle || 'thinkingBudget';
+            const includeThoughts = settings.includeThoughtsGoogle !== false;
+
+            if (googleMode === 'thinkingLevel') {
+                request.generationConfig = {
+                    thinkingConfig: {
+                        thinkingLevel: settings.thinkingLevelGoogle || 'medium',
+                        includeThoughts
+                    }
+                };
+            } else {
+                // thinkingBudget mode (Gemini 2.5)
+                const rawBudget = settings.thinkingBudgetGoogle;
+                const thinkingBudget = rawBudget === -1 || rawBudget === '-1'
+                    ? -1
+                    : Math.max(0, Math.min(32768, parseInt(rawBudget) || 8192));
+
+                if (thinkingBudget !== 0) {
+                    request.generationConfig = {
+                        thinkingConfig: { includeThoughts }
+                    };
+                    if (thinkingBudget !== -1) {
+                        request.generationConfig.thinkingConfig.thinkingBudget = thinkingBudget;
+                    }
                 }
-            };
-            if (thinkingBudget !== -1) {
-                request.generationConfig.thinkingConfig.thinkingBudget = thinkingBudget;
             }
         }
         

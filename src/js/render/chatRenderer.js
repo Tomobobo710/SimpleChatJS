@@ -199,6 +199,56 @@ function armShellCollapse(el, metadata) {
     }, remaining);
 }
 
+// Sticky-bottom follow for a streaming scroll body whose innerHTML is rebuilt every
+// chunk. The naive "if near the bottom, snap to the bottom" recomputed per chunk fights
+// the reader: the innerHTML rebuild resets scrollTop to 0, so someone who scrolled up is
+// yanked to the top (or snapped back down if they were within the threshold) on EVERY
+// chunk — the glitchy auto-scroll.
+//
+// Instead we keep ONE persistent "pinned" flag (the page-level model): it starts pinned
+// (follow the stream), unpins the instant the user scrolls UP, and re-pins only when they
+// return to the very bottom. rebuild() masks the transient scrollTop=0 from our own write
+// so it can't be mistaken for a user scroll, then restores the reader's exact offset
+// (pinned → bottom). metadata[scrollKey], when given, persists the offset so the
+// finalize/reload rebuild (a brand-new element) can restore it too.
+function attachFollowBody(body, metadata, scrollKey) {
+    let pinned = true;
+    let lastTop = body.scrollTop;
+    let masking = false;
+    body.addEventListener('scroll', () => {
+        if (!body.isConnected) return;
+        if (masking) { lastTop = body.scrollTop; return; }   // ignore our own writes
+        const st = body.scrollTop;
+        const atBottom = body.scrollHeight - st - body.clientHeight < 6;
+        if (st < lastTop - 2) pinned = false;                // genuine upward scroll → unpin
+        else if (atBottom) pinned = true;                    // back at the bottom → resume
+        lastTop = st;
+        if (scrollKey && metadata) metadata[scrollKey] = st; // persist for finalize/reload
+    });
+    return {
+        isPinned: () => pinned,
+        // Rebuild the body content while preserving scroll: pinned → bottom, else keep the
+        // exact prior offset. Our own scrollTop writes are masked from the listener.
+        rebuild: (fn) => {
+            const prevTop = body.scrollTop;
+            masking = true;
+            fn();                                            // innerHTML reset → scrollTop 0
+            body.scrollTop = pinned ? body.scrollHeight : prevTop;
+            lastTop = body.scrollTop;
+            requestAnimationFrame(() => { masking = false; });
+        },
+        // Jump to an absolute offset (finalize/reload restore, or "open → bottom"),
+        // re-deriving pinned from where we land. Masked so it doesn't self-trigger.
+        restore: (top) => {
+            masking = true;
+            body.scrollTop = top;
+            pinned = body.scrollHeight - body.scrollTop - body.clientHeight < 6;
+            lastTop = body.scrollTop;
+            requestAnimationFrame(() => { masking = false; });
+        }
+    };
+}
+
 function buildShellConsoleElement(metadata) {
     const el = document.createElement('div');
     el.className = 'shell-console';
@@ -234,6 +284,11 @@ function buildShellConsoleElement(metadata) {
         metadata.shellCollapsed = false;
     });
 
+    // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without
+    // fighting an upward scroll (see attachFollowBody).
+    const follow = attachFollowBody(body, null, null);
+    el._shellFollow = follow;
+
     // Header click toggles, and pins the user's choice (mutates the shared block
     // metadata so later re-renders/updates respect it).
     el.querySelector('.shell-console-header').addEventListener('click', () => {
@@ -241,11 +296,11 @@ function buildShellConsoleElement(metadata) {
         metadata.shellUserToggled = true;
         metadata.shellCollapsed = nowCollapsed;
         setShellCollapsed(el, nowCollapsed, true);
-        if (!nowCollapsed) { const b = el.querySelector('.shell-console-body'); if (b) b.scrollTop = b.scrollHeight; }
+        if (!nowCollapsed) follow.restore(body.scrollHeight); // open → jump to latest, re-pin
     });
 
     // Defer scroll until attached; harmless if not yet in the DOM.
-    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+    requestAnimationFrame(() => follow.restore(body.scrollHeight));
     return el;
 }
 
@@ -260,10 +315,12 @@ function updateShellConsoleElement(el, metadata) {
     }
     const body = el.querySelector('.shell-console-body');
     if (body) {
-        const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 30;
-        body.innerHTML = shellConsoleBodyHtml(metadata);
-        el.classList.toggle('raw-mode', !!metadata.shellShowRaw);
-        if (atBottom) body.scrollTop = body.scrollHeight;
+        const rebuild = () => {
+            body.innerHTML = shellConsoleBodyHtml(metadata);
+            el.classList.toggle('raw-mode', !!metadata.shellShowRaw);
+        };
+        if (el._shellFollow) el._shellFollow.rebuild(rebuild);
+        else rebuild();
     }
     // Re-apply auto collapse/expand (running→open, done→collapsed) unless the user
     // has taken control, then arm the delayed auto-collapse for a fresh finish.
@@ -302,6 +359,21 @@ function editLineDiff(a, b) {
     return out;
 }
 
+// STABLE streaming view: all old lines removed, then all (partial) new lines added — no
+// interleaving. The precise LCS diff (editLineDiff) reorders as partial content arrives —
+// a line flips del→ctx→add mid-stream and the whole body reflows ("flips out") every
+// chunk. This append-only shape never reorders: the del block is fixed (old_string
+// arrives complete first) and the add block only grows as new_string streams. We swap to
+// the real interleaved diff once the edit completes (a single, final reflow).
+function editStreamingDiff(a, b) {
+    const out = [];
+    const A = a == null ? '' : String(a);
+    const B = b == null ? '' : String(b);
+    if (A.length) A.split('\n').forEach(t => out.push({ t: 'del', text: t }));
+    if (B.length) B.split('\n').forEach(t => out.push({ t: 'add', text: t }));
+    return out;
+}
+
 // Just the filename for the header (full path goes in the title tooltip).
 function editFileName(p) {
     if (!p) return '';
@@ -337,9 +409,13 @@ function editDiffBodyHtml(metadata) {
     // Real file line where each edit matched (from the backend result). Until the
     // result lands (mid-stream), fall back to 1 (snippet-relative).
     const editLines = (metadata.result && Array.isArray(metadata.result.edit_lines)) ? metadata.result.edit_lines : null;
+    // While streaming, use the STABLE append-only view (no reflow); switch to the precise
+    // interleaved LCS diff once the edit completes.
+    const done = editDiffIsDone(metadata);
     let html = '';
     edits.forEach((edit, idx) => {
-        const diff = editLineDiff(edit.old_string, edit.new_string);
+        const diff = done ? editLineDiff(edit.old_string, edit.new_string)
+                          : editStreamingDiff(edit.old_string, edit.new_string);
         let adds = 0, dels = 0;
         // Two-gutter unified diff: old-side col for context+removed, new-side for
         // context+added. Real file line comes from the backend result; until it lands
@@ -438,16 +514,16 @@ function buildEditDiffElement(metadata) {
     // user's explicit toggle persisted in metadata so it survives the finalize rebuild.
     if (editDiffIsCollapsed(metadata)) el.classList.add('collapsed');
 
-    // Scroll position also lives in metadata, so the finalize/reload rebuild restores
-    // it instead of jumping to the top. Recorded on scroll; restored after layout.
-    // Guard on isConnected: removing the element (finalize's tempContainer.remove())
-    // resets scrollTop to 0 and fires a scroll event — without this guard that 0 would
-    // clobber the saved position right before the rebuild restores it.
-    body.addEventListener('scroll', () => { if (body.isConnected) metadata.editScrollTop = body.scrollTop; });
+    // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without fighting
+    // an upward scroll, and persists the offset in metadata.editScrollTop so the
+    // finalize/reload rebuild (a brand-new element) restores it instead of jumping to the
+    // top (see attachFollowBody).
+    const follow = attachFollowBody(body, metadata, 'editScrollTop');
+    el._editFollow = follow;
     if (!editDiffIsCollapsed(metadata) && metadata.editScrollTop != null) {
         // Double rAF: a freshly-appended body isn't scrollable on the first frame, so a
         // single-rAF restore would clamp to 0. Wait for layout to flush.
-        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.editScrollTop; }));
+        requestAnimationFrame(() => requestAnimationFrame(() => follow.restore(metadata.editScrollTop)));
     }
 
     const rawBtn = el.querySelector('.edit-diff-raw-toggle');
@@ -465,8 +541,8 @@ function buildEditDiffElement(metadata) {
         metadata.editUserToggled = true;       // user's choice now wins over auto policy
         metadata.editCollapsed = collapsed;    // persisted so the finalize rebuild keeps it
         setEditDiffCollapsed(el, collapsed, true);
-        // On open, jump to the latest so it starts following the stream.
-        if (!collapsed) { const b = el.querySelector('.edit-diff-body'); if (b) b.scrollTop = b.scrollHeight; }
+        // On open, jump to the latest so it starts following the stream (re-pins).
+        if (!collapsed) follow.restore(body.scrollHeight);
     });
 
     // Apply the auto-collapse timer if this build is already in a done state (reload, or
@@ -490,13 +566,14 @@ function updateEditDiffElement(el, metadata) {
     }
     const body = el.querySelector('.edit-diff-body');
     if (body) {
-        // Only follow when open (collapsed = hidden, no point). While open, stick to
-        // the bottom unless the user scrolled up to read.
-        const open = !el.classList.contains('collapsed');
-        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
-        body.innerHTML = editDiffBodyHtml(metadata);
-        el.classList.toggle('raw-mode', !!metadata.editShowRaw);
-        if (atBottom) body.scrollTop = body.scrollHeight;
+        // Sticky-bottom follow: stays pinned to the stream until the user scrolls up,
+        // then holds their exact position across each rebuild (no fighting/glitching).
+        const rebuild = () => {
+            body.innerHTML = editDiffBodyHtml(metadata);
+            el.classList.toggle('raw-mode', !!metadata.editShowRaw);
+        };
+        if (el._editFollow) el._editFollow.rebuild(rebuild);
+        else rebuild();
     }
     // Re-apply open/closed from policy (executing→open if Auto Expand) and arm the
     // auto-collapse once the edit finishes. No-ops once the user has taken control.
@@ -573,6 +650,13 @@ function fileViewRawHtml(metadata, toolName) {
     return '<div class="dropdown-inner">' + formatToolContent(content, toolName, args) + '</div>';
 }
 
+// One gutter+text row. Shared by the full render and the append-only streaming path so
+// they produce byte-identical markup.
+function fileViewRowHtml(lineNo, htmlText) {
+    return `<div class="file-view-line"><span class="file-view-ln">${lineNo}</span>`
+        + `<span class="file-view-text">${htmlText || ''}</span></div>`;
+}
+
 // Pretty body: file contents with a line-number gutter and light highlighting.
 function fileViewBodyHtml(metadata, toolName) {
     if (metadata.fileShowRaw) return fileViewRawHtml(metadata, toolName);
@@ -587,17 +671,80 @@ function fileViewBodyHtml(metadata, toolName) {
     // Drop one trailing newline so a file ending in "\n" doesn't show a blank last row.
     text = text.replace(/\n$/, '');
     const lang = fileViewLang((metadata.arguments && metadata.arguments.path) || '');
-    // Highlight the whole text once (so block-comment state carries across lines),
-    // then split — highlight() joins lines with "\n" so the counts line up.
-    const hlLines = (window.SimpleSyntax && lang)
-        ? SimpleSyntax.highlight(text, lang).split('\n')
-        : text.split('\n').map(escapeHtml);
-    let html = '';
-    for (let i = 0; i < hlLines.length; i++) {
-        html += `<div class="file-view-line"><span class="file-view-ln">${d.firstLine + i}</span>`
-            + `<span class="file-view-text">${hlLines[i] || ''}</span></div>`;
+    // Per-line highlighted HTML. While STREAMING (write_file), re-highlighting the whole
+    // file each chunk is O(n²); use a persisted streaming highlighter that caches completed
+    // lines and only highlights new ones (+ the growing tail) — O(n) overall. Once done (or
+    // for read_file's one-shot result), a single full highlight is fine.
+    let hlLines;
+    if (!window.SimpleSyntax || !lang) {
+        hlLines = text.split('\n').map(escapeHtml);
+    } else if (metadata.status === 'executing') {
+        let s = metadata._fileHl;
+        if (!s || s.lang !== lang) s = metadata._fileHl = { stream: SimpleSyntax.createStreamingHighlighter(lang), lines: [], lang };
+        const { lines, tail } = s.stream.push(text);
+        if (lines.length) s.lines.push(...lines);
+        hlLines = s.lines.concat(tail);   // cached complete lines + freshly-highlighted tail
+    } else {
+        // Highlight the whole text once (so block-comment state carries across lines),
+        // then split — highlight() joins lines with "\n" so the counts line up.
+        hlLines = SimpleSyntax.highlight(text, lang).split('\n');
     }
+    let html = '';
+    for (let i = 0; i < hlLines.length; i++) html += fileViewRowHtml(d.firstLine + i, hlLines[i]);
     return html;
+}
+
+// Append-only streaming body for write_file. Rebuilding ALL rows every chunk is the O(n²)
+// DOM teardown that makes streaming a big file crawl. Instead we FREEZE completed line-rows
+// (never touch them again) and each chunk only append the newly-completed rows + update the
+// single growing tail row — O(1) amortized per token. Returns true if it handled the render
+// (so the caller skips the full rebuild), false to fall back (raw view, read_file, done,
+// error, empty). State lives on body._fvRows so it survives across update calls.
+function fileViewStreamAppend(body, metadata, toolName) {
+    if (toolName !== 'write_file' || metadata.status !== 'executing' || metadata.fileShowRaw) return false;
+    const d = fileViewData(metadata, toolName);
+    if (d.status !== 'running' || !d.text) return false;     // placeholder/error/empty → full path
+    const lang = fileViewLang((metadata.arguments && metadata.arguments.path) || '');
+
+    // (Re)initialize the row state when first streaming, or if the language / starting line
+    // changed (would invalidate frozen rows). The highlighter handles no-lang via plain escape.
+    let st = body._fvRows;
+    if (!st || st.lang !== lang || st.firstLine !== d.firstLine) {
+        body.innerHTML = '';
+        st = body._fvRows = {
+            lang, firstLine: d.firstLine, committed: 0, tailEl: null,
+            hl: SimpleSyntax.createStreamingHighlighter(lang)
+        };
+    }
+
+    // Incremental: only the new suffix is scanned/highlighted (O(new chars)). Pass the full
+    // content as-is — the highlighter tracks how far it has consumed.
+    const { lines: newLines, tail } = st.hl.push(d.text);
+
+    // Freeze the new committed rows by appending them BEFORE the tail (or at the end if the
+    // tail doesn't exist yet). insertAdjacentHTML appends without re-parsing what's there.
+    if (newLines.length) {
+        let h = '';
+        for (let k = 0; k < newLines.length; k++) h += fileViewRowHtml(st.firstLine + st.committed + k, newLines[k]);
+        if (st.tailEl) st.tailEl.insertAdjacentHTML('beforebegin', h);
+        else body.insertAdjacentHTML('beforeend', h);
+        st.committed += newLines.length;
+    }
+
+    // Update the single tail row in place — nothing above it is touched. An empty tail
+    // (content ended exactly on a newline this chunk) shows no row; it reappears on the next
+    // character. This matches the done render, which strips a single trailing newline.
+    const tailLn = st.firstLine + st.committed;
+    if (!tail) {
+        if (st.tailEl) { st.tailEl.remove(); st.tailEl = null; }
+    } else if (!st.tailEl) {
+        body.insertAdjacentHTML('beforeend', fileViewRowHtml(tailLn, tail));
+        st.tailEl = body.lastElementChild;
+    } else {
+        st.tailEl.querySelector('.file-view-ln').textContent = tailLn;
+        st.tailEl.querySelector('.file-view-text').innerHTML = tail;
+    }
+    return true;
 }
 
 // Collapse policy — mirrors the edit diff. User's click wins; otherwise driven by the
@@ -666,11 +813,13 @@ function buildFileViewElement(metadata, toolName) {
     el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
     if (fileViewIsCollapsed(metadata, toolName)) el.classList.add('collapsed');
 
-    // Scroll position persists in metadata (survives the finalize rebuild). isConnected
-    // guard: element removal fires a scroll-to-0 that would clobber the saved value.
-    body.addEventListener('scroll', () => { if (body.isConnected) metadata.fileScrollTop = body.scrollTop; });
+    // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without fighting
+    // an upward scroll, persisting the offset in metadata.fileScrollTop for the
+    // finalize/reload rebuild (see attachFollowBody).
+    const follow = attachFollowBody(body, metadata, 'fileScrollTop');
+    el._fileFollow = follow;
     if (!fileViewIsCollapsed(metadata, toolName) && metadata.fileScrollTop != null) {
-        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.fileScrollTop; }));
+        requestAnimationFrame(() => requestAnimationFrame(() => follow.restore(metadata.fileScrollTop)));
     }
 
     const rawBtn = el.querySelector('.file-view-raw-toggle');
@@ -688,7 +837,7 @@ function buildFileViewElement(metadata, toolName) {
         metadata.fileUserToggled = true;
         metadata.fileCollapsed = collapsed;
         setFileViewCollapsed(el, collapsed, true);
-        if (!collapsed) { const b = el.querySelector('.file-view-body'); if (b) b.scrollTop = b.scrollHeight; }
+        if (!collapsed) follow.restore(body.scrollHeight); // open → jump to latest, re-pin
     });
 
     armFileCollapse(el, metadata, toolName);
@@ -710,12 +859,33 @@ function updateFileViewElement(el, metadata, toolName) {
     }
     const body = el.querySelector('.file-view-body');
     if (body) {
-        // While open, stick to the bottom as content streams unless the user scrolled up.
-        const open = !el.classList.contains('collapsed');
-        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
-        body.innerHTML = fileViewBodyHtml(metadata, toolName);
-        el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
-        if (atBottom) body.scrollTop = body.scrollHeight;
+        const wasPinned = el._fileFollow ? el._fileFollow.isPinned() : true;
+        if (fileViewStreamAppend(body, metadata, toolName)) {
+            // Append-only path: rows were frozen/appended (no teardown), so the render itself
+            // is O(n) total. The ONLY remaining superlinear cost is the auto-scroll: setting
+            // scrollTop forces a full layout reflow of every in-DOM row (O(n)), so doing it
+            // every frame re-introduces the quadratic. Throttle it to ~8×/sec — the reader
+            // can't perceive the difference, and it keeps the scroll cost small. The final
+            // position is corrected by the full rebuild on completion.
+            el.classList.toggle('raw-mode', false);
+            if (el._fileFollow && wasPinned) {
+                const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                if (!el._fvFollowAt || now - el._fvFollowAt >= 120) {
+                    el._fileFollow.restore(body.scrollHeight);
+                    el._fvFollowAt = now;
+                }
+            }
+        } else {
+            // Full rebuild (raw view, read_file, done, error, empty). Drop the append state
+            // so a later stream re-inits cleanly, and keep the scroll-safe rebuild wrapper.
+            body._fvRows = null;
+            const rebuild = () => {
+                body.innerHTML = fileViewBodyHtml(metadata, toolName);
+                el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
+            };
+            if (el._fileFollow) el._fileFollow.rebuild(rebuild);
+            else rebuild();
+        }
     }
     setFileViewCollapsed(el, fileViewIsCollapsed(metadata, toolName), true);
     armFileCollapse(el, metadata, toolName);
@@ -744,6 +914,122 @@ function mcpBarHue(name) {
         guard++;
     }
     return hue;
+}
+
+// ===== Streaming code block (shared) =====
+// THE single way a live code block renders, used by both the main response (liveRenderer)
+// and thinking blocks. While streaming it's append-only: highlight only newly-completed
+// lines into a frozen committed node and re-render just the growing tail line (O(n)). On
+// finish, one clean full highlight. Operates on an existing <code> element.
+function renderStreamingCode(codeEl, content, language, isStreaming) {
+    if (!codeEl) return;
+    content = content == null ? '' : String(content);
+    if (isStreaming) {
+        if (!window.SimpleSyntax) { codeEl.textContent = content; return; }
+        if (!codeEl._hlStream || codeEl._hlLang !== language) {
+            codeEl._hlLang = language;
+            codeEl._hlStream = SimpleSyntax.createStreamingHighlighter(language);
+            codeEl.innerHTML = '<span class="hl-committed"></span><span class="hl-tail"></span><span class="code-cursor">|</span>';
+            codeEl._hlCommitted = codeEl.querySelector('.hl-committed');
+            codeEl._hlTail = codeEl.querySelector('.hl-tail');
+        }
+        const { lines, tail, committedBefore } = codeEl._hlStream.push(content);
+        if (lines.length) {
+            let html = '';
+            for (let k = 0; k < lines.length; k++) html += ((committedBefore + k) > 0 ? '\n' : '') + lines[k];
+            codeEl._hlCommitted.insertAdjacentHTML('beforeend', html);
+        }
+        const committedNow = committedBefore + lines.length;
+        codeEl._hlTail.innerHTML = (committedNow > 0 ? '\n' : '') + tail;
+    } else {
+        codeEl.className = `language-${language}`;
+        codeEl.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(content, language) : escapeHtml(content);
+        codeEl._hlStream = null;
+    }
+}
+
+// A .live-code-block shell (matches renderCodeBlock's markup so thinking code blocks look
+// identical to the main ones) wrapping a <pre><code> the streaming renderer writes into.
+function makeCodeShell(lang) {
+    const div = document.createElement('div');
+    div.className = 'live-code-block' + (lang ? ' has-lang' : '');
+    if (lang) { const l = document.createElement('div'); l.className = 'code-lang'; l.textContent = lang; div.appendChild(l); }
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    if (lang) code.className = 'language-' + lang;
+    pre.appendChild(code);
+    div.appendChild(pre);
+    return div;
+}
+function syncCodeShellLang(div, lang) {
+    if (!lang) return;
+    div.classList.add('has-lang');
+    let l = div.querySelector('.code-lang');
+    if (!l) { l = document.createElement('div'); l.className = 'code-lang'; l.textContent = lang; div.insertBefore(l, div.firstChild); }
+    else if (l.textContent !== lang) l.textContent = lang;
+}
+
+// ===== Thinking content renderer (shared) =====
+// Splits thinking markdown into ordered prose / code-fence segments, in document order.
+// Mirrors the processor's fence detection so live and reload agree.
+function parseThinkingSegments(content) {
+    const segs = [];
+    const regex = /```(\w*)\r?\n?/g;
+    let lastIndex = 0, match;
+    while ((match = regex.exec(content)) !== null) {
+        const before = content.slice(lastIndex, match.index);
+        if (before.trim()) segs.push({ type: 'text', text: before });
+        const lang = match[1] || '';
+        const rest = content.slice(match.index + match[0].length);
+        const close = rest.match(/\n```/) || rest.match(/```/);
+        if (close) {
+            segs.push({ type: 'code', code: rest.slice(0, close.index), lang, open: false });
+            lastIndex = match.index + match[0].length + close.index + close[0].length;
+            regex.lastIndex = lastIndex;
+        } else {
+            segs.push({ type: 'code', code: rest, lang, open: true });
+            lastIndex = content.length;
+            break;
+        }
+    }
+    const tailText = content.slice(lastIndex);
+    if (tailText.trim()) segs.push({ type: 'text', text: tailText });
+    return segs;
+}
+
+// Render thinking content into a container INCREMENTALLY: each segment is rendered into its
+// own element (kept by index across frames). Code segments go through the shared append-only
+// renderStreamingCode; prose segments re-render only when their text actually changed. So a
+// finished segment is never re-done — only the live tail advances. This is what gives
+// thinking the same O(n) streaming as the main response (and reuses one code renderer).
+function renderThinkingInto(container, content) {
+    if (!content || !content.trim()) { container.innerHTML = '<em>Thinking...</em>'; container._tseg = null; return; }
+    const segs = parseThinkingSegments(content);
+    let state = container._tseg;
+    if (!state) { container.innerHTML = ''; state = container._tseg = []; }
+
+    for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i];
+        let entry = state[i];
+        if (!entry || entry.type !== seg.type) {
+            const el = seg.type === 'code' ? makeCodeShell(seg.lang) : document.createElement('div');
+            if (seg.type === 'text') el.className = 'thinking-text';
+            if (entry && entry.el) entry.el.replaceWith(el); else container.appendChild(el);
+            entry = state[i] = { type: seg.type, el, sig: null };
+        }
+        // Cheap change signature — content only grows, so length + open-state catch every change.
+        const sig = seg.type === 'code' ? `${seg.lang}|${seg.open ? 'o' : 'c'}|${seg.code.length}` : `t|${seg.text.length}`;
+        if (entry.sig === sig) continue;
+        entry.sig = sig;
+        if (seg.type === 'text') {
+            entry.el.innerHTML = formatMessage(escapeHtml(seg.text));
+        } else {
+            syncCodeShellLang(entry.el, seg.lang);
+            renderStreamingCode(entry.el.querySelector('code'), seg.code, seg.lang, seg.open);
+        }
+    }
+    // Defensive: drop any trailing segments if the parse ever yields fewer (shouldn't happen).
+    while (state.length > segs.length) { const e = state.pop(); if (e && e.el) e.el.remove(); }
 }
 
 class ChatRenderer {
@@ -853,6 +1139,15 @@ class ChatRenderer {
 
            // Add message actions bar (passing turn_id and parent_turn_id from RTO)
             this.addMessageActions(turnDiv, identity, id, turnId, parentTurnId, branchMap);
+
+            // Add turn footer (token counts + timing) if usage data available
+            const usageData = responseDebugData?.[responseDebugData.length - 1]?.response?.usage
+                || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.usage;
+            const timingsData = responseDebugData?.[responseDebugData.length - 1]?.response?.timings
+                || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.timings;
+            if (usageData || timingsData) {
+                this.addTurnFooter(turnDiv, usageData, timingsData);
+            }
 
             // Add debug toggle and panel if debug data provided
             if (debugData || responseDebugData) {
@@ -1349,6 +1644,35 @@ class ChatRenderer {
         return div;
     }
 
+    // Add turn footer with token counts and timing stats
+    addTurnFooter(turnDiv, usage, timings) {
+        const footer = document.createElement('div');
+        footer.className = 'turn-footer';
+
+        const stats = [];
+
+        if (usage) {
+            const promptTok = usage.prompt_tokens ?? usage.input_tokens;
+            const completionTok = usage.completion_tokens ?? usage.output_tokens;
+            if (promptTok != null) stats.push(`<span class="footer-stat">↑ ${promptTok.toLocaleString()}</span>`);
+            if (completionTok != null) stats.push(`<span class="footer-stat">↓ ${completionTok.toLocaleString()} tok</span>`);
+        }
+
+        if (timings) {
+            if (timings.predicted_per_second != null) {
+                stats.push(`<span class="footer-stat">${timings.predicted_per_second.toFixed(1)} tok/s</span>`);
+            }
+            if (timings.prompt_per_second != null) {
+                stats.push(`<span class="footer-stat">prompt ${timings.prompt_per_second.toFixed(1)} tok/s</span>`);
+            }
+        }
+
+        if (stats.length === 0) return;
+
+        footer.innerHTML = stats.join('<span class="footer-sep">·</span>');
+        turnDiv.appendChild(footer);
+    }
+
     // Add debug panel to message
     addDebugPanel(turnDiv, messageId, debugData) {
         const settings = loadSettings();
@@ -1755,8 +2079,10 @@ class ChatRenderer {
 
             logger.info(`[VERSION-SWITCH] Switched turn ${turnId} to version ${targetVersion}`);
             
-            // Reload entire chat to show the new version
+            // Reload entire chat to show the new version, then re-attach any in-flight
+            // live turn the reload tore down (version switch is allowed mid-stream).
             await loadChatHistory(currentChatId);
+            streamManager.reconnectStreaming(currentChatId);
         } catch (error) {
             logger.error(`[VERSION-SWITCH] Error: ${error.message}`, true);
             showError(`Error switching version: ${error.message}`);

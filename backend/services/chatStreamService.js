@@ -149,7 +149,9 @@ function buildMessageDebugData({ requestId, chatId, turnId, parentTurnId, target
             reasoning: unifiedResponse.reasoning || "",
             hasToolCalls: unifiedResponse.hasToolCalls(),
             status: apiRes ? apiRes.statusCode : null,
-            rawBody: rawResponseBody || ""
+            rawBody: rawResponseBody || "",
+            usage: Object.keys(unifiedResponse.usage || {}).length ? unifiedResponse.usage : null,
+            timings: unifiedResponse.timings || null
         };
     }
 
@@ -797,7 +799,7 @@ async function executeToolCallsAndContinue(
                     : undefined;
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd, onChunk });
             } else {
-                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
+                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd });
             }
 
             const toolMessage = {

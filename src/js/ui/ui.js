@@ -223,7 +223,8 @@ function setupEventListeners() {
         }
         // Also update thinking controls visibility
         if (typeof updateThinkingControlsVisibility === 'function') {
-            updateThinkingControlsVisibility(apiUrlInput.value.trim());
+            const adapterSel = document.getElementById('adapterType');
+            updateThinkingControlsVisibility(adapterSel ? adapterSel.value : 'auto', apiUrlInput.value.trim());
         }
         apiUrlTimeout = setTimeout(async () => {
             const apiUrl = apiUrlInput.value.trim();

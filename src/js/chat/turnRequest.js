@@ -194,6 +194,33 @@ class TurnRequest {
         // (mirrors request_debug). Persisted on each assistant message too; this is
         // just the live feed so the panel has it at finalization without a re-fetch.
         const collectedResponseDebug = [];
+
+        // Live rendering is COALESCED to one render per animation frame. A fast (esp. local)
+        // model fires many content/tool events per frame, and each updateLiveRendering
+        // re-renders the whole growing message (O(n)) — doing that per token is O(n²), which
+        // is exactly why streaming lags while a static render is instant. Batching to rAF
+        // renders once per frame no matter how many tokens arrived: cost scales with frames,
+        // not tokens. The processor accumulates state synchronously per event, so each frame
+        // still paints the latest content.
+        let _renderScheduled = false;
+        const scheduleLiveRender = () => {
+            if (_renderScheduled) return;
+            _renderScheduled = true;
+            requestAnimationFrame(() => {
+                _renderScheduled = false;
+                const ss = streamManager.getStream(activeChatId);
+                if (ss) updateLiveRendering(processor, ss.liveRenderer, ss.tempContainer);
+                if (typeof smartScrollToBottom === "function") smartScrollToBottom(scrollContainer);
+            });
+        };
+        // Synchronous render of the latest state — used at stream end so the final frame is
+        // never dropped (and any just-created dropdowns exist before we snapshot their state).
+        const flushLiveRender = () => {
+            _renderScheduled = false;
+            const ss = streamManager.getStream(activeChatId);
+            if (ss) updateLiveRendering(processor, ss.liveRenderer, ss.tempContainer);
+        };
+
         let toolEventSource = null;
         try {
             toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
@@ -201,8 +228,7 @@ class TurnRequest {
                 try {
                     const toolEvent = JSON.parse(event.data);
                     processor.handleToolEvent(toolEvent);
-                    const ss = streamManager.getStream(activeChatId);
-                    if (ss) updateLiveRendering(processor, ss.liveRenderer, ss.tempContainer);
+                    scheduleLiveRender();
                 } catch (parseError) {
                     logger.warn("Failed to parse tool event:", parseError);
                 }
@@ -288,13 +314,16 @@ class TurnRequest {
                         case 'response_debug': if (event.data) collectedResponseDebug.push(event.data); break;
                         case 'done': processor.finalize(event.data); break;
                     }
-                    const sseSs = streamManager.getStream(activeChatId);
-                    if (sseSs) updateLiveRendering(processor, sseSs.liveRenderer, sseSs.tempContainer);
-                    if (typeof smartScrollToBottom === "function") smartScrollToBottom(scrollContainer);
+                    scheduleLiveRender();
                 } catch (eventError) {
                     logger.error("Error processing SSE event:", eventError);
                 }
             }
+
+            // Paint the final accumulated state synchronously before we snapshot dropdown
+            // state and finalize (so the last frame and any just-created dropdowns aren't
+            // lost to a still-pending rAF).
+            flushLiveRender();
 
             if (toolEventSource) toolEventSource.close();
             streamManager.unregister(activeChatId);

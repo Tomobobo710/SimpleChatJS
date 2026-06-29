@@ -66,14 +66,10 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                         }
                     }
                 } else if (currentBlock.type === 'thinking') {
+                    // Incremental, append-only thinking render — prose + code segments, with
+                    // code going through the SAME renderStreamingCode the main blocks use.
                     const dropdownInner = blockElement.querySelector('.dropdown-inner');
-                    if (dropdownInner) {
-                        if (currentBlock.content.trim()) {
-                            dropdownInner.innerHTML = formatStreamingContent(currentBlock.content);
-                        } else {
-                            dropdownInner.innerHTML = '<em>Thinking...</em>';
-                        }
-                    }
+                    if (dropdownInner) renderThinkingInto(dropdownInner, currentBlock.content);
                 } else if (currentBlock.type === 'codeblock') {
                     // The language label tab may not have existed at first render
                     // (``` streams a beat before the language word). Add/sync it now
@@ -98,25 +94,11 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                             langLabel.textContent = blockLang;
                         }
                     }
-                    // Update live streaming code block
+                    // Update live streaming code block via the shared append-only renderer
+                    // (same one thinking code blocks use). O(n): appends only new lines.
                     const codeElement = blockElement.querySelector('code');
                     if (codeElement) {
-                        if (currentBlock.metadata.isStreaming) {
-                            // Still streaming — highlight live (SimpleSyntax is
-                            // per-line + self-escaping, so partial code is safe).
-                            const lang = currentBlock.metadata.language;
-                            const hl = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, lang) : escapeHtml(currentBlock.content);
-                            codeElement.innerHTML = hl + '<span class="code-cursor">|</span>';
-                        } else {
-                            // Streaming finished - use SimpleSyntax highlighting
-                            const language = currentBlock.metadata.language;
-                            codeElement.className = `language-${language}`;
-                            codeElement.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, language) : escapeHtml(currentBlock.content);
-                            logger.debug(`[LIVE-RENDER] Applied SimpleSyntax highlighting to finished code block`);
-                            // Remove cursor when done
-                            const cursor = codeElement.querySelector('.code-cursor');
-                            if (cursor) cursor.remove();
-                        }
+                        renderStreamingCode(codeElement, currentBlock.content, currentBlock.metadata.language, currentBlock.metadata.isStreaming);
                     }
                 } else {
                     // Regular chat block — live is always a response, so collapse blank lines.

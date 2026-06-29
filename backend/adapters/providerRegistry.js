@@ -78,6 +78,62 @@ const PROVIDERS = [
         }
     },
     {
+        id: 'openai',
+        name: 'OpenAI',
+        canHandle(url) {
+            return typeof url === 'string' && url.toLowerCase().includes('api.openai.com');
+        },
+        getEndpointUrl(baseUrl) {
+            return `${baseUrl}/chat/completions`;
+        },
+        getHeaders(apiKey) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+            return headers;
+        },
+        getModelsUrl(baseUrl, apiKey) {
+            return `${baseUrl}/models`;
+        },
+        getModelTestUrl(baseUrl, modelName) {
+            return `${baseUrl}/chat/completions`;
+        },
+        getModelTestBody(modelName) {
+            return {
+                model: modelName,
+                messages: [{ role: 'user', content: 'test' }],
+                max_tokens: 1,
+                stream: false
+            };
+        }
+    },
+    {
+        id: 'llama-server',
+        name: 'llama-server',
+        canHandle(url) { return false; }, // explicit selection only
+        getEndpointUrl(baseUrl) {
+            return `${baseUrl}/chat/completions`;
+        },
+        getHeaders(apiKey) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+            return headers;
+        },
+        getModelsUrl(baseUrl) {
+            return `${baseUrl}/models`;
+        },
+        getModelTestUrl(baseUrl) {
+            return `${baseUrl}/chat/completions`;
+        },
+        getModelTestBody(modelName) {
+            return {
+                model: modelName,
+                messages: [{ role: 'user', content: 'test' }],
+                max_tokens: 1,
+                stream: false
+            };
+        }
+    },
+    {
         id: 'openai-compatible',
         name: 'OpenAI-compatible',
         canHandle(url) {
