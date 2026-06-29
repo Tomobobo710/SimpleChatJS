@@ -183,8 +183,16 @@ class StreamingMessageProcessor {
             // Render a live diff as the model types the edit: pull a structured (partial)
             // {path, edits} out of the streaming JSON. Bump content (with the arg length)
             // so updateLiveRendering fires the re-render each delta.
+            //
+            // The raw partial parse is NON-MONOTONIC: as the JSON crosses quote/escape
+            // boundaries the edit count and per-line counts momentarily DROP (e.g. 3→2→3),
+            // which makes the diff body shrink-then-regrow every few chars and drags the
+            // page scroll with it ("glitches out"). Since the source JSON only grows, latch
+            // the parse monotonically — never accept fewer edits or shorter strings than we
+            // already showed — so the rendered diff only ever grows.
             const parsed = StreamingMessageProcessor._partialEditArgs(data.arguments);
-            if (parsed) block.metadata.arguments = parsed;
+            block.metadata._editParse = StreamingMessageProcessor._mergeEditArgs(block.metadata._editParse, parsed);
+            if (block.metadata._editParse) block.metadata.arguments = block.metadata._editParse;
             block.content = `__edit__|args:${(data.arguments || '').length}`;
         } else if (block.metadata.toolName === 'write_file') {
             // Stream the file contents into the file view as the model writes them: pull a
@@ -267,6 +275,31 @@ class StreamingMessageProcessor {
             }
         }
         if (cur) edits.push(cur);
+        return { path, edits };
+    }
+
+    // Monotonic latch for the streaming edit parse. The source JSON only grows, so the
+    // true edit count and each old_/new_string only grow until complete; any DROP in the
+    // raw parse is a transient boundary misparse. Merge prev+next by keeping, per slot,
+    // the longer string and the larger edit list — so the rendered diff never shrinks.
+    static _mergeEditArgs(prev, next) {
+        if (!prev) return next;
+        if (!next) return prev;
+        const path = next.path || prev.path || '';
+        const pe = prev.edits || [], ne = next.edits || [];
+        const len = Math.max(pe.length, ne.length);
+        const edits = [];
+        for (let i = 0; i < len; i++) {
+            const a = pe[i], b = ne[i];
+            if (!a) { edits.push(b); continue; }
+            if (!b) { edits.push(a); continue; }
+            const ao = a.old_string || '', bo = b.old_string || '';
+            const an = a.new_string || '', bn = b.new_string || '';
+            edits.push({
+                old_string: bo.length >= ao.length ? bo : ao,
+                new_string: bn.length >= an.length ? bn : an
+            });
+        }
         return { path, edits };
     }
 

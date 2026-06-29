@@ -199,6 +199,56 @@ function armShellCollapse(el, metadata) {
     }, remaining);
 }
 
+// Sticky-bottom follow for a streaming scroll body whose innerHTML is rebuilt every
+// chunk. The naive "if near the bottom, snap to the bottom" recomputed per chunk fights
+// the reader: the innerHTML rebuild resets scrollTop to 0, so someone who scrolled up is
+// yanked to the top (or snapped back down if they were within the threshold) on EVERY
+// chunk — the glitchy auto-scroll.
+//
+// Instead we keep ONE persistent "pinned" flag (the page-level model): it starts pinned
+// (follow the stream), unpins the instant the user scrolls UP, and re-pins only when they
+// return to the very bottom. rebuild() masks the transient scrollTop=0 from our own write
+// so it can't be mistaken for a user scroll, then restores the reader's exact offset
+// (pinned → bottom). metadata[scrollKey], when given, persists the offset so the
+// finalize/reload rebuild (a brand-new element) can restore it too.
+function attachFollowBody(body, metadata, scrollKey) {
+    let pinned = true;
+    let lastTop = body.scrollTop;
+    let masking = false;
+    body.addEventListener('scroll', () => {
+        if (!body.isConnected) return;
+        if (masking) { lastTop = body.scrollTop; return; }   // ignore our own writes
+        const st = body.scrollTop;
+        const atBottom = body.scrollHeight - st - body.clientHeight < 6;
+        if (st < lastTop - 2) pinned = false;                // genuine upward scroll → unpin
+        else if (atBottom) pinned = true;                    // back at the bottom → resume
+        lastTop = st;
+        if (scrollKey && metadata) metadata[scrollKey] = st; // persist for finalize/reload
+    });
+    return {
+        isPinned: () => pinned,
+        // Rebuild the body content while preserving scroll: pinned → bottom, else keep the
+        // exact prior offset. Our own scrollTop writes are masked from the listener.
+        rebuild: (fn) => {
+            const prevTop = body.scrollTop;
+            masking = true;
+            fn();                                            // innerHTML reset → scrollTop 0
+            body.scrollTop = pinned ? body.scrollHeight : prevTop;
+            lastTop = body.scrollTop;
+            requestAnimationFrame(() => { masking = false; });
+        },
+        // Jump to an absolute offset (finalize/reload restore, or "open → bottom"),
+        // re-deriving pinned from where we land. Masked so it doesn't self-trigger.
+        restore: (top) => {
+            masking = true;
+            body.scrollTop = top;
+            pinned = body.scrollHeight - body.scrollTop - body.clientHeight < 6;
+            lastTop = body.scrollTop;
+            requestAnimationFrame(() => { masking = false; });
+        }
+    };
+}
+
 function buildShellConsoleElement(metadata) {
     const el = document.createElement('div');
     el.className = 'shell-console';
@@ -234,6 +284,11 @@ function buildShellConsoleElement(metadata) {
         metadata.shellCollapsed = false;
     });
 
+    // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without
+    // fighting an upward scroll (see attachFollowBody).
+    const follow = attachFollowBody(body, null, null);
+    el._shellFollow = follow;
+
     // Header click toggles, and pins the user's choice (mutates the shared block
     // metadata so later re-renders/updates respect it).
     el.querySelector('.shell-console-header').addEventListener('click', () => {
@@ -241,11 +296,11 @@ function buildShellConsoleElement(metadata) {
         metadata.shellUserToggled = true;
         metadata.shellCollapsed = nowCollapsed;
         setShellCollapsed(el, nowCollapsed, true);
-        if (!nowCollapsed) { const b = el.querySelector('.shell-console-body'); if (b) b.scrollTop = b.scrollHeight; }
+        if (!nowCollapsed) follow.restore(body.scrollHeight); // open → jump to latest, re-pin
     });
 
     // Defer scroll until attached; harmless if not yet in the DOM.
-    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+    requestAnimationFrame(() => follow.restore(body.scrollHeight));
     return el;
 }
 
@@ -260,10 +315,12 @@ function updateShellConsoleElement(el, metadata) {
     }
     const body = el.querySelector('.shell-console-body');
     if (body) {
-        const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 30;
-        body.innerHTML = shellConsoleBodyHtml(metadata);
-        el.classList.toggle('raw-mode', !!metadata.shellShowRaw);
-        if (atBottom) body.scrollTop = body.scrollHeight;
+        const rebuild = () => {
+            body.innerHTML = shellConsoleBodyHtml(metadata);
+            el.classList.toggle('raw-mode', !!metadata.shellShowRaw);
+        };
+        if (el._shellFollow) el._shellFollow.rebuild(rebuild);
+        else rebuild();
     }
     // Re-apply auto collapse/expand (running→open, done→collapsed) unless the user
     // has taken control, then arm the delayed auto-collapse for a fresh finish.
@@ -302,6 +359,21 @@ function editLineDiff(a, b) {
     return out;
 }
 
+// STABLE streaming view: all old lines removed, then all (partial) new lines added — no
+// interleaving. The precise LCS diff (editLineDiff) reorders as partial content arrives —
+// a line flips del→ctx→add mid-stream and the whole body reflows ("flips out") every
+// chunk. This append-only shape never reorders: the del block is fixed (old_string
+// arrives complete first) and the add block only grows as new_string streams. We swap to
+// the real interleaved diff once the edit completes (a single, final reflow).
+function editStreamingDiff(a, b) {
+    const out = [];
+    const A = a == null ? '' : String(a);
+    const B = b == null ? '' : String(b);
+    if (A.length) A.split('\n').forEach(t => out.push({ t: 'del', text: t }));
+    if (B.length) B.split('\n').forEach(t => out.push({ t: 'add', text: t }));
+    return out;
+}
+
 // Just the filename for the header (full path goes in the title tooltip).
 function editFileName(p) {
     if (!p) return '';
@@ -337,9 +409,13 @@ function editDiffBodyHtml(metadata) {
     // Real file line where each edit matched (from the backend result). Until the
     // result lands (mid-stream), fall back to 1 (snippet-relative).
     const editLines = (metadata.result && Array.isArray(metadata.result.edit_lines)) ? metadata.result.edit_lines : null;
+    // While streaming, use the STABLE append-only view (no reflow); switch to the precise
+    // interleaved LCS diff once the edit completes.
+    const done = editDiffIsDone(metadata);
     let html = '';
     edits.forEach((edit, idx) => {
-        const diff = editLineDiff(edit.old_string, edit.new_string);
+        const diff = done ? editLineDiff(edit.old_string, edit.new_string)
+                          : editStreamingDiff(edit.old_string, edit.new_string);
         let adds = 0, dels = 0;
         // Two-gutter unified diff: old-side col for context+removed, new-side for
         // context+added. Real file line comes from the backend result; until it lands
@@ -438,16 +514,16 @@ function buildEditDiffElement(metadata) {
     // user's explicit toggle persisted in metadata so it survives the finalize rebuild.
     if (editDiffIsCollapsed(metadata)) el.classList.add('collapsed');
 
-    // Scroll position also lives in metadata, so the finalize/reload rebuild restores
-    // it instead of jumping to the top. Recorded on scroll; restored after layout.
-    // Guard on isConnected: removing the element (finalize's tempContainer.remove())
-    // resets scrollTop to 0 and fires a scroll event — without this guard that 0 would
-    // clobber the saved position right before the rebuild restores it.
-    body.addEventListener('scroll', () => { if (body.isConnected) metadata.editScrollTop = body.scrollTop; });
+    // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without fighting
+    // an upward scroll, and persists the offset in metadata.editScrollTop so the
+    // finalize/reload rebuild (a brand-new element) restores it instead of jumping to the
+    // top (see attachFollowBody).
+    const follow = attachFollowBody(body, metadata, 'editScrollTop');
+    el._editFollow = follow;
     if (!editDiffIsCollapsed(metadata) && metadata.editScrollTop != null) {
         // Double rAF: a freshly-appended body isn't scrollable on the first frame, so a
         // single-rAF restore would clamp to 0. Wait for layout to flush.
-        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.editScrollTop; }));
+        requestAnimationFrame(() => requestAnimationFrame(() => follow.restore(metadata.editScrollTop)));
     }
 
     const rawBtn = el.querySelector('.edit-diff-raw-toggle');
@@ -465,8 +541,8 @@ function buildEditDiffElement(metadata) {
         metadata.editUserToggled = true;       // user's choice now wins over auto policy
         metadata.editCollapsed = collapsed;    // persisted so the finalize rebuild keeps it
         setEditDiffCollapsed(el, collapsed, true);
-        // On open, jump to the latest so it starts following the stream.
-        if (!collapsed) { const b = el.querySelector('.edit-diff-body'); if (b) b.scrollTop = b.scrollHeight; }
+        // On open, jump to the latest so it starts following the stream (re-pins).
+        if (!collapsed) follow.restore(body.scrollHeight);
     });
 
     // Apply the auto-collapse timer if this build is already in a done state (reload, or
@@ -490,13 +566,14 @@ function updateEditDiffElement(el, metadata) {
     }
     const body = el.querySelector('.edit-diff-body');
     if (body) {
-        // Only follow when open (collapsed = hidden, no point). While open, stick to
-        // the bottom unless the user scrolled up to read.
-        const open = !el.classList.contains('collapsed');
-        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
-        body.innerHTML = editDiffBodyHtml(metadata);
-        el.classList.toggle('raw-mode', !!metadata.editShowRaw);
-        if (atBottom) body.scrollTop = body.scrollHeight;
+        // Sticky-bottom follow: stays pinned to the stream until the user scrolls up,
+        // then holds their exact position across each rebuild (no fighting/glitching).
+        const rebuild = () => {
+            body.innerHTML = editDiffBodyHtml(metadata);
+            el.classList.toggle('raw-mode', !!metadata.editShowRaw);
+        };
+        if (el._editFollow) el._editFollow.rebuild(rebuild);
+        else rebuild();
     }
     // Re-apply open/closed from policy (executing→open if Auto Expand) and arm the
     // auto-collapse once the edit finishes. No-ops once the user has taken control.
@@ -666,11 +743,13 @@ function buildFileViewElement(metadata, toolName) {
     el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
     if (fileViewIsCollapsed(metadata, toolName)) el.classList.add('collapsed');
 
-    // Scroll position persists in metadata (survives the finalize rebuild). isConnected
-    // guard: element removal fires a scroll-to-0 that would clobber the saved value.
-    body.addEventListener('scroll', () => { if (body.isConnected) metadata.fileScrollTop = body.scrollTop; });
+    // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without fighting
+    // an upward scroll, persisting the offset in metadata.fileScrollTop for the
+    // finalize/reload rebuild (see attachFollowBody).
+    const follow = attachFollowBody(body, metadata, 'fileScrollTop');
+    el._fileFollow = follow;
     if (!fileViewIsCollapsed(metadata, toolName) && metadata.fileScrollTop != null) {
-        requestAnimationFrame(() => requestAnimationFrame(() => { body.scrollTop = metadata.fileScrollTop; }));
+        requestAnimationFrame(() => requestAnimationFrame(() => follow.restore(metadata.fileScrollTop)));
     }
 
     const rawBtn = el.querySelector('.file-view-raw-toggle');
@@ -688,7 +767,7 @@ function buildFileViewElement(metadata, toolName) {
         metadata.fileUserToggled = true;
         metadata.fileCollapsed = collapsed;
         setFileViewCollapsed(el, collapsed, true);
-        if (!collapsed) { const b = el.querySelector('.file-view-body'); if (b) b.scrollTop = b.scrollHeight; }
+        if (!collapsed) follow.restore(body.scrollHeight); // open → jump to latest, re-pin
     });
 
     armFileCollapse(el, metadata, toolName);
@@ -710,12 +789,14 @@ function updateFileViewElement(el, metadata, toolName) {
     }
     const body = el.querySelector('.file-view-body');
     if (body) {
-        // While open, stick to the bottom as content streams unless the user scrolled up.
-        const open = !el.classList.contains('collapsed');
-        const atBottom = open && (body.scrollHeight - body.scrollTop - body.clientHeight < 40);
-        body.innerHTML = fileViewBodyHtml(metadata, toolName);
-        el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
-        if (atBottom) body.scrollTop = body.scrollHeight;
+        // Sticky-bottom follow: pinned to the stream until the user scrolls up, then holds
+        // their exact position across each rebuild (no fighting/glitching).
+        const rebuild = () => {
+            body.innerHTML = fileViewBodyHtml(metadata, toolName);
+            el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
+        };
+        if (el._fileFollow) el._fileFollow.rebuild(rebuild);
+        else rebuild();
     }
     setFileViewCollapsed(el, fileViewIsCollapsed(metadata, toolName), true);
     armFileCollapse(el, metadata, toolName);
