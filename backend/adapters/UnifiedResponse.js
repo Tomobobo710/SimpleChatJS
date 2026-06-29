@@ -14,6 +14,7 @@ class UnifiedResponse {
         this.isComplete = false;        // Whether response is finished
         this.debugData = {};            // Debug information
         this.usage = {};                // Token usage info
+        this.timings = null;            // Provider timing info (llama-server)
         this.rawResponse = null;        // Original provider response
     }
 
@@ -54,6 +55,12 @@ class UnifiedResponse {
     // Set usage data
     setUsage(usage) {
         this.usage = usage;
+        return this;
+    }
+
+    // Set timing data (llama-server)
+    setTimings(timings) {
+        this.timings = timings;
         return this;
     }
 

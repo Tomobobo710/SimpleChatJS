@@ -650,6 +650,13 @@ function fileViewRawHtml(metadata, toolName) {
     return '<div class="dropdown-inner">' + formatToolContent(content, toolName, args) + '</div>';
 }
 
+// One gutter+text row. Shared by the full render and the append-only streaming path so
+// they produce byte-identical markup.
+function fileViewRowHtml(lineNo, htmlText) {
+    return `<div class="file-view-line"><span class="file-view-ln">${lineNo}</span>`
+        + `<span class="file-view-text">${htmlText || ''}</span></div>`;
+}
+
 // Pretty body: file contents with a line-number gutter and light highlighting.
 function fileViewBodyHtml(metadata, toolName) {
     if (metadata.fileShowRaw) return fileViewRawHtml(metadata, toolName);
@@ -683,11 +690,61 @@ function fileViewBodyHtml(metadata, toolName) {
         hlLines = SimpleSyntax.highlight(text, lang).split('\n');
     }
     let html = '';
-    for (let i = 0; i < hlLines.length; i++) {
-        html += `<div class="file-view-line"><span class="file-view-ln">${d.firstLine + i}</span>`
-            + `<span class="file-view-text">${hlLines[i] || ''}</span></div>`;
-    }
+    for (let i = 0; i < hlLines.length; i++) html += fileViewRowHtml(d.firstLine + i, hlLines[i]);
     return html;
+}
+
+// Append-only streaming body for write_file. Rebuilding ALL rows every chunk is the O(n²)
+// DOM teardown that makes streaming a big file crawl. Instead we FREEZE completed line-rows
+// (never touch them again) and each chunk only append the newly-completed rows + update the
+// single growing tail row — O(1) amortized per token. Returns true if it handled the render
+// (so the caller skips the full rebuild), false to fall back (raw view, read_file, done,
+// error, empty). State lives on body._fvRows so it survives across update calls.
+function fileViewStreamAppend(body, metadata, toolName) {
+    if (toolName !== 'write_file' || metadata.status !== 'executing' || metadata.fileShowRaw) return false;
+    const d = fileViewData(metadata, toolName);
+    if (d.status !== 'running' || !d.text) return false;     // placeholder/error/empty → full path
+    const lang = fileViewLang((metadata.arguments && metadata.arguments.path) || '');
+
+    // (Re)initialize the row state when first streaming, or if the language / starting line
+    // changed (would invalidate frozen rows). The highlighter handles no-lang via plain escape.
+    let st = body._fvRows;
+    if (!st || st.lang !== lang || st.firstLine !== d.firstLine) {
+        body.innerHTML = '';
+        st = body._fvRows = {
+            lang, firstLine: d.firstLine, committed: 0, tailEl: null,
+            hl: SimpleSyntax.createStreamingHighlighter(lang)
+        };
+    }
+
+    // Incremental: only the new suffix is scanned/highlighted (O(new chars)). Pass the full
+    // content as-is — the highlighter tracks how far it has consumed.
+    const { lines: newLines, tail } = st.hl.push(d.text);
+
+    // Freeze the new committed rows by appending them BEFORE the tail (or at the end if the
+    // tail doesn't exist yet). insertAdjacentHTML appends without re-parsing what's there.
+    if (newLines.length) {
+        let h = '';
+        for (let k = 0; k < newLines.length; k++) h += fileViewRowHtml(st.firstLine + st.committed + k, newLines[k]);
+        if (st.tailEl) st.tailEl.insertAdjacentHTML('beforebegin', h);
+        else body.insertAdjacentHTML('beforeend', h);
+        st.committed += newLines.length;
+    }
+
+    // Update the single tail row in place — nothing above it is touched. An empty tail
+    // (content ended exactly on a newline this chunk) shows no row; it reappears on the next
+    // character. This matches the done render, which strips a single trailing newline.
+    const tailLn = st.firstLine + st.committed;
+    if (!tail) {
+        if (st.tailEl) { st.tailEl.remove(); st.tailEl = null; }
+    } else if (!st.tailEl) {
+        body.insertAdjacentHTML('beforeend', fileViewRowHtml(tailLn, tail));
+        st.tailEl = body.lastElementChild;
+    } else {
+        st.tailEl.querySelector('.file-view-ln').textContent = tailLn;
+        st.tailEl.querySelector('.file-view-text').innerHTML = tail;
+    }
+    return true;
 }
 
 // Collapse policy — mirrors the edit diff. User's click wins; otherwise driven by the
@@ -802,14 +859,33 @@ function updateFileViewElement(el, metadata, toolName) {
     }
     const body = el.querySelector('.file-view-body');
     if (body) {
-        // Sticky-bottom follow: pinned to the stream until the user scrolls up, then holds
-        // their exact position across each rebuild (no fighting/glitching).
-        const rebuild = () => {
-            body.innerHTML = fileViewBodyHtml(metadata, toolName);
-            el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
-        };
-        if (el._fileFollow) el._fileFollow.rebuild(rebuild);
-        else rebuild();
+        const wasPinned = el._fileFollow ? el._fileFollow.isPinned() : true;
+        if (fileViewStreamAppend(body, metadata, toolName)) {
+            // Append-only path: rows were frozen/appended (no teardown), so the render itself
+            // is O(n) total. The ONLY remaining superlinear cost is the auto-scroll: setting
+            // scrollTop forces a full layout reflow of every in-DOM row (O(n)), so doing it
+            // every frame re-introduces the quadratic. Throttle it to ~8×/sec — the reader
+            // can't perceive the difference, and it keeps the scroll cost small. The final
+            // position is corrected by the full rebuild on completion.
+            el.classList.toggle('raw-mode', false);
+            if (el._fileFollow && wasPinned) {
+                const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                if (!el._fvFollowAt || now - el._fvFollowAt >= 120) {
+                    el._fileFollow.restore(body.scrollHeight);
+                    el._fvFollowAt = now;
+                }
+            }
+        } else {
+            // Full rebuild (raw view, read_file, done, error, empty). Drop the append state
+            // so a later stream re-inits cleanly, and keep the scroll-safe rebuild wrapper.
+            body._fvRows = null;
+            const rebuild = () => {
+                body.innerHTML = fileViewBodyHtml(metadata, toolName);
+                el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
+            };
+            if (el._fileFollow) el._fileFollow.rebuild(rebuild);
+            else rebuild();
+        }
     }
     setFileViewCollapsed(el, fileViewIsCollapsed(metadata, toolName), true);
     armFileCollapse(el, metadata, toolName);
@@ -838,6 +914,122 @@ function mcpBarHue(name) {
         guard++;
     }
     return hue;
+}
+
+// ===== Streaming code block (shared) =====
+// THE single way a live code block renders, used by both the main response (liveRenderer)
+// and thinking blocks. While streaming it's append-only: highlight only newly-completed
+// lines into a frozen committed node and re-render just the growing tail line (O(n)). On
+// finish, one clean full highlight. Operates on an existing <code> element.
+function renderStreamingCode(codeEl, content, language, isStreaming) {
+    if (!codeEl) return;
+    content = content == null ? '' : String(content);
+    if (isStreaming) {
+        if (!window.SimpleSyntax) { codeEl.textContent = content; return; }
+        if (!codeEl._hlStream || codeEl._hlLang !== language) {
+            codeEl._hlLang = language;
+            codeEl._hlStream = SimpleSyntax.createStreamingHighlighter(language);
+            codeEl.innerHTML = '<span class="hl-committed"></span><span class="hl-tail"></span><span class="code-cursor">|</span>';
+            codeEl._hlCommitted = codeEl.querySelector('.hl-committed');
+            codeEl._hlTail = codeEl.querySelector('.hl-tail');
+        }
+        const { lines, tail, committedBefore } = codeEl._hlStream.push(content);
+        if (lines.length) {
+            let html = '';
+            for (let k = 0; k < lines.length; k++) html += ((committedBefore + k) > 0 ? '\n' : '') + lines[k];
+            codeEl._hlCommitted.insertAdjacentHTML('beforeend', html);
+        }
+        const committedNow = committedBefore + lines.length;
+        codeEl._hlTail.innerHTML = (committedNow > 0 ? '\n' : '') + tail;
+    } else {
+        codeEl.className = `language-${language}`;
+        codeEl.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(content, language) : escapeHtml(content);
+        codeEl._hlStream = null;
+    }
+}
+
+// A .live-code-block shell (matches renderCodeBlock's markup so thinking code blocks look
+// identical to the main ones) wrapping a <pre><code> the streaming renderer writes into.
+function makeCodeShell(lang) {
+    const div = document.createElement('div');
+    div.className = 'live-code-block' + (lang ? ' has-lang' : '');
+    if (lang) { const l = document.createElement('div'); l.className = 'code-lang'; l.textContent = lang; div.appendChild(l); }
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    if (lang) code.className = 'language-' + lang;
+    pre.appendChild(code);
+    div.appendChild(pre);
+    return div;
+}
+function syncCodeShellLang(div, lang) {
+    if (!lang) return;
+    div.classList.add('has-lang');
+    let l = div.querySelector('.code-lang');
+    if (!l) { l = document.createElement('div'); l.className = 'code-lang'; l.textContent = lang; div.insertBefore(l, div.firstChild); }
+    else if (l.textContent !== lang) l.textContent = lang;
+}
+
+// ===== Thinking content renderer (shared) =====
+// Splits thinking markdown into ordered prose / code-fence segments, in document order.
+// Mirrors the processor's fence detection so live and reload agree.
+function parseThinkingSegments(content) {
+    const segs = [];
+    const regex = /```(\w*)\r?\n?/g;
+    let lastIndex = 0, match;
+    while ((match = regex.exec(content)) !== null) {
+        const before = content.slice(lastIndex, match.index);
+        if (before.trim()) segs.push({ type: 'text', text: before });
+        const lang = match[1] || '';
+        const rest = content.slice(match.index + match[0].length);
+        const close = rest.match(/\n```/) || rest.match(/```/);
+        if (close) {
+            segs.push({ type: 'code', code: rest.slice(0, close.index), lang, open: false });
+            lastIndex = match.index + match[0].length + close.index + close[0].length;
+            regex.lastIndex = lastIndex;
+        } else {
+            segs.push({ type: 'code', code: rest, lang, open: true });
+            lastIndex = content.length;
+            break;
+        }
+    }
+    const tailText = content.slice(lastIndex);
+    if (tailText.trim()) segs.push({ type: 'text', text: tailText });
+    return segs;
+}
+
+// Render thinking content into a container INCREMENTALLY: each segment is rendered into its
+// own element (kept by index across frames). Code segments go through the shared append-only
+// renderStreamingCode; prose segments re-render only when their text actually changed. So a
+// finished segment is never re-done — only the live tail advances. This is what gives
+// thinking the same O(n) streaming as the main response (and reuses one code renderer).
+function renderThinkingInto(container, content) {
+    if (!content || !content.trim()) { container.innerHTML = '<em>Thinking...</em>'; container._tseg = null; return; }
+    const segs = parseThinkingSegments(content);
+    let state = container._tseg;
+    if (!state) { container.innerHTML = ''; state = container._tseg = []; }
+
+    for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i];
+        let entry = state[i];
+        if (!entry || entry.type !== seg.type) {
+            const el = seg.type === 'code' ? makeCodeShell(seg.lang) : document.createElement('div');
+            if (seg.type === 'text') el.className = 'thinking-text';
+            if (entry && entry.el) entry.el.replaceWith(el); else container.appendChild(el);
+            entry = state[i] = { type: seg.type, el, sig: null };
+        }
+        // Cheap change signature — content only grows, so length + open-state catch every change.
+        const sig = seg.type === 'code' ? `${seg.lang}|${seg.open ? 'o' : 'c'}|${seg.code.length}` : `t|${seg.text.length}`;
+        if (entry.sig === sig) continue;
+        entry.sig = sig;
+        if (seg.type === 'text') {
+            entry.el.innerHTML = formatMessage(escapeHtml(seg.text));
+        } else {
+            syncCodeShellLang(entry.el, seg.lang);
+            renderStreamingCode(entry.el.querySelector('code'), seg.code, seg.lang, seg.open);
+        }
+    }
+    // Defensive: drop any trailing segments if the parse ever yields fewer (shouldn't happen).
+    while (state.length > segs.length) { const e = state.pop(); if (e && e.el) e.el.remove(); }
 }
 
 class ChatRenderer {
@@ -947,6 +1139,15 @@ class ChatRenderer {
 
            // Add message actions bar (passing turn_id and parent_turn_id from RTO)
             this.addMessageActions(turnDiv, identity, id, turnId, parentTurnId, branchMap);
+
+            // Add turn footer (token counts + timing) if usage data available
+            const usageData = responseDebugData?.[responseDebugData.length - 1]?.response?.usage
+                || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.usage;
+            const timingsData = responseDebugData?.[responseDebugData.length - 1]?.response?.timings
+                || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.timings;
+            if (usageData || timingsData) {
+                this.addTurnFooter(turnDiv, usageData, timingsData);
+            }
 
             // Add debug toggle and panel if debug data provided
             if (debugData || responseDebugData) {
@@ -1441,6 +1642,35 @@ class ChatRenderer {
         `;
 
         return div;
+    }
+
+    // Add turn footer with token counts and timing stats
+    addTurnFooter(turnDiv, usage, timings) {
+        const footer = document.createElement('div');
+        footer.className = 'turn-footer';
+
+        const stats = [];
+
+        if (usage) {
+            const promptTok = usage.prompt_tokens ?? usage.input_tokens;
+            const completionTok = usage.completion_tokens ?? usage.output_tokens;
+            if (promptTok != null) stats.push(`<span class="footer-stat">↑ ${promptTok.toLocaleString()}</span>`);
+            if (completionTok != null) stats.push(`<span class="footer-stat">↓ ${completionTok.toLocaleString()} tok</span>`);
+        }
+
+        if (timings) {
+            if (timings.predicted_per_second != null) {
+                stats.push(`<span class="footer-stat">${timings.predicted_per_second.toFixed(1)} tok/s</span>`);
+            }
+            if (timings.prompt_per_second != null) {
+                stats.push(`<span class="footer-stat">prompt ${timings.prompt_per_second.toFixed(1)} tok/s</span>`);
+            }
+        }
+
+        if (stats.length === 0) return;
+
+        footer.innerHTML = stats.join('<span class="footer-sep">·</span>');
+        turnDiv.appendChild(footer);
     }
 
     // Add debug panel to message

@@ -66,14 +66,10 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                         }
                     }
                 } else if (currentBlock.type === 'thinking') {
+                    // Incremental, append-only thinking render — prose + code segments, with
+                    // code going through the SAME renderStreamingCode the main blocks use.
                     const dropdownInner = blockElement.querySelector('.dropdown-inner');
-                    if (dropdownInner) {
-                        if (currentBlock.content.trim()) {
-                            dropdownInner.innerHTML = formatStreamingContent(currentBlock.content);
-                        } else {
-                            dropdownInner.innerHTML = '<em>Thinking...</em>';
-                        }
-                    }
+                    if (dropdownInner) renderThinkingInto(dropdownInner, currentBlock.content);
                 } else if (currentBlock.type === 'codeblock') {
                     // The language label tab may not have existed at first render
                     // (``` streams a beat before the language word). Add/sync it now
@@ -98,43 +94,11 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                             langLabel.textContent = blockLang;
                         }
                     }
-                    // Update live streaming code block
+                    // Update live streaming code block via the shared append-only renderer
+                    // (same one thinking code blocks use). O(n): appends only new lines.
                     const codeElement = blockElement.querySelector('code');
                     if (codeElement) {
-                        if (currentBlock.metadata.isStreaming) {
-                            // Still streaming. Re-highlighting the WHOLE block every chunk is
-                            // O(n²) — a long block costs seconds and janks the chat. Instead
-                            // highlight only newly-completed lines and APPEND them (committed
-                            // node), replacing just the growing last line (tail node). O(n).
-                            const lang = currentBlock.metadata.language;
-                            if (!window.SimpleSyntax) {
-                                codeElement.textContent = currentBlock.content;
-                            } else {
-                                if (!codeElement._hlStream || codeElement._hlLang !== lang) {
-                                    codeElement._hlLang = lang;
-                                    codeElement._hlStream = SimpleSyntax.createStreamingHighlighter(lang);
-                                    codeElement.innerHTML = '<span class="hl-committed"></span><span class="hl-tail"></span><span class="code-cursor">|</span>';
-                                    codeElement._hlCommitted = codeElement.querySelector('.hl-committed');
-                                    codeElement._hlTail = codeElement.querySelector('.hl-tail');
-                                }
-                                const { lines, tail, committedBefore } = codeElement._hlStream.push(currentBlock.content);
-                                if (lines.length) {
-                                    let html = '';
-                                    for (let k = 0; k < lines.length; k++) html += ((committedBefore + k) > 0 ? '\n' : '') + lines[k];
-                                    codeElement._hlCommitted.insertAdjacentHTML('beforeend', html);
-                                }
-                                const committedNow = committedBefore + lines.length;
-                                codeElement._hlTail.innerHTML = (committedNow > 0 ? '\n' : '') + tail;
-                            }
-                        } else {
-                            // Streaming finished - one clean full highlight (drops the
-                            // incremental committed/tail scaffolding and the cursor).
-                            const language = currentBlock.metadata.language;
-                            codeElement.className = `language-${language}`;
-                            codeElement.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, language) : escapeHtml(currentBlock.content);
-                            codeElement._hlStream = null;
-                            logger.debug(`[LIVE-RENDER] Applied SimpleSyntax highlighting to finished code block`);
-                        }
+                        renderStreamingCode(codeElement, currentBlock.content, currentBlock.metadata.language, currentBlock.metadata.isStreaming);
                     }
                 } else {
                     // Regular chat block — live is always a response, so collapse blank lines.

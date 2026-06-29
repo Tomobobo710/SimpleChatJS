@@ -163,52 +163,9 @@ function formatToolContent(content, toolName = null, toolArgs = null) {
     return result;
 }
 
-// Format content with streaming code block support.
-// Renders completed code fences as formatted code blocks,
-// open (streaming) fences as code blocks with a blinking cursor.
-function formatStreamingContent(content) {
-    const regex = /```(\w*)\r?\n?/g;
-    let lastIndex = 0;
-    let match;
-    let html = '';
-
-    while ((match = regex.exec(content)) !== null) {
-        const textBefore = content.slice(lastIndex, match.index);
-        if (textBefore.trim()) {
-            html += formatMessage(escapeHtml(textBefore));
-        }
-
-        const lang = match[1];
-        const rest = content.slice(match.index + match[0].length);
-
-        // ponytail: prefer \n before closing fence (standard markdown),
-        // fallback matches ``` anywhere for models that omit the preceding newline
-        const closeMatch = rest.match(/\n```/) || rest.match(/```/);
-        if (closeMatch) {
-            const fenceLen = closeMatch[0].length;
-            const codeContent = rest.slice(0, closeMatch.index);
-            const langLabel = lang ? `<div class="code-lang">${lang}</div>` : '';
-            const highlighted = window.SimpleSyntax ? SimpleSyntax.highlight(codeContent, lang) : escapeHtml(codeContent);
-            html += `${langLabel}<pre><code class="language-${lang}">${highlighted}</code></pre>`;
-            lastIndex = match.index + match[0].length + closeMatch.index + fenceLen;
-            regex.lastIndex = lastIndex;
-        } else {
-            logger.debug(`[STREAMING-FMT] Open code fence (lang=${lang}), rest=${rest.slice(0, 80)}`);
-            const langLabel = lang ? `<div class="code-lang">${lang}</div>` : '';
-            const hl = window.SimpleSyntax ? SimpleSyntax.highlight(rest, lang) : escapeHtml(rest);
-            html += `${langLabel}<pre><code class="streaming-code language-${lang}">${hl}<span class="code-cursor">|</span></code></pre>`;
-            lastIndex = content.length;
-            break;
-        }
-    }
-
-    const remaining = content.slice(lastIndex);
-    if (remaining.trim()) {
-        html += formatMessage(escapeHtml(remaining));
-    }
-
-    return html || formatMessage(escapeHtml(content));
-}
+// (Thinking/streaming content now renders through renderThinkingInto in chatRenderer.js —
+// one append-only segment renderer shared by live + reload, reusing renderStreamingCode for
+// code fences. The old full-rebuild formatStreamingContent was removed.)
 
 class StreamingDropdown {
     constructor(id, title, type, isCollapsed = true, badge = null) {
@@ -367,7 +324,10 @@ class StreamingDropdown {
             if (!this.content.trim()) {
                 contentDiv.innerHTML = '<em>No content yet...</em>';
             } else if (this.type === 'thinking') {
-                contentDiv.innerHTML = formatStreamingContent(this.content);
+                // Same incremental segment renderer the live path uses (one code-block
+                // renderer everywhere). For a finished/reloaded block it just renders all
+                // segments once.
+                renderThinkingInto(contentDiv, this.content);
             } else if (this.content.includes('<div class="tool-section">')) {
                 // Content is already formatted HTML (from formatToolContent)
                 contentDiv.innerHTML = this.content;

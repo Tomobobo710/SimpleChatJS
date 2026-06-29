@@ -41,6 +41,9 @@ function getDefaultProfileSettings() {
         includeThoughtsGoogle: true,
         enableThinkingOpenAI: false,
         reasoningEffortOpenAI: 'medium',
+        enableThinkingLlama: false,
+        thinkingBudgetLlama: -1,
+        reasoningFormatLlama: 'auto',
         enableSystemPrompt: true,
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
         shell: 'bash', // resolved at init time if not present

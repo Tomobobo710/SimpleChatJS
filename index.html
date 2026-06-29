@@ -159,6 +159,7 @@
                             <option value="openai">OpenAI</option>
                             <option value="anthropic">Anthropic</option>
                             <option value="google">Google Gemini</option>
+                            <option value="llama-server">llama-server</option>
                         </select>
                         
                         <label for="modelName">Model:</label>
@@ -313,6 +314,41 @@
                                 </select>
                                 <p class="setting-description">Gemini 3 Pro only supports low and high (not medium).</p>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- llama-server Thinking Section -->
+                    <div class="settings-section thinking-section" data-provider="llama-server">
+                        <h3>llama-server Thinking</h3>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="enableThinkingLlama" />
+                            <label for="enableThinkingLlama">Enable Thinking</label>
+                        </div>
+                        <p class="setting-description">Controls reasoning token allocation per request. Works with DeepSeek-R1, QwQ, Qwen3, and other reasoning-capable models.</p>
+
+                        <div id="thinkingBudgetGroupLlama" style="display: none;">
+                            <label for="thinkingBudgetLlama">Budget Tokens:</label>
+                            <div class="budget-input-container">
+                                <input type="range" id="thinkingBudgetLlama" min="-1" max="32768" step="512" value="-1">
+                                <span id="thinkingBudgetValueLlama">Auto</span>
+                            </div>
+                            <div class="budget-presets">
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetLlama" data-value="-1">Auto (-1)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetLlama" data-value="0">Off (0)</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetLlama" data-value="4096">4K</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetLlama" data-value="8192">8K</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetLlama" data-value="16384">16K</button>
+                                <button type="button" class="budget-preset" data-target="thinkingBudgetLlama" data-value="32768">32K</button>
+                            </div>
+
+                            <label for="reasoningFormatLlama">Reasoning Format:</label>
+                            <select id="reasoningFormatLlama">
+                                <option value="auto">Auto</option>
+                                <option value="deepseek">DeepSeek (separate reasoning_content field)</option>
+                                <option value="deepseek-legacy">DeepSeek Legacy (&lt;think&gt; tags)</option>
+                                <option value="none">None (unparsed)</option>
+                            </select>
+                            <p class="setting-description">How reasoning tokens are returned. Use "DeepSeek" to get thinking blocks in the UI.</p>
                         </div>
                     </div>
 

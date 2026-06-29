@@ -201,6 +201,9 @@ async function handleSaveSettings() {
         includeThoughtsGoogle: document.getElementById('includeThoughtsGoogle').checked,
         enableThinkingOpenAI: document.getElementById('enableThinkingOpenAI').checked,
         reasoningEffortOpenAI: document.getElementById('reasoningEffortOpenAI').value,
+        enableThinkingLlama: document.getElementById('enableThinkingLlama').checked,
+        thinkingBudgetLlama: parseInt(document.getElementById('thinkingBudgetLlama').value),
+        reasoningFormatLlama: document.getElementById('reasoningFormatLlama').value,
         
         // System prompt settings
         enableSystemPrompt: document.getElementById('enableSystemPrompt').checked,
@@ -752,6 +755,22 @@ function loadProviderThinkingSettings(settings) {
         reasoningEffortOpenAI.value = settings.reasoningEffortOpenAI || 'medium';
         thinkingEffortGroupOpenAI.style.display = enableThinkingOpenAI.checked ? 'block' : 'none';
     }
+
+    // --- llama-server ---
+    const enableThinkingLlama = document.getElementById('enableThinkingLlama');
+    const thinkingBudgetGroupLlama = document.getElementById('thinkingBudgetGroupLlama');
+    const thinkingBudgetLlama = document.getElementById('thinkingBudgetLlama');
+    const thinkingBudgetValueLlama = document.getElementById('thinkingBudgetValueLlama');
+    const reasoningFormatLlama = document.getElementById('reasoningFormatLlama');
+
+    if (enableThinkingLlama) {
+        enableThinkingLlama.checked = settings.enableThinkingLlama || false;
+        const llamaBudget = settings.thinkingBudgetLlama !== undefined ? settings.thinkingBudgetLlama : -1;
+        thinkingBudgetLlama.value = llamaBudget;
+        thinkingBudgetValueLlama.textContent = llamaBudget === -1 || llamaBudget === '-1' ? 'Auto' : llamaBudget === 0 || llamaBudget === '0' ? 'Off' : llamaBudget;
+        reasoningFormatLlama.value = settings.reasoningFormatLlama || 'auto';
+        thinkingBudgetGroupLlama.style.display = enableThinkingLlama.checked ? 'block' : 'none';
+    }
 }
 
 // Setup event handlers for thinking controls
@@ -820,6 +839,25 @@ function setupThinkingEventHandlers() {
     if (enableThinkingOpenAI && thinkingEffortGroupOpenAI) {
         enableThinkingOpenAI.addEventListener('change', () => {
             thinkingEffortGroupOpenAI.style.display = enableThinkingOpenAI.checked ? 'block' : 'none';
+        });
+    }
+
+    // --- llama-server ---
+    const enableThinkingLlama = document.getElementById('enableThinkingLlama');
+    const thinkingBudgetGroupLlama = document.getElementById('thinkingBudgetGroupLlama');
+    const thinkingBudgetLlama = document.getElementById('thinkingBudgetLlama');
+    const thinkingBudgetValueLlama = document.getElementById('thinkingBudgetValueLlama');
+
+    if (enableThinkingLlama && thinkingBudgetGroupLlama) {
+        enableThinkingLlama.addEventListener('change', () => {
+            thinkingBudgetGroupLlama.style.display = enableThinkingLlama.checked ? 'block' : 'none';
+        });
+    }
+    if (thinkingBudgetLlama && thinkingBudgetValueLlama) {
+        thinkingBudgetLlama.addEventListener('input', () => {
+            const v = thinkingBudgetLlama.value;
+            thinkingBudgetValueLlama.textContent = v === '-1' ? 'Auto' : v === '0' ? 'Off' : v;
+            updatePresetButtons('thinkingBudgetLlama', v);
         });
     }
 
@@ -893,6 +931,7 @@ function inferAdapterFromUrl(url) {
     const lower = (url || '').toLowerCase();
     if (lower.includes('anthropic.com')) return 'anthropic';
     if (lower.includes('google') || lower.includes('googleapis.com')) return 'google';
+    if (lower.includes('api.openai.com')) return 'openai';
     return 'openai-compatible';
 }
 
@@ -906,8 +945,9 @@ function updateThinkingControlsVisibility(adapterType, apiUrl) {
     const anthropicSection = document.querySelector('.thinking-section[data-provider="anthropic"]');
     const googleSection = document.querySelector('.thinking-section[data-provider="google"]');
     const openaiSection = document.querySelector('.thinking-section[data-provider="openai"]');
+    const llamaSection = document.querySelector('.thinking-section[data-provider="llama-server"]');
 
-    if (!anthropicSection || !googleSection || !openaiSection) return;
+    if (!anthropicSection || !googleSection || !openaiSection || !llamaSection) return;
 
     // Resolve effective provider: explicit adapter type takes priority, fall back to URL inference
     let provider = adapterType;
@@ -922,7 +962,8 @@ function updateThinkingControlsVisibility(adapterType, apiUrl) {
     anthropicSection.style.display = provider === 'anthropic' ? 'block' : 'none';
     googleSection.style.display = provider === 'google' ? 'block' : 'none';
     openaiSection.style.display = provider === 'openai' ? 'block' : 'none';
-    // openai-compatible shows nothing in the thinking tab — no thinking params to send
+    llamaSection.style.display = provider === 'llama-server' ? 'block' : 'none';
+    // openai-compatible shows nothing — no thinking params
 
     logger.info(`[SETTINGS] Thinking controls showing: ${provider}`);
 }

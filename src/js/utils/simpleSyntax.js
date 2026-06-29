@@ -94,23 +94,34 @@ class SimpleSyntax {
     // consumer can APPEND them and rebuild nothing — O(n) total. The last line is always
     // the still-growing tail, returned separately so the consumer can replace just it.
     static createStreamingHighlighter(language) {
-        const cfg = this.config(language);
-        let committed = 0;   // count of complete lines already emitted
+        // Empty/unknown language → plain-escape each line (don't mislabel non-code as code),
+        // still incrementally. Real language → per-line highlight carrying block state.
+        const useHl = !!(language && language.trim());
+        const cfg = useHl ? this.config(language) : null;
         let inBlock = false; // block-comment state entering the next line
+        let consumed = 0;    // index in fullText up to which lines are committed (after last '\n')
+        let committed = 0;   // count of committed lines
+        const doLine = (line) => useHl
+            ? SimpleSyntax.highlightLine(line, cfg, inBlock)
+            : { html: SimpleSyntax.escapeHtml(line), inBlock };
         return {
-            // push(fullText) -> { lines: [html for each newly-completed line], tail, committedBefore }
+            // push(fullText) -> { lines: [html for each newly-completed line], tail, committedBefore }.
+            // O(new chars): scans only the unprocessed suffix via indexOf from `consumed`, so
+            // re-pushing the whole growing string each chunk stays O(1) amortized per token.
             push: (text) => {
-                const L = String(text == null ? '' : text).split('\n');
-                const completeUpTo = L.length - 1;       // last line is the streaming tail
-                const lines = [];
-                for (let i = committed; i < completeUpTo; i++) {
-                    const r = SimpleSyntax.highlightLine(L[i], cfg, inBlock);
-                    inBlock = r.inBlock;                  // commit state only for complete lines
-                    lines.push(r.html);
-                }
+                text = String(text == null ? '' : text);
                 const committedBefore = committed;
-                committed = Math.max(committed, completeUpTo);
-                const tail = SimpleSyntax.highlightLine(L[completeUpTo] || '', cfg, inBlock).html;
+                const lines = [];
+                let from = consumed, nl;
+                while ((nl = text.indexOf('\n', from)) !== -1) {
+                    const r = doLine(text.slice(from, nl));
+                    inBlock = r.inBlock;
+                    lines.push(r.html);
+                    committed++;
+                    from = nl + 1;
+                }
+                consumed = from;                       // everything up to the last '\n' is frozen
+                const tail = doLine(text.slice(consumed)).html;  // only the current line, re-done
                 return { lines, tail, committedBefore };
             }
         };

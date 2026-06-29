@@ -8,6 +8,7 @@
 const OpenAIAdapter = require('./OpenAIAdapter');
 const GoogleAdapter = require('./GoogleAdapter');
 const AnthropicAdapter = require('./AnthropicAdapter');
+const LlamaServerAdapter = require('./LlamaServerAdapter');
 const { detectProvider } = require('./providerRegistry');
 
 class ResponseAdapterFactory {
@@ -16,7 +17,9 @@ class ResponseAdapterFactory {
         this.adapterMap = {
             anthropic: new AnthropicAdapter(),
             google: new GoogleAdapter(),
-            'openai-compatible': new OpenAIAdapter()
+            openai: new OpenAIAdapter(),
+            'openai-compatible': new OpenAIAdapter(),
+            'llama-server': new LlamaServerAdapter()
         };
     }
 
