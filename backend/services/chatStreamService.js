@@ -797,7 +797,7 @@ async function executeToolCallsAndContinue(
                     : undefined;
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd, onChunk });
             } else {
-                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs);
+                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd });
             }
 
             const toolMessage = {
