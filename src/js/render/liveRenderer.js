@@ -102,20 +102,38 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     const codeElement = blockElement.querySelector('code');
                     if (codeElement) {
                         if (currentBlock.metadata.isStreaming) {
-                            // Still streaming — highlight live (SimpleSyntax is
-                            // per-line + self-escaping, so partial code is safe).
+                            // Still streaming. Re-highlighting the WHOLE block every chunk is
+                            // O(n²) — a long block costs seconds and janks the chat. Instead
+                            // highlight only newly-completed lines and APPEND them (committed
+                            // node), replacing just the growing last line (tail node). O(n).
                             const lang = currentBlock.metadata.language;
-                            const hl = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, lang) : escapeHtml(currentBlock.content);
-                            codeElement.innerHTML = hl + '<span class="code-cursor">|</span>';
+                            if (!window.SimpleSyntax) {
+                                codeElement.textContent = currentBlock.content;
+                            } else {
+                                if (!codeElement._hlStream || codeElement._hlLang !== lang) {
+                                    codeElement._hlLang = lang;
+                                    codeElement._hlStream = SimpleSyntax.createStreamingHighlighter(lang);
+                                    codeElement.innerHTML = '<span class="hl-committed"></span><span class="hl-tail"></span><span class="code-cursor">|</span>';
+                                    codeElement._hlCommitted = codeElement.querySelector('.hl-committed');
+                                    codeElement._hlTail = codeElement.querySelector('.hl-tail');
+                                }
+                                const { lines, tail, committedBefore } = codeElement._hlStream.push(currentBlock.content);
+                                if (lines.length) {
+                                    let html = '';
+                                    for (let k = 0; k < lines.length; k++) html += ((committedBefore + k) > 0 ? '\n' : '') + lines[k];
+                                    codeElement._hlCommitted.insertAdjacentHTML('beforeend', html);
+                                }
+                                const committedNow = committedBefore + lines.length;
+                                codeElement._hlTail.innerHTML = (committedNow > 0 ? '\n' : '') + tail;
+                            }
                         } else {
-                            // Streaming finished - use SimpleSyntax highlighting
+                            // Streaming finished - one clean full highlight (drops the
+                            // incremental committed/tail scaffolding and the cursor).
                             const language = currentBlock.metadata.language;
                             codeElement.className = `language-${language}`;
                             codeElement.innerHTML = window.SimpleSyntax ? SimpleSyntax.highlight(currentBlock.content, language) : escapeHtml(currentBlock.content);
+                            codeElement._hlStream = null;
                             logger.debug(`[LIVE-RENDER] Applied SimpleSyntax highlighting to finished code block`);
-                            // Remove cursor when done
-                            const cursor = codeElement.querySelector('.code-cursor');
-                            if (cursor) cursor.remove();
                         }
                     }
                 } else {

@@ -88,6 +88,34 @@ class SimpleSyntax {
         return out.join('\n');
     }
 
+    // Streaming highlighter for live-rendered content. Re-highlighting the full text on
+    // every chunk is O(n²) (a 600-line block costs seconds); this highlights only the
+    // NEWLY-COMPLETED lines each push (carrying the block-comment state forward), so the
+    // consumer can APPEND them and rebuild nothing — O(n) total. The last line is always
+    // the still-growing tail, returned separately so the consumer can replace just it.
+    static createStreamingHighlighter(language) {
+        const cfg = this.config(language);
+        let committed = 0;   // count of complete lines already emitted
+        let inBlock = false; // block-comment state entering the next line
+        return {
+            // push(fullText) -> { lines: [html for each newly-completed line], tail, committedBefore }
+            push: (text) => {
+                const L = String(text == null ? '' : text).split('\n');
+                const completeUpTo = L.length - 1;       // last line is the streaming tail
+                const lines = [];
+                for (let i = committed; i < completeUpTo; i++) {
+                    const r = SimpleSyntax.highlightLine(L[i], cfg, inBlock);
+                    inBlock = r.inBlock;                  // commit state only for complete lines
+                    lines.push(r.html);
+                }
+                const committedBefore = committed;
+                committed = Math.max(committed, completeUpTo);
+                const tail = SimpleSyntax.highlightLine(L[completeUpTo] || '', cfg, inBlock).html;
+                return { lines, tail, committedBefore };
+            }
+        };
+    }
+
     // Resolve + memoize a language config (compiles the keyword regex once).
     static config(language) {
         const raw = (language || '').toLowerCase();

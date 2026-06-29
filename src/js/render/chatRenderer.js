@@ -664,11 +664,24 @@ function fileViewBodyHtml(metadata, toolName) {
     // Drop one trailing newline so a file ending in "\n" doesn't show a blank last row.
     text = text.replace(/\n$/, '');
     const lang = fileViewLang((metadata.arguments && metadata.arguments.path) || '');
-    // Highlight the whole text once (so block-comment state carries across lines),
-    // then split — highlight() joins lines with "\n" so the counts line up.
-    const hlLines = (window.SimpleSyntax && lang)
-        ? SimpleSyntax.highlight(text, lang).split('\n')
-        : text.split('\n').map(escapeHtml);
+    // Per-line highlighted HTML. While STREAMING (write_file), re-highlighting the whole
+    // file each chunk is O(n²); use a persisted streaming highlighter that caches completed
+    // lines and only highlights new ones (+ the growing tail) — O(n) overall. Once done (or
+    // for read_file's one-shot result), a single full highlight is fine.
+    let hlLines;
+    if (!window.SimpleSyntax || !lang) {
+        hlLines = text.split('\n').map(escapeHtml);
+    } else if (metadata.status === 'executing') {
+        let s = metadata._fileHl;
+        if (!s || s.lang !== lang) s = metadata._fileHl = { stream: SimpleSyntax.createStreamingHighlighter(lang), lines: [], lang };
+        const { lines, tail } = s.stream.push(text);
+        if (lines.length) s.lines.push(...lines);
+        hlLines = s.lines.concat(tail);   // cached complete lines + freshly-highlighted tail
+    } else {
+        // Highlight the whole text once (so block-comment state carries across lines),
+        // then split — highlight() joins lines with "\n" so the counts line up.
+        hlLines = SimpleSyntax.highlight(text, lang).split('\n');
+    }
     let html = '';
     for (let i = 0; i < hlLines.length; i++) {
         html += `<div class="file-view-line"><span class="file-view-ln">${d.firstLine + i}</span>`
@@ -1836,8 +1849,10 @@ class ChatRenderer {
 
             logger.info(`[VERSION-SWITCH] Switched turn ${turnId} to version ${targetVersion}`);
             
-            // Reload entire chat to show the new version
+            // Reload entire chat to show the new version, then re-attach any in-flight
+            // live turn the reload tore down (version switch is allowed mid-stream).
             await loadChatHistory(currentChatId);
+            streamManager.reconnectStreaming(currentChatId);
         } catch (error) {
             logger.error(`[VERSION-SWITCH] Error: ${error.message}`, true);
             showError(`Error switching version: ${error.message}`);

@@ -164,7 +164,10 @@ async function loadChatList() {
             } catch {}
             currentChatId = targetId;
             selectChat(currentChatId);
-            loadChatHistory(currentChatId);
+            // Reconnect after the history renders so an in-flight live turn re-attaches
+            // (switchToChat does this; the restore path must too).
+            await loadChatHistory(currentChatId);
+            streamManager.reconnectStreaming(currentChatId);
         }
         streamManager.reapplyIndicators();
     } catch (error) {
@@ -850,7 +853,10 @@ async function loadProjectChats(projectId) {
         } catch {}
         currentChatId = targetId;
         selectChat(currentChatId);
-        loadChatHistory(currentChatId);
+        // Reconnect after the history renders so an in-flight live turn re-attaches
+        // (switchToChat does this; the restore path must too).
+        await loadChatHistory(currentChatId);
+        streamManager.reconnectStreaming(currentChatId);
 
         streamManager.reapplyIndicators();
     } catch (error) {
