@@ -96,12 +96,13 @@ async function loadSettingsIntoModal() {
         // Update main model dropdown
         mainModelSelect.value = settings.modelName;
 
-        // Show/hide thinking controls based on provider
-        updateThinkingControlsVisibility(settings.apiUrl);
+        // Show/hide thinking controls based on adapter type
+        updateThinkingControlsVisibility(settings.adapterType || 'auto', settings.apiUrl);
 
-        // Mark dirty when user manually changes adapter type
+        // Mark dirty and update thinking section visibility when user changes adapter type
         adapterTypeSelect.addEventListener('change', () => {
             adapterTypeSelect.dataset.userSet = '1';
+            updateThinkingControlsVisibility(adapterTypeSelect.value, apiUrlInput.value.trim());
         }, { once: false });
         // Setup thinking control event handlers
         setupThinkingEventHandlers();
@@ -178,7 +179,6 @@ async function loadSettingsIntoModal() {
 async function handleSaveSettings() {
     // Get provider-specific thinking settings
     const enableThinkingAnthropic = document.getElementById('enableThinkingAnthropic');
-    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
     const enableThinkingGoogle = document.getElementById('enableThinkingGoogle');
     const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
     
@@ -191,9 +191,16 @@ async function handleSaveSettings() {
         showSystemBlocks: systemBlocksInput.checked,
         // Provider-specific thinking settings
         enableThinkingAnthropic: enableThinkingAnthropic.checked,
-        thinkingBudgetAnthropic: parseInt(thinkingBudgetAnthropic.value),
+        thinkingModeAnthropic: document.getElementById('thinkingModeAnthropic').value,
+        thinkingEffortAnthropic: document.getElementById('thinkingEffortAnthropic').value,
+        thinkingBudgetAnthropic: parseInt(document.getElementById('thinkingBudgetAnthropic').value),
         enableThinkingGoogle: enableThinkingGoogle.checked,
+        thinkingModeGoogle: document.getElementById('thinkingModeGoogle').value,
         thinkingBudgetGoogle: parseInt(thinkingBudgetGoogle.value),
+        thinkingLevelGoogle: document.getElementById('thinkingLevelGoogle').value,
+        includeThoughtsGoogle: document.getElementById('includeThoughtsGoogle').checked,
+        enableThinkingOpenAI: document.getElementById('enableThinkingOpenAI').checked,
+        reasoningEffortOpenAI: document.getElementById('reasoningEffortOpenAI').value,
         
         // System prompt settings
         enableSystemPrompt: document.getElementById('enableSystemPrompt').checked,
@@ -685,75 +692,119 @@ window.showCustomConfirm = showCustomConfirm;
 // Delete selected profile
 // Load provider-specific thinking settings
 function loadProviderThinkingSettings(settings) {
-    // Anthropic thinking settings
+    // --- Anthropic ---
     const enableThinkingAnthropic = document.getElementById('enableThinkingAnthropic');
-    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
+    const thinkingModeGroupAnthropic = document.getElementById('thinkingModeGroupAnthropic');
+    const thinkingModeAnthropic = document.getElementById('thinkingModeAnthropic');
+    const thinkingEffortGroupAnthropic = document.getElementById('thinkingEffortGroupAnthropic');
+    const thinkingEffortAnthropic = document.getElementById('thinkingEffortAnthropic');
     const thinkingBudgetGroupAnthropic = document.getElementById('thinkingBudgetGroupAnthropic');
+    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
     const thinkingBudgetValueAnthropic = document.getElementById('thinkingBudgetValueAnthropic');
-    
-    enableThinkingAnthropic.checked = settings.enableThinkingAnthropic;
-    const anthropicBudgetValue = settings.thinkingBudgetAnthropic;
-    thinkingBudgetAnthropic.value = anthropicBudgetValue;
-    thinkingBudgetValueAnthropic.textContent = anthropicBudgetValue;
-    thinkingBudgetGroupAnthropic.style.display = enableThinkingAnthropic.checked ? 'block' : 'none';
-    
-    // Update preset button active state
-    updatePresetButtons('thinkingBudgetAnthropic', anthropicBudgetValue);
-    
-    // Google thinking settings
+
+    if (enableThinkingAnthropic) {
+        enableThinkingAnthropic.checked = settings.enableThinkingAnthropic;
+        const mode = settings.thinkingModeAnthropic || 'adaptive';
+        thinkingModeAnthropic.value = mode;
+        thinkingModeGroupAnthropic.style.display = enableThinkingAnthropic.checked ? 'block' : 'none';
+        thinkingEffortGroupAnthropic.style.display = mode === 'effort' ? 'block' : 'none';
+        thinkingBudgetGroupAnthropic.style.display = mode === 'budget_tokens' ? 'block' : 'none';
+        thinkingEffortAnthropic.value = settings.thinkingEffortAnthropic || 'medium';
+        const budgetVal = settings.thinkingBudgetAnthropic || 8192;
+        thinkingBudgetAnthropic.value = budgetVal;
+        thinkingBudgetValueAnthropic.textContent = budgetVal;
+        updatePresetButtons('thinkingBudgetAnthropic', budgetVal);
+    }
+
+    // --- Google ---
     const enableThinkingGoogle = document.getElementById('enableThinkingGoogle');
-    const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
+    const includeThoughtsGoogle = document.getElementById('includeThoughtsGoogle');
+    const thinkingModeGroupGoogle = document.getElementById('thinkingModeGroupGoogle');
+    const thinkingModeGoogle = document.getElementById('thinkingModeGoogle');
     const thinkingBudgetGroupGoogle = document.getElementById('thinkingBudgetGroupGoogle');
+    const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
     const thinkingBudgetValueGoogle = document.getElementById('thinkingBudgetValueGoogle');
-    
-    enableThinkingGoogle.checked = settings.enableThinkingGoogle;
-    const googleBudgetValue = settings.thinkingBudgetGoogle;
-    thinkingBudgetGoogle.value = googleBudgetValue;
-    thinkingBudgetValueGoogle.textContent = googleBudgetValue === -1 || googleBudgetValue === '-1' ? 'Auto' : googleBudgetValue;
-    thinkingBudgetGroupGoogle.style.display = enableThinkingGoogle.checked ? 'block' : 'none';
-    
-    // Update preset button active state
-    updateGooglePresetButtons(googleBudgetValue);
+    const thinkingLevelGroupGoogle = document.getElementById('thinkingLevelGroupGoogle');
+    const thinkingLevelGoogle = document.getElementById('thinkingLevelGoogle');
+
+    if (enableThinkingGoogle) {
+        enableThinkingGoogle.checked = settings.enableThinkingGoogle;
+        includeThoughtsGoogle.checked = settings.includeThoughtsGoogle !== false;
+        const googleMode = settings.thinkingModeGoogle || 'thinkingBudget';
+        thinkingModeGoogle.value = googleMode;
+        thinkingModeGroupGoogle.style.display = enableThinkingGoogle.checked ? 'block' : 'none';
+        thinkingBudgetGroupGoogle.style.display = googleMode === 'thinkingBudget' ? 'block' : 'none';
+        thinkingLevelGroupGoogle.style.display = googleMode === 'thinkingLevel' ? 'block' : 'none';
+        const googleBudgetValue = settings.thinkingBudgetGoogle !== undefined ? settings.thinkingBudgetGoogle : -1;
+        thinkingBudgetGoogle.value = googleBudgetValue;
+        thinkingBudgetValueGoogle.textContent = googleBudgetValue === -1 || googleBudgetValue === '-1' ? 'Auto' : googleBudgetValue;
+        thinkingLevelGoogle.value = settings.thinkingLevelGoogle || 'medium';
+        updateGooglePresetButtons(googleBudgetValue);
+    }
+
+    // --- OpenAI ---
+    const enableThinkingOpenAI = document.getElementById('enableThinkingOpenAI');
+    const reasoningEffortOpenAI = document.getElementById('reasoningEffortOpenAI');
+    const thinkingEffortGroupOpenAI = document.getElementById('thinkingEffortGroupOpenAI');
+
+    if (enableThinkingOpenAI) {
+        enableThinkingOpenAI.checked = settings.enableThinkingOpenAI || false;
+        reasoningEffortOpenAI.value = settings.reasoningEffortOpenAI || 'medium';
+        thinkingEffortGroupOpenAI.style.display = enableThinkingOpenAI.checked ? 'block' : 'none';
+    }
 }
 
 // Setup event handlers for thinking controls
 function setupThinkingEventHandlers() {
-    // Anthropic thinking controls
+    // --- Anthropic ---
     const enableThinkingAnthropic = document.getElementById('enableThinkingAnthropic');
-    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
+    const thinkingModeGroupAnthropic = document.getElementById('thinkingModeGroupAnthropic');
+    const thinkingModeAnthropic = document.getElementById('thinkingModeAnthropic');
+    const thinkingEffortGroupAnthropic = document.getElementById('thinkingEffortGroupAnthropic');
     const thinkingBudgetGroupAnthropic = document.getElementById('thinkingBudgetGroupAnthropic');
+    const thinkingBudgetAnthropic = document.getElementById('thinkingBudgetAnthropic');
     const thinkingBudgetValueAnthropic = document.getElementById('thinkingBudgetValueAnthropic');
-    
-    if (enableThinkingAnthropic && thinkingBudgetGroupAnthropic) {
+
+    if (enableThinkingAnthropic) {
         enableThinkingAnthropic.addEventListener('change', () => {
-            const enabled = enableThinkingAnthropic.checked;
-            thinkingBudgetGroupAnthropic.style.display = enabled ? 'block' : 'none';
-            logger.info(`Anthropic thinking mode ${enabled ? 'enabled' : 'disabled'}`);
+            thinkingModeGroupAnthropic.style.display = enableThinkingAnthropic.checked ? 'block' : 'none';
         });
     }
-    
+    if (thinkingModeAnthropic) {
+        thinkingModeAnthropic.addEventListener('change', () => {
+            const mode = thinkingModeAnthropic.value;
+            thinkingEffortGroupAnthropic.style.display = mode === 'effort' ? 'block' : 'none';
+            thinkingBudgetGroupAnthropic.style.display = mode === 'budget_tokens' ? 'block' : 'none';
+        });
+    }
     if (thinkingBudgetAnthropic && thinkingBudgetValueAnthropic) {
         thinkingBudgetAnthropic.addEventListener('input', () => {
-            const value = thinkingBudgetAnthropic.value;
-            thinkingBudgetValueAnthropic.textContent = value;
-            updatePresetButtons('thinkingBudgetAnthropic', value);
+            thinkingBudgetValueAnthropic.textContent = thinkingBudgetAnthropic.value;
+            updatePresetButtons('thinkingBudgetAnthropic', thinkingBudgetAnthropic.value);
         });
     }
-    
-    // Google thinking controls
+
+    // --- Google ---
     const enableThinkingGoogle = document.getElementById('enableThinkingGoogle');
-    const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
+    const thinkingModeGroupGoogle = document.getElementById('thinkingModeGroupGoogle');
+    const thinkingModeGoogle = document.getElementById('thinkingModeGoogle');
     const thinkingBudgetGroupGoogle = document.getElementById('thinkingBudgetGroupGoogle');
+    const thinkingLevelGroupGoogle = document.getElementById('thinkingLevelGroupGoogle');
+    const thinkingBudgetGoogle = document.getElementById('thinkingBudgetGoogle');
     const thinkingBudgetValueGoogle = document.getElementById('thinkingBudgetValueGoogle');
-    
-    if (enableThinkingGoogle && thinkingBudgetGroupGoogle) {
+
+    if (enableThinkingGoogle) {
         enableThinkingGoogle.addEventListener('change', () => {
-            const enabled = enableThinkingGoogle.checked;
-            thinkingBudgetGroupGoogle.style.display = enabled ? 'block' : 'none';
-            logger.info(`Google thinking mode ${enabled ? 'enabled' : 'disabled'}`);
+            thinkingModeGroupGoogle.style.display = enableThinkingGoogle.checked ? 'block' : 'none';
         });
     }
-    
+    if (thinkingModeGoogle) {
+        thinkingModeGoogle.addEventListener('change', () => {
+            const mode = thinkingModeGoogle.value;
+            thinkingBudgetGroupGoogle.style.display = mode === 'thinkingBudget' ? 'block' : 'none';
+            thinkingLevelGroupGoogle.style.display = mode === 'thinkingLevel' ? 'block' : 'none';
+        });
+    }
     if (thinkingBudgetGoogle && thinkingBudgetValueGoogle) {
         thinkingBudgetGoogle.addEventListener('input', () => {
             const value = thinkingBudgetGoogle.value;
@@ -761,8 +812,18 @@ function setupThinkingEventHandlers() {
             updateGooglePresetButtons(value);
         });
     }
-    
-    // Unified preset buttons for all providers
+
+    // --- OpenAI ---
+    const enableThinkingOpenAI = document.getElementById('enableThinkingOpenAI');
+    const thinkingEffortGroupOpenAI = document.getElementById('thinkingEffortGroupOpenAI');
+
+    if (enableThinkingOpenAI && thinkingEffortGroupOpenAI) {
+        enableThinkingOpenAI.addEventListener('change', () => {
+            thinkingEffortGroupOpenAI.style.display = enableThinkingOpenAI.checked ? 'block' : 'none';
+        });
+    }
+
+    // Preset buttons
     const budgetPresets = document.querySelectorAll('.budget-preset');
     budgetPresets.forEach(button => {
         button.addEventListener('click', () => {
@@ -770,10 +831,9 @@ function setupThinkingEventHandlers() {
             const value = parseInt(button.dataset.value);
             const slider = document.getElementById(target);
             const valueDisplay = document.getElementById(target.replace('Budget', 'BudgetValue'));
-            
+
             if (slider && valueDisplay) {
                 slider.value = value;
-                // Handle special Google values
                 if (target === 'thinkingBudgetGoogle') {
                     valueDisplay.textContent = value === -1 ? 'Auto' : value;
                 } else {
@@ -842,20 +902,29 @@ function updateAdapterTypeFromUrl(url) {
     select.value = inferAdapterFromUrl(url);
 }
 
-function updateThinkingControlsVisibility(apiUrl) {
+function updateThinkingControlsVisibility(adapterType, apiUrl) {
     const anthropicSection = document.querySelector('.thinking-section[data-provider="anthropic"]');
     const googleSection = document.querySelector('.thinking-section[data-provider="google"]');
-    
-    if (!anthropicSection || !googleSection) return;
-    
-    const isAnthropic = apiUrl.toLowerCase().includes('anthropic.com');
-    const isGoogle = apiUrl.toLowerCase().includes('google') || apiUrl.toLowerCase().includes('googleapis.com');
-    
-    // Show/hide sections based on provider
-    anthropicSection.style.display = isAnthropic ? 'block' : 'none';
-    googleSection.style.display = isGoogle ? 'block' : 'none';
-    
-    logger.info(`[SETTINGS] Thinking controls - Anthropic: ${isAnthropic ? 'shown' : 'hidden'}, Google: ${isGoogle ? 'shown' : 'hidden'} for provider:`, apiUrl);
+    const openaiSection = document.querySelector('.thinking-section[data-provider="openai"]');
+
+    if (!anthropicSection || !googleSection || !openaiSection) return;
+
+    // Resolve effective provider: explicit adapter type takes priority, fall back to URL inference
+    let provider = adapterType;
+    if (!provider || provider === 'auto') {
+        const url = (apiUrl || '').toLowerCase();
+        if (url.includes('anthropic.com')) provider = 'anthropic';
+        else if (url.includes('google') || url.includes('googleapis.com')) provider = 'google';
+        else if (url.includes('api.openai.com')) provider = 'openai';
+        else provider = 'openai-compatible';
+    }
+
+    anthropicSection.style.display = provider === 'anthropic' ? 'block' : 'none';
+    googleSection.style.display = provider === 'google' ? 'block' : 'none';
+    openaiSection.style.display = provider === 'openai' ? 'block' : 'none';
+    // openai-compatible shows nothing in the thinking tab — no thinking params to send
+
+    logger.info(`[SETTINGS] Thinking controls showing: ${provider}`);
 }
 
 async function handleDeleteProfile() {

@@ -222,11 +222,11 @@ async function executeSimpleTool(toolName, args, opts = {}) {
 
     switch (toolName) {
         case 'read_file':
-            return doReadFile(args, readCap);
+            return doReadFile(args, readCap, opts.cwd);
         case 'write_file':
-            return doWriteFile(args);
+            return doWriteFile(args, opts.cwd);
         case 'edit_file':
-            return doEdit(args);
+            return doEdit(args, opts.cwd);
         case 'shell_run':
             return doShellRun(args, opts, shellCap);
         default:
@@ -234,11 +234,14 @@ async function executeSimpleTool(toolName, args, opts = {}) {
     }
 }
 
-async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB) {
+async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB, cwd) {
     const filePath = args?.path;
     if (!filePath) {
         throw new Error('Missing required field: path');
     }
+    const resolvedPath = (cwd && !path.isAbsolute(filePath))
+        ? path.resolve(cwd, filePath)
+        : filePath;
 
     const startLine = args?.start_line;
     const endLine = args?.end_line;
@@ -247,18 +250,18 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB) {
 
     let content;
     try {
-        content = fs.readFileSync(filePath, 'utf8');
+        content = fs.readFileSync(resolvedPath, 'utf8');
     } catch (error) {
         if (error.code === 'ENOENT') {
-            throw new Error(`Cannot read '${filePath}': file not found (${error.message})`);
+            throw new Error(`Cannot read '${resolvedPath}': file not found (${error.message})`);
         }
         if (error.code === 'EACCES') {
-            throw new Error(`Cannot read '${filePath}': permission denied (${error.message})`);
+            throw new Error(`Cannot read '${resolvedPath}': permission denied (${error.message})`);
         }
         if (error.code === 'EISDIR') {
-            throw new Error(`Cannot read '${filePath}': is a directory`);
+            throw new Error(`Cannot read '${resolvedPath}': is a directory`);
         }
-        throw new Error(`Cannot read '${filePath}': I/O error (${error.message})`);
+        throw new Error(`Cannot read '${resolvedPath}': I/O error (${error.message})`);
     }
 
     const totalLines = content.split('\n').length;
@@ -269,7 +272,7 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB) {
         return {
             success: false,
             error: 'File too large',
-            message: `File '${filePath}' is ${content.length} characters (${totalLines} lines), which exceeds the ${readCap}-character limit. Read a portion with start_line/end_line.`,
+            message: `File '${resolvedPath}' is ${content.length} characters (${totalLines} lines), which exceeds the ${readCap}-character limit. Read a portion with start_line/end_line.`,
             total_size: content.length,
             line_count: totalLines
         };
@@ -315,11 +318,14 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB) {
     return result;
 }
 
-async function doWriteFile(args) {
+async function doWriteFile(args, cwd) {
     const filePath = args?.path;
     if (!filePath) {
         throw new Error('Missing required field: path');
     }
+    const resolvedPath = (cwd && !path.isAbsolute(filePath))
+        ? path.resolve(cwd, filePath)
+        : filePath;
 
     const content = args?.content;
     if (content === undefined || content === null) {
@@ -329,26 +335,29 @@ async function doWriteFile(args) {
     const contentStr = String(content);
 
     try {
-        const dir = path.dirname(filePath);
+        const dir = path.dirname(resolvedPath);
         if (dir && !fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
-        fs.writeFileSync(filePath, contentStr, 'utf8');
+        fs.writeFileSync(resolvedPath, contentStr, 'utf8');
         return {
             success: true,
-            path: filePath,
+            path: resolvedPath,
             bytes_written: Buffer.byteLength(contentStr, 'utf8')
         };
     } catch (error) {
-        throw new Error(`Failed to write file '${filePath}': ${error.message}`);
+        throw new Error(`Failed to write file '${resolvedPath}': ${error.message}`);
     }
 }
 
-async function doEdit(args) {
+async function doEdit(args, cwd) {
     const filePath = args?.path;
     if (!filePath) {
         throw new Error('Missing required field: path');
     }
+    const resolvedPath = (cwd && !path.isAbsolute(filePath))
+        ? path.resolve(cwd, filePath)
+        : filePath;
 
     const edits = args?.edits;
     if (!Array.isArray(edits) || edits.length === 0) {
@@ -357,13 +366,13 @@ async function doEdit(args) {
 
     let content;
     try {
-        content = fs.readFileSync(filePath, 'utf8');
+        content = fs.readFileSync(resolvedPath, 'utf8');
     } catch (error) {
         const kind = error.code === 'ENOENT' ? 'file not found'
             : error.code === 'EACCES' ? 'permission denied'
             : error.code === 'EISDIR' ? 'is a directory'
             : 'I/O error';
-        throw new Error(`Cannot read '${filePath}': ${kind} (${error.message})`);
+        throw new Error(`Cannot read '${resolvedPath}': ${kind} (${error.message})`);
     }
 
     // Apply all edits to an in-memory copy first. Sequential — each edit sees the
@@ -404,15 +413,15 @@ async function doEdit(args) {
     }
 
     try {
-        fs.writeFileSync(filePath, working, 'utf8');
+        fs.writeFileSync(resolvedPath, working, 'utf8');
         return {
             success: true,
-            path: filePath,
+            path: resolvedPath,
             edits_applied: edits.length,
             edit_lines: editLines
         };
     } catch (error) {
-        throw new Error(`Failed to write file '${filePath}': ${error.message}`);
+        throw new Error(`Failed to write file '${resolvedPath}': ${error.message}`);
     }
 }
 

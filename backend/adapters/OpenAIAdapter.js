@@ -13,14 +13,17 @@ class OpenAIAdapter extends BaseResponseAdapter {
     }
 
     getEndpointUrl(settings) {
-        return getProviderById('openai-compatible').getEndpointUrl(settings.apiUrl);
+        const providerId = settings.adapterType === 'openai' ? 'openai' : 'openai-compatible';
+        return getProviderById(providerId).getEndpointUrl(settings.apiUrl);
     }
 
     getHeaders(settings) {
-        return getProviderById('openai-compatible').getHeaders(settings.apiKey, settings.apiUrl);
+        const providerId = settings.adapterType === 'openai' ? 'openai' : 'openai-compatible';
+        return getProviderById(providerId).getHeaders(settings.apiKey, settings.apiUrl);
     }
 
-    convertRequest(unifiedRequest) {
+    convertRequest(unifiedRequest, settings = {}) {
+
         // Process messages to handle multimodal content
         const processedMessages = unifiedRequest.messages.map(message => {
             return {
@@ -35,12 +38,19 @@ class OpenAIAdapter extends BaseResponseAdapter {
             };
         });
 
-        return {
+        const request = {
             model: unifiedRequest.model,
             messages: processedMessages,
             stream: true,
             ...(unifiedRequest.tools?.length ? { tools: unifiedRequest.tools } : {})
         };
+
+        // Add reasoning_effort for literal OpenAI adapter when enabled
+        if (settings.adapterType === 'openai' && settings.enableThinkingOpenAI === true) {
+            request.reasoning_effort = settings.reasoningEffortOpenAI || 'medium';
+        }
+
+        return request;
     }
 
     processChunk(chunk, response, context) {

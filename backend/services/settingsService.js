@@ -31,9 +31,16 @@ function getDefaultProfileSettings() {
         
         logLevel: 'INFO',
         enableThinkingAnthropic: true,
-        thinkingBudgetAnthropic: 1024,
+        thinkingModeAnthropic: 'adaptive',
+        thinkingEffortAnthropic: 'medium',
+        thinkingBudgetAnthropic: 8192,
         enableThinkingGoogle: true,
+        thinkingModeGoogle: 'thinkingBudget',
         thinkingBudgetGoogle: -1,
+        thinkingLevelGoogle: 'medium',
+        includeThoughtsGoogle: true,
+        enableThinkingOpenAI: false,
+        reasoningEffortOpenAI: 'medium',
         enableSystemPrompt: true,
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
         shell: 'bash', // resolved at init time if not present
