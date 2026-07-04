@@ -37,19 +37,44 @@ app.use('/api', debugRoutes);
 app.use('/api', documentRoutes);
 app.use('/api', shellConfigRoutes);
 
-// Initialize and start server
+// Bind a single port, resolving with the actual bound port.
+function tryListen(port) {
+    return new Promise((resolve, reject) => {
+        const server = app.listen(port);
+        server.once('listening', () => resolve({ server, port: server.address().port }));
+        server.once('error', reject);
+    });
+}
+
+// Bind the preferred port; if it's unavailable (Windows can dynamically
+// reserve wide port ranges across reboots), fall back to port 0 and let the
+// OS hand us any free port. The OS will never return a reserved port, so this
+// fallback cannot hit EACCES.
+async function listenWithFallback(preferredPort) {
+    try {
+        return await tryListen(preferredPort);
+    } catch (err) {
+        if (err.code === 'EACCES' || err.code === 'EADDRINUSE') {
+            log(`[SERVER] Port ${preferredPort} unavailable (${err.code}), asking OS for any free port...`);
+            return await tryListen(0);
+        }
+        throw err;
+    }
+}
+
+// Initialize and start server. Resolves with the bound port.
 async function startServer() {
     try {
         // Initialize database
         await initializeDatabase();
         log('[DATABASE] Initialized successfully');
-        
-        // Start server
-        app.listen(PORT, async () => {
-            const url = `http://localhost:${PORT}`;
-            log(`[SERVER] SimpleChatJS server running at ${url}`);
-            await loadSettingsOnStartup();
-        });
+
+        // Start server, falling forward if the preferred port is unavailable
+        const { port } = await listenWithFallback(PORT);
+        const url = `http://localhost:${port}`;
+        log(`[SERVER] SimpleChatJS server running at ${url}`);
+        await loadSettingsOnStartup();
+        return port;
     } catch (error) {
         log('[STARTUP] Failed to start server:', error);
         process.exit(1);
@@ -74,5 +99,6 @@ process.on('SIGINT', async () => {
     }
 });
 
-// Start the server
-startServer();
+// Start the server. Export the promise so an embedding process (Electron main)
+// can await the actual bound port instead of guessing.
+module.exports = startServer();

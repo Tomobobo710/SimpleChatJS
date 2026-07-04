@@ -32,6 +32,10 @@ app.commandLine.appendSwitch("disable-component-extensions-with-background-pages
 // Keep a global reference of the window object
 let mainWindow;
 
+// Promise resolving to the port the backend actually bound to.
+// Set by startServer(), awaited by createWindow() before loading the URL.
+let serverReady;
+
 // Setup portable paths AFTER early Chromium config
 function setupPortablePaths() {
     console.log("Setting up portable paths...");
@@ -57,16 +61,18 @@ function setupPortablePaths() {
     }
 }
 
-// Start the Express server directly (no spawn)
+// Start the Express server directly (no spawn).
+// Returns a promise resolving to the actual bound port.
 function startServer() {
     console.log("Starting SimpleChatJS server directly...");
 
     try {
-        // Import and start the server directly in this process
-        require("./backend/server.js");
-        console.log("Server started successfully");
+        // Import and start the server directly in this process.
+        // server.js exports the startup promise, which resolves with the bound port.
+        return require("./backend/server.js");
     } catch (error) {
         console.error("Server startup error:", error);
+        return Promise.reject(error);
     }
 }
 
@@ -128,9 +134,11 @@ function createWindow() {
     mainWindow.on("maximize", saveState);
     mainWindow.on("unmaximize", saveState);
 
-    // Wait a moment for server to start, then load the URL
-    setTimeout(() => {
-        mainWindow.loadURL("http://localhost:50505");
+    // Wait for the server to actually bind, then load its real port.
+    // No more blind setTimeout / hardcoded port — serverReady resolves with
+    // the port that bound (which may differ from the preferred one).
+    serverReady.then((port) => {
+        mainWindow.loadURL(`http://localhost:${port}`);
         // Maximize on first launch (no saved state), otherwise restore saved state
         if (!savedState || savedState.isMaximized) {
             mainWindow.maximize();
@@ -145,7 +153,9 @@ function createWindow() {
         });
         // Add find bar to this window
         setFindBar(mainWindow, { darkMode: true });
-    }, 2000);
+    }).catch((err) => {
+        console.error("Server failed to start, cannot load window:", err);
+    });
 
     // Handle window closed
     mainWindow.on("closed", () => {
@@ -249,8 +259,8 @@ function createMenu() {
 // App event handlers
 app.whenReady().then(() => {
     setupPortablePaths(); // Setup paths FIRST
-    startServer(); // Start server directly
-    createWindow(); // Create window
+    serverReady = startServer(); // Start server directly; resolves with bound port
+    createWindow(); // Create window (awaits serverReady before loading URL)
     Menu.setApplicationMenu(null); // Remove menu bar completely
 
     // Handle inspect element IPC
