@@ -1086,6 +1086,12 @@ class ChatRenderer {
                 turnDiv.className = "turn request-turn";
             } else if (identity === "response") {
                 turnDiv.className = "turn response-turn";
+            } else if (identity === "compaction_request") {
+                // The compaction request borrows the request-turn frame (it IS a request).
+                turnDiv.className = "turn request-turn compaction-turn compaction-request-turn";
+            } else if (identity === "compaction_response") {
+                // The compaction response borrows the response-turn frame.
+                turnDiv.className = "turn response-turn compaction-turn compaction-response-turn";
             } else {
                 turnDiv.className = `turn ${identity}-turn`; // Fallback for other identities
             }
@@ -1137,19 +1143,27 @@ class ChatRenderer {
 
             turnDiv.appendChild(contentDiv);
 
-           // Add message actions bar (passing turn_id and parent_turn_id from RTO)
+            const isCompaction = identity === "compaction_request" || identity === "compaction_response";
+
+            // Actions bar — the standard one for everyone. addMessageActions special-cases
+            // the compaction identities (request has no plain Edit; both get branch nav).
             this.addMessageActions(turnDiv, identity, id, turnId, parentTurnId, branchMap);
 
-            // Add turn footer (token counts + timing) if usage data available
-            const usageData = responseDebugData?.[responseDebugData.length - 1]?.response?.usage
-                || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.usage;
-            const timingsData = responseDebugData?.[responseDebugData.length - 1]?.response?.timings
-                || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.timings;
-            if (usageData || timingsData) {
-                this.addTurnFooter(turnDiv, usageData, timingsData);
+            // Turn footer (token counts + timing) — normal turns only. Compaction turns
+            // show their token delta in the dropdown badge instead.
+            if (!isCompaction) {
+                const usageData = responseDebugData?.[responseDebugData.length - 1]?.response?.usage
+                    || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.usage;
+                const timingsData = responseDebugData?.[responseDebugData.length - 1]?.response?.timings
+                    || debugData?.responseDebugData?.[debugData.responseDebugData.length - 1]?.response?.timings;
+                if (usageData || timingsData) {
+                    this.addTurnFooter(turnDiv, usageData, timingsData);
+                }
             }
 
-            // Add debug toggle and panel if debug data provided
+            // Debug panel: ON for normal turns (when they have debug data) AND for
+            // compaction turns (the request panel shows covered/kept id lists + the real
+            // expanded prompt; assembled by the sub-renderer and passed via debugData).
             if (debugData || responseDebugData) {
                 this.addDebugPanel(turnDiv, domId, { ...debugData, responseDebugData, turnMessages });
             }
@@ -1201,6 +1215,224 @@ class ChatRenderer {
         }
     }
 
+    // Start a LIVE compaction dropdown at the bottom of the chat area. It's a real
+    // StreamingDropdown (type 'compaction') that starts open with a spinner in its
+    // title; the summarize call streams text into it delta-by-delta, exactly like a
+    // tool/thinking dropdown. Returns a controller:
+    //   { el, appendSummary(text), finalize(meta), fail(msg), remove() }
+    // `ids` = { turnId?, parentTurnId } — the response's own turn_id isn't known until
+    // it's saved (post-stream), but its parent (the compaction request turn) IS known at
+    // start; stamping the parent lets DOM lineage ops reach this node.
+    startCompactionStream(ids = {}) {
+        this.removeCompactionProgress();
+
+        const ddId = `compaction_live_${Date.now()}`;
+        // The live view IS the Compaction Response dropdown — the summary streams into
+        // it delta-by-delta, exactly like a tool dropdown streams its output. Starts open.
+        const dropdown = new StreamingDropdown(ddId, "Compaction Response", "compaction", false, null);
+
+        // Response-turn wrapper so the live view matches the reloaded response turn. It
+        // MUST carry its lineage datasets (turn id + parent = the compaction request) so
+        // that DOM lineage operations — e.g. a retry's descendant removal — can see and
+        // reap it. Without these it's an orphan node that survives a retry and strands
+        // the compaction above the retried turn.
+        const marker = document.createElement("div");
+        marker.className = "turn response-turn compaction-turn compaction-response-turn compaction-live";
+        marker.dataset.compactionProgress = "1";
+        if (ids.turnId) marker.dataset.turnId = ids.turnId;
+        if (ids.parentTurnId) marker.dataset.parentTurnId = ids.parentTurnId;
+        const contentDiv = document.createElement("div");
+        contentDiv.className = "turn-content";
+        contentDiv.appendChild(dropdown.element);
+        marker.appendChild(contentDiv);
+
+        // Spinner in the title while streaming.
+        const titleEl = dropdown.element.querySelector(".dropdown-title");
+        if (titleEl) {
+            const spin = document.createElement("span");
+            spin.className = "stream-spinner compaction-title-spinner";
+            titleEl.prepend(spin);
+        }
+        const inner = dropdown.element.querySelector(".dropdown-inner");
+        if (inner) inner.classList.add("compaction-body");
+
+        this.container.appendChild(marker);
+        if (typeof smartScrollToBottom === "function") smartScrollToBottom(scrollContainer);
+
+        // Append-only summary accumulation (per streaming-render-perf).
+        let summaryText = "";
+        return {
+            el: marker,
+            appendSummary(text) {
+                if (!text) return;
+                summaryText += text;
+                dropdown.appendContent(text);
+                if (typeof smartScrollToBottom === "function") smartScrollToBottom(scrollContainer);
+            },
+            // Drop the spinner and auto-collapse after the configurable delay.
+            finalize(meta) {
+                const spin = marker.querySelector(".compaction-title-spinner");
+                if (spin) spin.remove();
+                marker.classList.remove("compaction-live");
+                // Auto-collapse after the configured delay (default 3s). 0 = stay open.
+                const settings = (typeof loadSettings === "function" ? loadSettings() : {}) || {};
+                const sec = Number.isFinite(settings.compactionAutoCollapseSec) ? settings.compactionAutoCollapseSec : 3;
+                if (sec > 0) {
+                    setTimeout(() => {
+                        if (dropdown._userToggled) return; // user toggled it — respect that
+                        const wrapper = dropdown.element;
+                        const isOpen = wrapper.open || wrapper.classList.contains("dd-open");
+                        if (isOpen && typeof dropdown.toggleOpen === "function") {
+                            dropdown.toggleOpen(wrapper);
+                        }
+                    }, sec * 1000);
+                }
+            },
+            fail(message) {
+                const spin = marker.querySelector(".compaction-title-spinner");
+                if (spin) spin.remove();
+                if (titleEl) titleEl.textContent = "Compaction Response — failed";
+                dropdown.setContent(`Compaction failed: ${message || "unknown error"}`);
+            },
+            remove() { marker.remove(); },
+        };
+    }
+
+    removeCompactionProgress() {
+        const existing = this.container.querySelectorAll('[data-compaction-progress="1"]');
+        existing.forEach((e) => e.remove());
+    }
+
+    // Dispatch a compaction turn (the request or the response of the pair) to its
+    // renderer. Request and response are related but NOT the same node — the prompt +
+    // boundary live on the request, the summary lives on the response.
+    renderCompactionTurn(turn, shouldScroll = false, branchMap = null) {
+        try {
+            if (turn.identity === "compaction_request") return this._renderCompactionRequestTurn(turn, shouldScroll, branchMap);
+            if (turn.identity === "compaction_response") return this._renderCompactionResponseTurn(turn, shouldScroll, branchMap);
+            return null;
+        } catch (error) {
+            console.error("[RENDER-ERROR] Error rendering compaction turn:", error);
+            return null;
+        }
+    }
+
+    // Render the compaction REQUEST turn live, from the `compaction_start` SSE payload —
+    // the request is already persisted, so this shows it immediately (before the summary
+    // streams). Shapes the payload into the same Turn form the reload path uses.
+    renderLiveCompactionRequest(startData = {}) {
+        const turn = {
+            identity: "compaction_request",
+            turnId: startData.request_turn_id || null,
+            parentTurnId: startData.parent_turn_id || null,
+            messages: [{
+                content: startData.shell || "",
+                debugData: { compaction: {
+                    coveredTurnIds: startData.coveredTurnIds,
+                    keptTurnIds: startData.keptTurnIds,
+                    model: startData.model,
+                    expandedPrompt: startData.expandedPrompt,
+                } },
+            }],
+        };
+        return this._renderCompactionRequestTurn(turn, true);
+    }
+
+    // Mark a live compaction request turn as failed (its summary call errored). The
+    // request stays (it's a real, retryable turn); we just add a failed note.
+    markCompactionRequestFailed(el, message) {
+        if (!el) return;
+        el.classList.add("compaction-failed");
+        if (el.querySelector(".compaction-fail-note")) return;
+        const note = document.createElement("div");
+        note.className = "compaction-fail-note";
+        note.textContent = `Summary failed${message ? `: ${message}` : ""}. Use Edit & Retry to try again.`;
+        const content = el.querySelector(".turn-content") || el;
+        content.appendChild(note);
+    }
+
+    // The compaction REQUEST turn: renders as a tool-style "Compaction Request" dropdown.
+    // Dropdown body = the prompt SHELL (instruction + template; no transcript — that's
+    // appended at send time). Debug panel (+) shows the id lists + the real expanded
+    // prompt (with the transcript). Gets
+    // Edit & Retry (no plain Edit — its content isn't collected; only regenerating the
+    // summary matters).
+    _renderCompactionRequestTurn(turn, shouldScroll = false, branchMap = null) {
+        const msg = turn.messages?.[0] || {};
+        const meta = (msg.debugData && msg.debugData.compaction) || {};
+        const shell = typeof msg.content === "string" ? msg.content : "";
+        const rto = new RenderableTurnObject({
+            identity: "compaction_request",
+            content: "",
+            blocks: [new Block({
+                type: "compaction_request",
+                content: "",
+                metadata: {
+                    shell,
+                    coveredTurnIds: meta.coveredTurnIds,
+                    keptTurnIds: meta.keptTurnIds,
+                    expandedPrompt: meta.expandedPrompt,
+                    model: meta.model,
+                    turnId: turn.turnId,
+                },
+            })],
+            turnId: turn.turnId,
+            parentTurnId: turn.parentTurnId,
+            debugData: { compactionDebug: {
+                role: "request",
+                coveredTurnIds: meta.coveredTurnIds,
+                keptTurnIds: meta.keptTurnIds,
+                model: meta.model,
+                expandedPrompt: meta.expandedPrompt,
+            } },
+        });
+        return this.renderTurn(rto, shouldScroll, branchMap);
+    }
+
+    // The compaction RESPONSE turn is SELF-CONTAINED: its messages are the summary
+    // (first) followed by copies of the kept-tail messages. The dropdown renders both —
+    // summary, then the kept copies — mirroring exactly what the model sees below the
+    // boundary. No lookups above the line. Gets Edit + Retry.
+    _renderCompactionResponseTurn(turn, shouldScroll = false, branchMap = null) {
+        const msgs = Array.isArray(turn.messages) ? turn.messages : [];
+        // The summary message is the compaction_response row; the rest are compaction_kept.
+        const summaryMsg = msgs.find((m) => m.turnType === "compaction_response") || msgs[0] || {};
+        const meta = (summaryMsg.debugData && summaryMsg.debugData.compaction) || {};
+        const summary = typeof summaryMsg.content === "string" ? summaryMsg.content : "";
+        const keptTurns = msgs
+            .filter((m) => m.turnType === "compaction_kept")
+            .map((m) => ({ role: m.role || "user", text: this._plainTextOfContent(m.content) }))
+            .filter((k) => k.text && k.text.trim());
+        const rto = new RenderableTurnObject({
+            identity: "compaction_response",
+            content: "",
+            blocks: [new Block({
+                type: "compaction_response",
+                content: "",
+                metadata: { summary, keptTurns, model: meta.model, turnId: turn.turnId },
+            })],
+            turnId: turn.turnId,
+            parentTurnId: turn.parentTurnId,
+            debugData: { compactionDebug: {
+                role: "response",
+                requestTurnId: meta.requestTurnId,
+                coveredTurnIds: meta.coveredTurnIds,
+                keptTurnIds: meta.keptTurnIds,
+                model: meta.model,
+            } },
+        });
+        return this.renderTurn(rto, shouldScroll, branchMap);
+    }
+
+    // Flatten a message content field (string or multimodal array) to plain text.
+    _plainTextOfContent(content) {
+        if (typeof content === "string") return content;
+        if (Array.isArray(content)) {
+            return content.map((p) => (p && p.type === "text" ? p.text : "")).filter(Boolean).join("\n");
+        }
+        return "";
+    }
+
     // Render individual block based on type. identity ("request" | "response") is passed
     // so chat blocks can apply response-only formatting (blank-line collapse). The live
     // renderer always streams a response, so it passes "response".
@@ -1233,10 +1465,81 @@ class ChatRenderer {
                 return imageDiv;
             }
 
+            case "compaction_request":
+                return this.renderCompactionRequestBlock(metadata);
+
+            case "compaction_response":
+                return this.renderCompactionResponseBlock(metadata);
+
             case "chat":
             default:
                 return this.renderChatBlock(content, identity);
         }
+    }
+
+    // "Compaction Request" tool-style dropdown. Body = the prompt SHELL (instruction +
+    // template; no transcript — appended at send time). Collapsed by default. The
+    // covered/kept detail lives in the turn's debug panel, not here.
+    renderCompactionRequestBlock(metadata = {}) {
+        const meta = metadata || {};
+        const ddId = `compaction_req_${meta.turnId || Math.random().toString(36).slice(2)}`;
+        const covered = Array.isArray(meta.coveredTurnIds) ? meta.coveredTurnIds.length : 0;
+        const badge = covered ? { text: `${covered} turn${covered === 1 ? "" : "s"}`, title: "Turns folded into this summary request" } : null;
+        const dropdown = new StreamingDropdown(ddId, "Compaction Request", "compaction", true, badge);
+        // Show the shell verbatim in a <pre> (it's a prompt, not markdown to render).
+        const inner = dropdown.element.querySelector(".dropdown-inner");
+        if (inner) {
+            inner.classList.add("compaction-body");
+            const pre = document.createElement("pre");
+            pre.className = "compaction-prompt-shell";
+            pre.textContent = meta.shell || "(no prompt)";
+            inner.appendChild(pre);
+        }
+        return dropdown.element;
+    }
+
+    // "Compaction Response" tool-style dropdown. Body = the summary, then the KEPT TAIL
+    // turns after it — mirroring what the model actually receives ([summary] → [tail]).
+    // Collapsed by default on reload.
+    renderCompactionResponseBlock(metadata = {}) {
+        const meta = metadata || {};
+        const ddId = `compaction_res_${meta.turnId || Math.random().toString(36).slice(2)}`;
+        const dropdown = new StreamingDropdown(ddId, "Compaction Response", "compaction", true, null);
+        const inner = dropdown.element.querySelector(".dropdown-inner");
+        if (inner) {
+            inner.classList.add("compaction-body");
+            const sum = document.createElement("div");
+            sum.className = "compaction-summary";
+            const summary = typeof meta.summary === "string" ? meta.summary : "";
+            sum.innerHTML = (typeof formatMessage === "function") ? formatMessage(escapeHtml(summary)) : escapeHtml(summary);
+            inner.appendChild(sum);
+
+            // The kept tail — the recent turns the model keeps verbatim after the summary.
+            const kept = Array.isArray(meta.keptTurns) ? meta.keptTurns : [];
+            if (kept.length) {
+                const wrap = document.createElement("div");
+                wrap.className = "compaction-kept";
+                const h = document.createElement("div");
+                h.className = "compaction-kept-heading";
+                h.textContent = `Kept context (${kept.length} message${kept.length === 1 ? "" : "s"})`;
+                wrap.appendChild(h);
+                for (const k of kept) {
+                    const row = document.createElement("div");
+                    row.className = `compaction-kept-msg role-${(k.role || "user").replace(/[^a-z]/gi, "")}`;
+                    const label = document.createElement("span");
+                    label.className = "compaction-kept-role";
+                    label.textContent = k.role || "user";
+                    const body = document.createElement("span");
+                    body.className = "compaction-kept-text";
+                    body.textContent = k.text;
+                    row.appendChild(label);
+                    row.appendChild(body);
+                    wrap.appendChild(row);
+                }
+                inner.appendChild(wrap);
+            }
+        }
+        return dropdown.element;
     }
 
     // Render thinking block as dropdown
@@ -1759,16 +2062,27 @@ class ChatRenderer {
         retryBtn.textContent = "Retry";
         retryBtn.addEventListener("click", () => this.handleRetryMessage(turnId, identity));
 
-        // Add buttons to container
-        actionButtons.appendChild(editBtn);
+        // Compaction turns behave like normal request/response turns for actions, with
+        // ONE exception: the compaction request has no plain "Edit" (its content — the
+        // prompt shell — isn't user-authored chat; only Edit & Retry, which regenerates
+        // the summary, makes sense). Everything else (Edit & Retry, Retry, branch nav) is
+        // the standard bar.
+        const isRequestLike = identity === "request" || identity === "compaction_request";
+        const isResponseLike = identity === "response" || identity === "compaction_response";
+        const suppressEdit = identity === "compaction_request";
 
-        // Only show "Edit & Retry" for request turns (lets them rephrase and regenerate)
-        if (identity === "request") {
+        // Add buttons to container
+        if (!suppressEdit) {
+            actionButtons.appendChild(editBtn);
+        }
+
+        // "Edit & Retry" for request-like turns (rephrase and regenerate)
+        if (isRequestLike) {
             actionButtons.appendChild(editRetryBtn);
         }
 
-        // Only show "Retry" for response turns (regenerate response)
-        if (identity === "response") {
+        // "Retry" for response-like turns (regenerate)
+        if (isResponseLike) {
             actionButtons.appendChild(retryBtn);
         }
 
@@ -1782,8 +2096,9 @@ class ChatRenderer {
         const rightCluster = document.createElement("div");
         rightCluster.className = "message-actions-right";
 
-        // Add branch navigation to both request and response turns (both can be branched)
-        if ((identity === "request" || identity === "response") && turnId) {
+        // Add branch navigation to request/response turns AND compaction turns (all can
+        // be branched — e.g. Retry on the compaction response makes a sibling summary).
+        if ((isRequestLike || isResponseLike) && turnId) {
             // Branch navigation container
             const branchNav = document.createElement("div");
             branchNav.className = "branch-nav";
@@ -1880,6 +2195,8 @@ class ChatRenderer {
     }
 
     async handleEditAndRetry(turnId, identity) {
+        // Edit & Retry on a compaction request = edit the prompt, then re-run compaction.
+        if (identity === "compaction_request") return this.handleEditRetryCompaction(turnId);
         // Only allow edit & retry for request turns
         if (identity !== "request") {
             return;
@@ -1910,6 +2227,8 @@ class ChatRenderer {
     }
 
     async handleRetryMessage(turnId, identity) {
+        // Retry on a compaction response = re-run the compaction (regenerate the summary).
+        if (identity === "compaction_response") return this.handleRetryCompaction(turnId);
         if (identity !== "response") return;
         if (!turnId) return;
 
@@ -1955,6 +2274,49 @@ class ChatRenderer {
                 if (retryBtn) { retryBtn.textContent = "Retry"; retryBtn.disabled = false; }
             }
         }
+    }
+
+    // Resolve the turn a compaction was made FROM (its anchor) given the compaction
+    // response turn id: response.parent = the request; request.parent = the anchor.
+    async _compactionAnchorFor(responseTurnId) {
+        const history = await getChatHistory(currentChatId);
+        const msgs = history.messages || [];
+        const responseRow = msgs.find((m) => m.turn_id === responseTurnId && m.turn_type === "compaction_response");
+        const requestTurnId = responseRow?.parent_turn_id;
+        const requestRow = msgs.find((m) => m.turn_id === requestTurnId && m.turn_type === "compaction_request");
+        return { anchorTurnId: requestRow?.parent_turn_id || null, requestTurnId };
+    }
+
+    // Retry a compaction response = regenerate ONLY the summary under the SAME request,
+    // producing a new response sibling — exactly like retrying a normal assistant response
+    // makes a new response under the same user turn. The request is untouched, so the
+    // branch happens on the response, not the request.
+    async handleRetryCompaction(responseTurnId) {
+        if (!responseTurnId) return;
+        if (typeof streamManager !== "undefined" && streamManager.isStreaming(currentChatId)) {
+            if (typeof showNotification === "function") showNotification("This action is unavailable during an in-flight response.", "info");
+            return;
+        }
+        const { requestTurnId } = await this._compactionAnchorFor(responseTurnId);
+        if (!requestTurnId) return;
+        if (typeof runCompaction === "function") {
+            await runCompaction(currentChatId, { retryResponseRequestTurnId: requestTurnId });
+        }
+    }
+
+    // Edit & Retry a compaction request = edit the prompt shell, then re-run compaction
+    // with the edited prompt. The folded transcript isn't editable — it's rebuilt from
+    // the covered turns at re-run — so the modal makes that clear.
+    async handleEditRetryCompaction(requestTurnId) {
+        if (!requestTurnId) return;
+        if (typeof streamManager !== "undefined" && streamManager.isStreaming(currentChatId)) {
+            if (typeof showNotification === "function") showNotification("This action is unavailable during an in-flight response.", "info");
+            return;
+        }
+        // Flag this request turn so its edit save routes to a compaction re-run.
+        const turnDiv = document.querySelector(`[data-turn-id="${requestTurnId}"]`);
+        if (turnDiv) turnDiv.dataset.compactionEditRetry = "true";
+        await this.handleEditTurn(requestTurnId, "compaction_request");
     }
 
     // Add visual indicator that message was edited with version navigation
@@ -2864,6 +3226,21 @@ class ChatRenderer {
     async saveTurnEdits(turnDiv, editContainer) {
         const messageContainers = editContainer.querySelectorAll(".editable-message");
         const saveBtn = editContainer.querySelector(".edit-btn-save");
+
+        // Compaction request Edit & Retry: the edited text IS the new prompt shell.
+        // Don't PATCH or run a normal retry — re-run compaction with the edited prompt.
+        if (turnDiv.dataset.compactionEditRetry === "true") {
+            const textarea = editContainer.querySelector(".message-content-textarea");
+            const editedShell = textarea ? textarea.value : "";
+            delete turnDiv.dataset.compactionEditRetry;
+            // Anchor = the turn this compaction was made from = the request turn's parent.
+            const anchorTurnId = turnDiv.dataset.parentTurnId || null;
+            this.exitTurnEditMode(turnDiv);
+            if (typeof runCompaction === "function") {
+                await runCompaction(currentChatId, { anchorTurnId, promptOverride: editedShell });
+            }
+            return;
+        }
 
         try {
             saveBtn.textContent = "Saving...";

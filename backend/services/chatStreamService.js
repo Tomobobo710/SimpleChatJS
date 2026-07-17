@@ -909,7 +909,15 @@ async function processRequest(req, res) {
         }
 
         const { getChatHistoryForAPI } = require('./messageRepository');
-        const messages = getChatHistoryForAPI(chat_id, historyMaxTurnId);
+        const rawMessages = getChatHistoryForAPI(chat_id, historyMaxTurnId);
+
+        // Compaction transform: if this branch has a compaction boundary, drop the
+        // turns it covers and inject the summary in their place. No-op otherwise.
+        const { applyCompaction } = require('./compactionService');
+        const messages = applyCompaction(rawMessages);
+        if (messages.length !== rawMessages.length) {
+            log(`[CHAT-DEBUG] Compaction applied: ${rawMessages.length} -> ${messages.length} messages`);
+        }
 
         log(`[CHAT-DEBUG] Current history count: ${messages.length}`);
 

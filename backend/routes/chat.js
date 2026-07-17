@@ -4,6 +4,8 @@ const { db } = require("../config/database");
 const { processRequest, cancelInFlightRequest, flagSteerBreak } = require("../services/chatStreamService");
 const { saveMessage, setMessageDebugByTurn } = require("../services/messageRepository");
 const { getTurnInfo, deleteBranchSelections, loadBranchSelections, saveBranchSelections } = require("../services/turnService");
+const { compactChat, retryCompactionResponse } = require("../services/compactionService");
+const { initializeToolEvents } = require("../services/toolEventService");
 const { log } = require("../utils/logger");
 
 const router = express.Router();
@@ -298,6 +300,57 @@ router.post("/message", async (req, res) => {
         res.json({ success: true, turn_id: turnInfo.turn_id, parent_turn_id: turnInfo.parent_turn_id });
     } catch (error) {
         log("[UPDATE-DEBUG] Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Compact a chat's context (summarize-only). Body: { chat_id, anchor_turn_id, request_id }.
+// Keep-tail mode/budget and token-estimation knobs come from the active settings profile;
+// compactChat reads them. Returns the persisted compaction record for the client to reload.
+router.post("/chat/compact", async (req, res) => {
+    try {
+        const { chat_id, anchor_turn_id, request_id, prompt_override } = req.body || {};
+        if (!chat_id) {
+            return res.status(400).json({ error: "chat_id is required" });
+        }
+        // Request-scoped SSE channel: the client passes a request_id, opens an
+        // EventSource on /api/tools/:request_id, and receives compaction_start /
+        // compaction_delta / compaction_done events so it can stream the summary live.
+        const requestId = request_id || ('cmp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
+        initializeToolEvents(requestId);
+        const result = await compactChat(chat_id, {
+            anchorTurnId: anchor_turn_id || null,
+            requestId,
+            promptOverride: prompt_override || null,
+        });
+        if (!result.ok) {
+            return res.status(200).json({ success: false, reason: result.reason, request_id: requestId });
+        }
+        res.json({ success: true, record: result.record, request_id: requestId });
+    } catch (error) {
+        log("[COMPACT] Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Retry a compaction RESPONSE: regenerate only the summary under an EXISTING compaction
+// request (a new response sibling — the request is untouched). Body: { chat_id,
+// request_turn_id, request_id }. Streams over the same /api/tools SSE channel.
+router.post("/chat/compact/retry-response", async (req, res) => {
+    try {
+        const { chat_id, request_turn_id, request_id } = req.body || {};
+        if (!chat_id || !request_turn_id) {
+            return res.status(400).json({ error: "chat_id and request_turn_id are required" });
+        }
+        const requestId = request_id || ('cmp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
+        initializeToolEvents(requestId);
+        const result = await retryCompactionResponse(chat_id, { requestTurnId: request_turn_id, requestId });
+        if (!result.ok) {
+            return res.status(200).json({ success: false, reason: result.reason, request_id: requestId });
+        }
+        res.json({ success: true, record: result.record, request_id: requestId });
+    } catch (error) {
+        log("[COMPACT] Retry-response error:", error);
         res.status(500).json({ error: error.message });
     }
 });

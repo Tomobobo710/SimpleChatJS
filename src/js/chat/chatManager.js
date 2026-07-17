@@ -345,7 +345,11 @@ function groupMessagesByTurn(messages) {
     return Array.from(groups.entries())
         .map(([key, msgs]) => {
             const [turnId, parentTurnId] = key.split("::");
-            const identity = msgs.length > 0 ? (msgs[0].turn_type || null) : null;
+            // Identity is the turn's type. A compaction_response turn also contains
+            // compaction_kept copies (same turn_id); if one of those sorts first, don't
+            // let it hijack the identity — the response is identified by its summary row.
+            const summaryRow = msgs.find((m) => m.turn_type === "compaction_response");
+            const identity = summaryRow ? "compaction_response" : (msgs.length > 0 ? (msgs[0].turn_type || null) : null);
             return new Turn(
                 msgs.map((m) => Message.fromObject(m)),
                 turnId,
@@ -386,6 +390,10 @@ function buildRenderedTurns(allTurns, chatId) {
 function walkActiveBranch(allTurns, chatId) {
     const scopeKey = (parentKey) => `${chatId}::${parentKey}`;
 
+    // A compaction record threads inline at the tip: its parent is the branch's
+    // terminal turn, and the next user turn parents onto the compaction turn. So it
+    // IS a walked lineage node (excluding it would break the chain to post-compaction
+    // turns). The render loop renders it as a marker instead of a normal turn.
     const childrenByParent = new Map();
     for (const turn of allTurns) {
         const parentKey = turn.parentTurnId || "root";
@@ -553,9 +561,16 @@ async function loadChatHistory(chatId) {
         const renderedTurns = buildRenderedTurns(allTurns, chatId);
         const branchMap = buildBranchMap(allTurns, chatId);
 
-        // Debug data rides on each message (message.debugData) and is assembled by
-        // Turn.renderable() — no separate fetch/join needed.
+        // A compaction is a request/response PAIR of turns (walked inline at the tip);
+        // each renders as its own dropdown turn. The response turn is self-contained —
+        // its messages are the summary + copied kept-tail messages (they share its
+        // turn_id, so groupMessagesByTurn folds them into this one turn) — so it needs no
+        // lookup above the boundary.
         renderedTurns.forEach((turn) => {
+            if (turn.identity === "compaction_request" || turn.identity === "compaction_response") {
+                chatRenderer.renderCompactionTurn(turn, false, branchMap);
+                return;
+            }
             chatRenderer.renderTurn(turn.renderable(), false, branchMap);
         });
 

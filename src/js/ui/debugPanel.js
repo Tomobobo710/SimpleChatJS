@@ -13,6 +13,12 @@ class DebugPanel {
             return '<div class="debug-panel"><p>No debug data available</p></div>';
         }
 
+        // Compaction turns: show the boundary (covered/kept turn id lists) and, for the
+        // request, the real expanded prompt that was sent to the model.
+        if (debugData.compactionDebug) {
+            return this.renderCompactionDebug(debugData.compactionDebug);
+        }
+
         // Handle request debug data (sequence format from backend)
         if (debugData.sequence && !debugData.request) {
             return this.renderRequestDebugData(debugData);
@@ -312,6 +318,30 @@ class DebugPanel {
 
         html += '</div>';
         return html;
+    }
+
+    // Compaction debug: the boundary (covered/kept turn id lists) plus, for the request,
+    // the real expanded prompt sent to the model.
+    renderCompactionDebug(d) {
+        const esc = (s) => String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const idList = (arr) => {
+            if (!Array.isArray(arr) || arr.length === 0) return '(none)';
+            return `${arr.length} turn(s): ${arr.map(esc).join(', ')}`;
+        };
+        let content = '<div class="debug-panel">';
+        content += `<h3>Compaction ${d.role === 'request' ? 'Request' : 'Response'} Debug</h3>`;
+        if (d.role === 'response' && d.requestTurnId) {
+            content += `<div class="debug-note">Request turn: ${esc(d.requestTurnId)}</div>`;
+        }
+        content += `<div class="debug-section"><div class="debug-section-title">coveredTurnIds</div><div class="debug-note">${idList(d.coveredTurnIds)}</div></div>`;
+        content += `<div class="debug-section"><div class="debug-section-title">keptTurnIds</div><div class="debug-note">${idList(d.keptTurnIds)}</div></div>`;
+        if (d.model) content += `<div class="debug-note">Model: ${esc(d.model)}</div>`;
+        // The request carries the real expanded prompt (transcript included).
+        if (d.expandedPrompt) {
+            content += this.createDropdown('Expanded prompt sent to model', d.expandedPrompt, false, 'text');
+        }
+        content += '</div>';
+        return content;
     }
 
     createDropdown(title, content, isExpanded = false, contentType = 'text') {

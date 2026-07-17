@@ -7,6 +7,41 @@ const { getUserdataPath } = require('../utils/pathUtils');
 // Default system prompt constant
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. If the previous query requires you to use tools, do so. Otherwise, just chat with the user in a friendly manner.';
 
+// Default compaction prompt TEMPLATE — the instruction/template/rules block used when
+// summarizing a chat. User-editable in the System tab (compactionPromptTemplate). The
+// dynamic head ("Create/Update a summary…") and the <conversation-history> wrapper are
+// added around this by the compaction service; this is the editable middle.
+const DEFAULT_COMPACTION_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+<template>
+## Objective
+- [one or two brief sentences describing what the user is trying to accomplish]
+
+## Important Details
+- [constraints/preferences, decisions and why, important facts/assumptions, exact context needed to continue, or "(none)"]
+
+## Work State
+### Completed
+- [finished work, verified facts, or changes made; otherwise "(none)"]
+
+### Active
+- [current work, partial changes, or investigation state; otherwise "(none)"]
+
+### Blocked
+- [blockers, failing commands, or unknowns; otherwise "(none)"]
+
+## Next Move
+1. [immediate concrete action, or "(none)"]
+
+## Relevant Files
+- [file or directory path: why it matters, or "(none)"]
+</template>
+
+Rules:
+- Keep every section, even when empty.
+- Use terse bullets, not prose paragraphs.
+- Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers when known.
+- Do not mention the summary process or that context was compacted.`;
+
 // Current settings in memory
 let currentSettings = {
     apiUrl: 'http://127.0.0.1:11434/v1',
@@ -46,6 +81,14 @@ function getDefaultProfileSettings() {
         reasoningFormatLlama: 'auto',
         enableSystemPrompt: true,
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        // Context compaction (summarize-only)
+        autoCompactOnOverflow: false, // compact + retry when a request overflows context
+        compactionAutoCollapseSec: 3, // auto-collapse the response dropdown after N s (0 = never)
+        // Keep the last N turns verbatim; fold everything older into the summary. Keep UP
+        // TO N (fewer if the chat is shorter); 0 keeps none. Default 4.
+        compactionKeepTurns: 4,
+        // The editable compaction prompt template (System tab).
+        compactionPromptTemplate: DEFAULT_COMPACTION_TEMPLATE,
         shell: 'bash', // resolved at init time if not present
         defaultCwd: '',
         envToggles: {
@@ -293,5 +336,6 @@ module.exports = {
     updateActiveProfile,
     
     // Constants
-    DEFAULT_SYSTEM_PROMPT
+    DEFAULT_SYSTEM_PROMPT,
+    DEFAULT_COMPACTION_TEMPLATE
 };

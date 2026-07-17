@@ -142,15 +142,28 @@ function buildMessageContentFromInput() {
     return messageContent;
 }
 
-// Handle sending a message
-async function onSubmitRequest() {
-    const messageContent = buildMessageContentFromInput();
-    if (messageContent === null) return;
+// Handle sending a message.
+// `retryContent` / `retryAfterCompact` are used only by the auto-compact retry path:
+// the message content was already built and the input cleared on the first attempt, so
+// the retry re-sends `retryContent` verbatim rather than re-reading the (empty) input.
+async function onSubmitRequest(retryContent = null, retryAfterCompact = false) {
+    // Slash commands (e.g. "/compact") run instead of being sent to the model. Skipped
+    // on the auto-compact retry (the content is already a plain message, not a command).
+    if (!retryAfterCompact && typeof maybeRunSlashCommand === "function" && await maybeRunSlashCommand()) {
+        return;
+    }
 
-    // Clear input and files, show loading
-    messageInput.value = "";
-    clearSelectedImages();
-    clearSelectedDocuments();
+    const messageContent = retryAfterCompact ? retryContent : buildMessageContentFromInput();
+    if (messageContent === null) return;
+    // Kept so the auto-compact catch can retry with the exact same content.
+    const preservedContent = messageContent;
+
+    // Clear input and files, show loading (skip on retry — already cleared).
+    if (!retryAfterCompact) {
+        messageInput.value = "";
+        clearSelectedImages();
+        clearSelectedDocuments();
+    }
     setLoading(true);
 
     try {
@@ -211,12 +224,58 @@ async function onSubmitRequest() {
         });
         await turnRequest.execute();
     } catch (error) {
+        // Auto-compact on context overflow: if the request failed because it exceeded
+        // the model's context limit and the user enabled auto-compact, compact this
+        // chat and retry the same message once. Guarded by _autoCompactRetried so a
+        // second overflow (compaction didn't free enough) surfaces normally.
+        if (!retryAfterCompact && isContextOverflowError(error) && autoCompactEnabled()) {
+            logger.info(`[AUTO-COMPACT] Context overflow detected — compacting and retrying once.`);
+            try {
+                const anchorTurnId = await getActiveTerminalTurnId(currentChatId);
+                const result = await runCompaction(currentChatId, { anchorTurnId });
+                if (result && result.success) {
+                    // runCompaction already reloaded the chat. Retry the identical
+                    // message; the compaction boundary now trims history.
+                    return await onSubmitRequest(preservedContent, true);
+                }
+                logger.warn(`[AUTO-COMPACT] Compaction did not run (${result?.reason}); surfacing original error.`);
+            } catch (compactErr) {
+                logger.error("[AUTO-COMPACT] Compaction attempt failed:", compactErr);
+            }
+        }
         logger.error("Unexpected error in message submission:", error);
         showError(`Failed to send message: ${error.message}`);
     } finally {
         streamManager.refreshSendButton();
         messageInput.focus();
     }
+}
+
+// True if this settings profile wants auto-compaction on context overflow.
+function autoCompactEnabled() {
+    const settings = window.cachedSettings() || {};
+    return settings.autoCompactOnOverflow === true;
+}
+
+// Heuristic: does this error look like a provider context-length overflow? We have no
+// structured signal (see compactionService notes), so match the common phrasings and
+// the 413 status across OpenAI/llama-server/Anthropic/Google.
+function isContextOverflowError(error) {
+    if (!error) return false;
+    if (error.httpStatus === 413) return true;
+    const text = `${error.errorText || ""} ${error.message || ""}`.toLowerCase();
+    if (!text) return false;
+    return (
+        text.includes("context length") ||
+        text.includes("context window") ||
+        text.includes("maximum context") ||
+        text.includes("too many tokens") ||
+        text.includes("exceed") && text.includes("context") ||
+        text.includes("prompt is too long") ||
+        text.includes("reduce the length") ||
+        text.includes("n_ctx") ||
+        text.includes("context size")
+    );
 }
 
 // Queue a steer for the currently-viewed chat. The steer is persisted (backend

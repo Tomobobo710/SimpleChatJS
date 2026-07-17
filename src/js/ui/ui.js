@@ -118,17 +118,23 @@ function setupEventListeners() {
     };
     sendBtn.addEventListener('click', dispatchSendButton);
 
-    // Enter key to send (Shift+Enter for new line)
+    // Enter key to send (Shift+Enter for new line). The slash-command palette gets
+    // first crack at navigation/completion keys and consumes them when open.
     messageInput.addEventListener('keydown', function(e) {
+        if (typeof handleSlashKeydown === "function" && handleSlashKeydown(e)) {
+            return;
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             dispatchSendButton();
         }
     });
 
-    // Keep the button in sync (Stop⇄Steer) as the user types while streaming.
+    // Keep the button in sync (Stop⇄Steer) as the user types while streaming, and
+    // drive the slash-command palette off the current input value.
     messageInput.addEventListener('input', () => {
         if (typeof streamManager !== "undefined") streamManager.refreshSendButton();
+        if (typeof handleSlashInput === "function") handleSlashInput();
     });
     
     // Settings modal (old settings button removed from sidebar, kept for compatibility)

@@ -120,6 +120,7 @@
                     <button class="btn btn-tab" data-tab="system">System</button>
                     <button class="btn btn-tab" data-tab="thinking">Thinking</button>
                     <button class="btn btn-tab" data-tab="tools">Tools</button>
+                    <button class="btn btn-tab" data-tab="tokens">Tokens</button>
                     <button class="btn btn-tab" data-tab="mcp">MCP</button>
                     <button class="btn btn-tab" data-tab="debug">Debug</button>
                     <button class="btn btn-tab" data-tab="logging">Logging</button>
@@ -217,6 +218,15 @@
                             <label for="defaultCwdInput">Working directory (freeform chats):</label>
                             <input type="text" id="defaultCwdInput" placeholder="Leave blank to use user home directory" />
                         </div>
+                    </div>
+
+                    <!-- Compaction Prompt Section -->
+                    <div class="settings-section compaction-prompt-section">
+                        <h3>Compaction Prompt</h3>
+                        <p class="setting-description">The instructions sent to the AI when compacting a chat (via <code>/compact</code> or auto-compact). SimpleChat wraps this with a "summarize the conversation" line and the conversation history — you're editing the template/rules in between. Leave it blank to use the built-in default.</p>
+                        <label for="compactionPromptTemplate">Compaction prompt template:</label>
+                        <textarea id="compactionPromptTemplate" rows="10" placeholder="Uses the built-in default when blank..."></textarea>
+                        <button id="resetCompactionPromptBtn" class="btn-secondary" type="button">Reset to default</button>
                     </div>
                 </div>
 
@@ -449,6 +459,29 @@
                     </div>
                 </div>
 
+                <!-- Tokens Tab -->
+                <div id="tokensTab" class="tab-content">
+                    <div class="settings-section">
+                        <h3>Context Compaction</h3>
+                        <p class="setting-description">Compaction shrinks a long conversation so it keeps fitting in the model's context window: older turns are replaced with an AI-written summary, while recent turns are kept verbatim. You can compact any chat on demand with the <code>/compact</code> command in the message box.</p>
+
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="autoCompactOnOverflow" />
+                            <label for="autoCompactOnOverflow">Auto-Compact when over context limit</label>
+                        </div>
+                        <p class="setting-description">When a request fails because it exceeded the model's context limit, automatically compact this chat, then retry the request once.</p>
+
+                        <label for="compactionKeepTurns">Keep recent turns (count):</label>
+                        <input type="number" id="compactionKeepTurns" min="0" step="1" placeholder="4" />
+                        <p class="setting-description">When you compact, the most recent turns are kept verbatim and everything older is folded into the summary. Keeps up to this many turns (fewer if the chat is shorter). Set to 0 to keep none. Default 4.</p>
+
+                        <h4>Display</h4>
+                        <label for="compactionAutoCollapseSec">Auto-collapse response after (seconds):</label>
+                        <input type="number" id="compactionAutoCollapseSec" min="0" step="1" placeholder="3" />
+                        <p class="setting-description">After a compaction summary finishes streaming, its dropdown auto-collapses after this many seconds. Set to 0 to keep it open.</p>
+                    </div>
+                </div>
+
                 <div id="mcpTab" class="tab-content">
                     <div class="settings-section">
                         <div class="mcp-controls">
@@ -568,6 +601,7 @@
     <!-- UI components -->
     <script src="src/js/ui/debugPanel.js"></script>
     <script src="src/js/ui/settings.js"></script>
+    <script src="src/js/ui/slashCommands.js"></script>
     <script src="src/js/ui/ui.js"></script>
     <script src="src/js/ui/contextMenu.js"></script>
     

@@ -237,6 +237,45 @@ async function getChatProjectPath(chatId) {
     }
     return null;
 }
+// Compact a chat's context (summarize-only). anchorTurnId restricts to the active
+// branch lineage (pass the terminal turn). Keep-mode/budget + estimation knobs live in
+// the settings profile (read server-side). Returns { success, record } or
+// { success:false, reason }.
+async function compactChatContext(chatId, { anchorTurnId = null, requestId = null, promptOverride = null } = {}) {
+    const response = await fetch(`${API_BASE}/api/chat/compact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            chat_id: chatId,
+            anchor_turn_id: anchorTurnId,
+            request_id: requestId,
+            prompt_override: promptOverride,
+        }),
+    });
+    if (!response.ok) {
+        let msg = `HTTP ${response.status}`;
+        try { const j = await response.json(); msg = j.error || msg; } catch (_) {}
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
+// Retry a compaction RESPONSE: regenerate the summary under an existing request turn.
+// Returns { success, record } or { success:false, reason }.
+async function retryCompactionResponse(chatId, { requestTurnId, requestId = null } = {}) {
+    const response = await fetch(`${API_BASE}/api/chat/compact/retry-response`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, request_turn_id: requestTurnId, request_id: requestId }),
+    });
+    if (!response.ok) {
+        let msg = `HTTP ${response.status}`;
+        try { const j = await response.json(); msg = j.error || msg; } catch (_) {}
+        throw new Error(msg);
+    }
+    return await response.json();
+}
+
 // Stream response reader
 async function* streamResponse(response) {
     const reader = response.body.getReader();

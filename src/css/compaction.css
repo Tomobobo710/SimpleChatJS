@@ -1,0 +1,143 @@
+/* Compaction feature — the compaction turn and the slash-command palette. */
+
+/* ---- Compaction turn ----
+   A compaction turn is a first-class turn rendered through renderTurn with the normal
+   request/response frame. No extra edge accent — it looks like a regular turn. */
+.turn.compaction-turn .turn-content {
+    /* The dropdown is the whole content; kill the bubble's default text padding feel. */
+    gap: 0;
+}
+
+/* The dropdown reuses .streaming-dropdown; give the compaction type a purple accent
+   (distinct from thinking=blue / tool=grey / error=red). */
+.compaction-dropdown .dropdown-toggle {
+    background: var(--bg-panel);
+}
+.compaction-dropdown .dropdown-title {
+    color: var(--accent-purple);
+    font-weight: 600;
+}
+
+/* Spinner shown inside the live compaction dropdown's title while the summary streams. */
+.compaction-dropdown .dropdown-title .compaction-title-spinner {
+    border-top-color: var(--accent-purple);
+    margin-right: 6px;
+    width: 9px;
+    height: 9px;
+}
+/* While streaming, the summary text is the primary content — give the body a little
+   more resting height so the user can watch it fill in. */
+.compaction-live .streaming-dropdown .dropdown-content {
+    max-height: 320px;
+}
+
+/* ---- Compaction dropdown body ---- */
+/* Summary (response dropdown) — rendered like chat content. */
+.compaction-body .compaction-summary {
+    font-size: 0.92em;
+    line-height: 1.5;
+}
+/* Kept tail shown in the response dropdown, after the summary — mirrors what the model
+   sees ([summary] → [kept turns]). */
+.compaction-body .compaction-kept {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-subtle);
+}
+.compaction-body .compaction-kept-heading {
+    color: var(--text-dim);
+    font-size: 0.82em;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+.compaction-body .compaction-kept-msg {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 0.88em;
+    line-height: 1.4;
+}
+.compaction-body .compaction-kept-role {
+    flex: 0 0 auto;
+    min-width: 64px;
+    color: var(--text-muted);
+    font-variant: small-caps;
+    font-weight: 600;
+}
+.compaction-body .compaction-kept-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-soft);
+}
+
+/* A compaction request whose summary call failed — the request stays, retryable. */
+.turn.compaction-failed .compaction-fail-note {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(255, 68, 68, 0.12);
+    border: 1px solid var(--accent-red);
+    color: var(--accent-red);
+    font-size: 0.85em;
+}
+
+/* Prompt shell (request dropdown) — shown verbatim, with the placeholder intact. */
+.compaction-body .compaction-prompt-shell {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 0.82em;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-soft);
+}
+
+/* ---- Slash-command palette ---- */
+.slash-command-popup {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(100% + 6px); /* float above the input row */
+    z-index: 50;
+    max-height: 260px;
+    overflow-y: auto;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    padding: 4px;
+}
+
+.slash-command-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.slash-command-item:hover,
+.slash-command-item.selected {
+    background: var(--navy-select);
+}
+.slash-command-name {
+    color: var(--text);
+    font-family: monospace;
+    font-size: 0.95em;
+}
+.slash-command-args {
+    color: var(--text-faint);
+    font-weight: normal;
+}
+.slash-command-desc {
+    color: var(--text-dim);
+    font-size: 0.82em;
+    margin-top: 2px;
+}
+
+/* The input container must be a positioning context so the popup anchors to it. */
+#inputContainer,
+.input-container {
+    position: relative;
+}

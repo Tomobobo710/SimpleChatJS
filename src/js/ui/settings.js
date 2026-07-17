@@ -145,6 +145,13 @@ async function loadSettingsIntoModal() {
         document.getElementById('envToggleDate').checked = envToggles.date !== false;
         document.getElementById('defaultCwdInput').value = settings.defaultCwd || '';
 
+        // Compaction (Tokens tab)
+        document.getElementById('autoCompactOnOverflow').checked = settings.autoCompactOnOverflow === true;
+        document.getElementById('compactionKeepTurns').value =
+            Number.isFinite(settings.compactionKeepTurns) ? settings.compactionKeepTurns : 4;
+        document.getElementById('compactionAutoCollapseSec').value =
+            Number.isFinite(settings.compactionAutoCollapseSec) ? settings.compactionAutoCollapseSec : 3;
+
         // Hook up the Detect button (idempotent — safe to re-bind each load)
         const detectBtn = document.getElementById('detectShellBtn');
         if (detectBtn && !detectBtn.dataset.bound) {
@@ -208,6 +215,8 @@ async function handleSaveSettings() {
         // System prompt settings
         enableSystemPrompt: document.getElementById('enableSystemPrompt').checked,
         systemPrompt: document.getElementById('systemPrompt').value.trim(),
+        // Compaction prompt template (blank → backend uses the built-in default).
+        compactionPromptTemplate: document.getElementById('compactionPromptTemplate').value.trim(),
 
         // Env context toggles + freeform working directory
         envToggles: {
@@ -216,7 +225,18 @@ async function handleSaveSettings() {
             shell: document.getElementById('envToggleShell').checked,
             date: document.getElementById('envToggleDate').checked
         },
-        defaultCwd: document.getElementById('defaultCwdInput').value.trim()
+        defaultCwd: document.getElementById('defaultCwdInput').value.trim(),
+
+        // Context compaction (Tokens tab)
+        autoCompactOnOverflow: document.getElementById('autoCompactOnOverflow').checked,
+        compactionKeepTurns: (() => {
+            const v = parseInt(document.getElementById('compactionKeepTurns').value, 10);
+            return Number.isFinite(v) && v >= 0 ? v : 4;
+        })(),
+        compactionAutoCollapseSec: (() => {
+            const v = parseInt(document.getElementById('compactionAutoCollapseSec').value, 10);
+            return Number.isFinite(v) && v >= 0 ? v : 3;
+        })()
     };
 
     // Resolve shell: 'auto' becomes a concrete name before saving; concrete
@@ -906,10 +926,22 @@ function loadSystemPromptSettings(settings) {
     const enableSystemPrompt = document.getElementById('enableSystemPrompt');
     const systemPrompt = document.getElementById('systemPrompt');
     const systemPromptGroup = document.getElementById('systemPromptGroup');
-    
+
     enableSystemPrompt.checked = settings.enableSystemPrompt;
     systemPrompt.value = settings.systemPrompt;
     systemPromptGroup.style.display = enableSystemPrompt.checked ? 'block' : 'none';
+
+    // Compaction prompt template (same System tab).
+    const compactionPrompt = document.getElementById('compactionPromptTemplate');
+    if (compactionPrompt) {
+        compactionPrompt.value = settings.compactionPromptTemplate || '';
+        const resetBtn = document.getElementById('resetCompactionPromptBtn');
+        if (resetBtn && !resetBtn.dataset.bound) {
+            resetBtn.dataset.bound = '1';
+            // Blank = use the built-in default (backend falls back). Reset clears it.
+            resetBtn.addEventListener('click', () => { compactionPrompt.value = ''; });
+        }
+    }
 }
 
 // Setup event handlers for system prompt controls
