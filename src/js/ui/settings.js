@@ -86,6 +86,9 @@ async function loadSettingsIntoModal() {
         adapterTypeSelect.dataset.userSet = '0';
         debugPanelsInput.checked = settings.debugPanels;
         systemBlocksInput.checked = settings.showSystemBlocks;
+        document.getElementById('injectErrorSystemMessage').checked = settings.injectErrorSystemMessage === true;
+        document.getElementById('shellTimeoutSec').value =
+            Number.isFinite(settings.shellTimeoutSec) ? settings.shellTimeoutSec : 360;
 
         // Provider-specific thinking mode settings
         loadProviderThinkingSettings(settings);
@@ -117,9 +120,10 @@ async function loadSettingsIntoModal() {
         document.getElementById('st-output-limit').value =
             Number.isFinite(simpleConfig.output_limit_kb) ? simpleConfig.output_limit_kb : 99;
 
-        // Per-tool display preferences (auto expand / auto collapse)
+        // Per-tool display preferences (auto expand / auto collapse). Lives in both
+        // the Tools tab (built-in tools) and the Thinking tab (thinking dropdown).
         const toolDisplay = settings.toolDisplay || {};
-        document.querySelectorAll('#toolsTab .tool-display-opts').forEach(el => {
+        document.querySelectorAll('#toolsTab .tool-display-opts, #thinkingTab .tool-display-opts').forEach(el => {
             const d = toolDisplay[el.dataset.tool] || {};
             el.querySelector('.td-expand').checked = d.autoExpand !== false;
             el.querySelector('.td-collapse').checked = d.autoCollapse !== false;
@@ -196,6 +200,11 @@ async function handleSaveSettings() {
         adapterType: document.getElementById('adapterType').value,
         debugPanels: debugPanelsInput.checked,
         showSystemBlocks: systemBlocksInput.checked,
+        injectErrorSystemMessage: document.getElementById('injectErrorSystemMessage').checked,
+        shellTimeoutSec: (() => {
+            const v = parseInt(document.getElementById('shellTimeoutSec').value, 10);
+            return Number.isFinite(v) && v > 0 ? v : 360;
+        })(),
         // Provider-specific thinking settings
         enableThinkingAnthropic: enableThinkingAnthropic.checked,
         thinkingModeAnthropic: document.getElementById('thinkingModeAnthropic').value,
@@ -252,9 +261,10 @@ async function handleSaveSettings() {
     settings.shell = shellToSave;
 
     // Per-tool display preferences. Seed from existing settings so the MCP modal's
-    // 'mcp' key (managed separately) isn't dropped, then overwrite the built-in tools.
+    // 'mcp' key (managed separately) isn't dropped, then overwrite the built-in tools
+    // (Tools tab) and the thinking dropdown (Thinking tab).
     settings.toolDisplay = { ...((window.cachedSettings() || {}).toolDisplay || {}) };
-    document.querySelectorAll('#toolsTab .tool-display-opts').forEach(el => {
+    document.querySelectorAll('#toolsTab .tool-display-opts, #thinkingTab .tool-display-opts').forEach(el => {
         const sec = parseInt(el.querySelector('.td-collapse-sec').value, 10);
         settings.toolDisplay[el.dataset.tool] = {
             autoExpand: el.querySelector('.td-expand').checked,

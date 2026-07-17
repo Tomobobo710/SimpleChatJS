@@ -111,7 +111,7 @@ function cancelInFlightRequest(requestId) {
                     log(`[CANCEL] Failed to save user_stopped debug data: ${debugError.message}`);
                 }
             }
-            if (streamedSoFar && streamedSoFar.trim() !== "") {
+            if (streamedSoFar && streamedSoFar.trim() !== "" && getCurrentSettings().injectErrorSystemMessage === true) {
                 await saveMessage(state.chatId, { role: "system", content: "Generation stopped by user." }, state.turnInfo);
             }
             log(`[CANCEL] Saved user_stopped for requestId=${requestId}`);
@@ -371,7 +371,7 @@ async function executeStreamingLoop(
                         log(`[ERROR-HANDLING] Failed to save connection error debug data: ${debugError.message}`);
                     }
                 }
-                if (streamedSoFar && streamedSoFar.trim() !== "") {
+                if (streamedSoFar && streamedSoFar.trim() !== "" && getCurrentSettings().injectErrorSystemMessage === true) {
                     await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, turnInfo);
                 }
                 log(`[ERROR-HANDLING] Saved connection error`);
@@ -664,7 +664,7 @@ saveMessage(chatId, errorMessage, turnInfo, "connection_error")
                             log(`[ERROR-HANDLING] Failed to save connection error debug data: ${error.message}`);
                         }
                     }
-                    if (streamedSoFar && streamedSoFar.trim() !== "") {
+                    if (streamedSoFar && streamedSoFar.trim() !== "" && getCurrentSettings().injectErrorSystemMessage === true) {
                     await saveMessage(chatId, { role: "system", content: "Connection error while receiving response." }, turnInfo);
                     }
                     log(`[ERROR-HANDLING] Saved connection error`);
@@ -797,7 +797,9 @@ async function executeToolCallsAndContinue(
                         data: { id: toolCall.id, name: toolCall.function.name, stream, chunk }
                     })
                     : undefined;
-                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd, onChunk });
+                const settings = getCurrentSettings();
+                const defaultTimeoutSec = Number.isFinite(settings.shellTimeoutSec) ? settings.shellTimeoutSec : 360;
+                toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd, onChunk, defaultTimeoutSec });
             } else {
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd });
             }
@@ -939,7 +941,8 @@ async function processRequest(req, res) {
 
         // Merge SimpleTools definitions
         const simpleConfig = simpleTools.loadConfig();
-        const simpleDefs = simpleTools.getToolDefinitions(shellInfo, simpleConfig);
+        const shellTimeoutSec = Number.isFinite(currentSettings.shellTimeoutSec) ? currentSettings.shellTimeoutSec : 360;
+        const simpleDefs = simpleTools.getToolDefinitions(shellInfo, simpleConfig, shellTimeoutSec);
         for (const def of simpleDefs) {
             if (simpleTools.isToolEnabled(def.name, simpleConfig)) {
                 tools.push({

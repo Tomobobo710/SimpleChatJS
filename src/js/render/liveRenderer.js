@@ -34,10 +34,12 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
             continue;
         }
         
-        // If block content has changed (or codeblock streaming state changed), update
+        // If block content has changed (or codeblock streaming state / thinking
+        // completion changed), update.
         const contentChanged = currentBlock.content !== renderedBlock.content;
         const streamingChanged = currentBlock.type === 'codeblock' && currentBlock.metadata?.isStreaming !== renderedBlock.metadata?.isStreaming;
-        if (contentChanged || streamingChanged) {
+        const thinkingCompletedChanged = currentBlock.type === 'thinking' && currentBlock.isComplete !== renderedBlock.isComplete;
+        if (contentChanged || streamingChanged || thinkingCompletedChanged) {
             const blockElement = tempContainer._blockElements[i];
             if (blockElement) {
                 logger.debug(`[LIVE-RENDER] Updating content for ${currentBlock.type} block ${i}`);
@@ -70,6 +72,11 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                     // code going through the SAME renderStreamingCode the main blocks use.
                     const dropdownInner = blockElement.querySelector('.dropdown-inner');
                     if (dropdownInner) renderThinkingInto(dropdownInner, currentBlock.content);
+                    // Arm auto-collapse.
+                    const inst = blockElement._streamingDropdownInstance;
+                    if (inst && typeof armThinkingCollapse === 'function') {
+                        armThinkingCollapse(inst, { isComplete: currentBlock.isComplete, thinkingDoneAt: currentBlock.thinkingDoneAt });
+                    }
                 } else if (currentBlock.type === 'codeblock') {
                     // The language label tab may not have existed at first render
                     // (``` streams a beat before the language word). Add/sync it now

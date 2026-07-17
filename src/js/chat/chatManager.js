@@ -167,6 +167,7 @@ async function loadChatList() {
             // Reconnect after the history renders so an in-flight live turn re-attaches
             // (switchToChat does this; the restore path must too).
             await loadChatHistory(currentChatId);
+            restoreDraftForCurrentChat();
             streamManager.reconnectStreaming(currentChatId);
         }
         streamManager.reapplyIndicators();
@@ -318,18 +319,41 @@ function selectChat(chatId) {
 async function switchToChat(chatId) {
     if (chatId === currentChatId) return;
 
+    saveDraftForCurrentChat();
     currentChatId = chatId;
     selectChat(chatId);
     fetch(`${API_BASE}/api/ui-state`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ last_chat_id: chatId }) });
 
     // Load chat history
     await loadChatHistory(chatId);
+    restoreDraftForCurrentChat();
 
     streamManager.reconnectStreaming(chatId);
     streamManager.refreshSendButton();
 
     // Focus input
     messageInput.focus();
+}
+
+// Save the message-input textarea's current text as chatId's draft (or clear it
+// if empty), so it comes back when the user returns to this chat — locally right
+// away, and persisted server-side so it survives an app restart.
+function saveDraftForCurrentChat() {
+    if (!currentChatId || !messageInput) return;
+    const chatId = currentChatId;
+    const text = messageInput.value;
+    if (text) {
+        chatDrafts.set(chatId, text);
+    } else {
+        chatDrafts.delete(chatId);
+    }
+    saveChatDraft(chatId, text).catch(() => {});
+}
+
+// Restore currentChatId's saved draft text into the message-input textarea.
+function restoreDraftForCurrentChat() {
+    if (!messageInput) return;
+    messageInput.value = chatDrafts.get(currentChatId) || "";
 }
 
 // Group messages by turn_id into Turn instances
@@ -528,6 +552,14 @@ async function loadChatHistory(chatId) {
         }
 
         history.messages = validMessages;
+
+        // Seed the draft cache from the server so restoreDraftForCurrentChat (called
+        // right after loadChatHistory by every caller) picks up the persisted value.
+        if (history.draft) {
+            chatDrafts.set(chatId, history.draft);
+        } else {
+            chatDrafts.delete(chatId);
+        }
 
        // Load persisted branch selections and seed the selection map.
         // loadBranchSelections returns scoped keys already; errors throw.
@@ -767,7 +799,7 @@ function openProject(projectId) {
     });
 
     const project = window.projects.find((p) => p.id === projectId);
-    const projectName = project ? project.name || project.path.split("\\").pop().split("/").pop() : "Project";
+    const projectName = project ? project.path.split("\\").pop().split("/").pop() || project.name : "Project";
 
     // Show project chat header
     const projectChatHeader = document.getElementById("projectChatHeader");
@@ -871,6 +903,7 @@ async function loadProjectChats(projectId) {
         // Reconnect after the history renders so an in-flight live turn re-attaches
         // (switchToChat does this; the restore path must too).
         await loadChatHistory(currentChatId);
+        restoreDraftForCurrentChat();
         streamManager.reconnectStreaming(currentChatId);
 
         streamManager.reapplyIndicators();
@@ -902,11 +935,13 @@ async function handleBottomBarPlus() {
 // Handle new chat creation (with project context)
 async function handleNewChat() {
     try {
+        saveDraftForCurrentChat();
         const chatId = generateId();
 
         await createNewChatInDatabase(chatId, "New Chat", window.currentProjectId);
 
         currentChatId = chatId;
+        restoreDraftForCurrentChat();
         turnsContainer.innerHTML = "";
 
         updateChatTitle("New Chat");
@@ -945,7 +980,7 @@ async function handleNewProject() {
 
     try {
         const project = await createProject(name, path);
-        window.projects.push(project);
+        window.projects.unshift(project);
         renderProjects();
         logger.info(`Created project: ${name} (${path})`);
     } catch (error) {

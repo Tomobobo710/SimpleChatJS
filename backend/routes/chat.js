@@ -1,5 +1,6 @@
 // Chat routes - Handle chat operations and messaging
 const express = require("express");
+const fs = require("fs");
 const { db } = require("../config/database");
 const { processRequest, cancelInFlightRequest, flagSteerBreak } = require("../services/chatStreamService");
 const { saveMessage, setMessageDebugByTurn } = require("../services/messageRepository");
@@ -7,8 +8,29 @@ const { getTurnInfo, deleteBranchSelections, loadBranchSelections, saveBranchSel
 const { compactChat, retryCompactionResponse } = require("../services/compactionService");
 const { initializeToolEvents } = require("../services/toolEventService");
 const { log } = require("../utils/logger");
+const { getUserdataPath } = require("../utils/pathUtils");
 
 const router = express.Router();
+
+// Unsent-message drafts, one per chat, kept in a flat JSON file (not the DB) —
+// keyed by chat_id, mirroring ui_state.json's pattern.
+const DRAFTS_PATH = getUserdataPath("chat_drafts.json");
+
+function loadDrafts() {
+    try {
+        return JSON.parse(fs.readFileSync(DRAFTS_PATH, "utf8"));
+    } catch { return {}; }
+}
+
+function saveDraftForChat(chatId, draft) {
+    const drafts = loadDrafts();
+    if (draft) {
+        drafts[chatId] = draft;
+    } else {
+        delete drafts[chatId];
+    }
+    fs.writeFileSync(DRAFTS_PATH, JSON.stringify(drafts, null, 2), "utf8");
+}
 
 // Utility function to extract preview text from multimodal content
 function extractPreviewText(content) {
@@ -219,10 +241,26 @@ router.get("/chat/:id/history", (req, res) => {
             })
         );
 
+        const draft = loadDrafts()[chatId] || "";
+
         log(`[HISTORY] Retrieved ${messages.length} messages from chat ${chatId}`);
-        res.json({ messages });
+        res.json({ messages, draft });
     } catch (err) {
         log("[HISTORY] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Save (or clear) a chat's unsent-message draft, so it survives app restarts.
+router.put("/chat/:id/draft", (req, res) => {
+    const chatId = req.params.id;
+    const { draft } = req.body;
+
+    try {
+        saveDraftForChat(chatId, draft || "");
+        res.json({ success: true });
+    } catch (err) {
+        log("[CHAT] Draft save error:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -242,6 +280,7 @@ router.delete("/chat/:id", (req, res) => {
             db.prepare("DELETE FROM chats WHERE id = ?").run(chatId);
         });
         tx();
+        saveDraftForChat(chatId, "");
 
         log(`[CHAT] Deleted chat: ${chatId} (project: ${chat?.project_id || "freeform"})`);
         res.json({ success: true, project_id: chat?.project_id || null });

@@ -382,8 +382,18 @@
                             <p class="setting-description">Sent as <code>reasoning_effort</code> in the Chat Completions API.</p>
                         </div>
                     </div>
+
+                    <!-- Thinking Display Section -->
+                    <div class="settings-section">
+                        <h3>Display</h3>
+                        <p class="setting-description">Controls the thinking dropdown's auto expand/collapse behavior, same as tool dropdowns.</p>
+                        <div class="tool-display-opts" data-tool="thinking">
+                            <label class="td-opt"><input type="checkbox" class="td-expand"> Auto Expand</label>
+                            <label class="td-opt"><input type="checkbox" class="td-collapse"> Auto Collapse <input type="number" class="td-collapse-sec" min="0" step="1" value="3">s</label>
+                        </div>
+                    </div>
                 </div>
-                
+
                 <!-- Tools Tab -->
                 <div id="toolsTab" class="tab-content">
                     <div class="settings-section">
@@ -456,6 +466,9 @@
                             <div id="shellInfo" class="shell-info"></div>
                             <button id="detectShellBtn" class="btn-secondary" type="button">Detect</button>
                         </div>
+                        <label for="shellTimeoutSec">shell_run timeout (seconds)</label>
+                        <input type="number" id="shellTimeoutSec" min="1" step="1" value="360">
+                        <p class="setting-description">Commands are killed if they run longer than this. The AI can override it per-call with timeout_sec.</p>
                     </div>
                 </div>
 
@@ -508,6 +521,11 @@
                             <label for="systemBlocks">Show system messages</label>
                         </div>
                         <p class="setting-description">Display system prompt messages in the chat as styled system blocks. These are used to provide context to the AI model.</p>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="injectErrorSystemMessage" />
+                            <label for="injectErrorSystemMessage">Inject system message on stop/connection error</label>
+                        </div>
+                        <p class="setting-description">Adds a synthetic system message to the chat when generation is stopped or a connection error occurs. Off by default — many models don't handle it well.</p>
                     </div>
                 </div>
                 

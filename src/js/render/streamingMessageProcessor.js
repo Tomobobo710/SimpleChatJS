@@ -46,6 +46,7 @@ class StreamingMessageProcessor {
                         id: block.id,
                         content: block.content,
                         isComplete: block.isComplete !== false,
+                        thinkingDoneAt: 0,
                         type: 'thinking'
                     };
                     this._reasoningBlocks.set(block.id, reasoningBlock);
@@ -60,6 +61,7 @@ class StreamingMessageProcessor {
                     id: `reasoning_${Date.now()}`,
                     content: reasoningData,
                     isComplete: true,
+                    thinkingDoneAt: 0,
                     type: 'thinking'
                 };
                 this._reasoningBlocks.set(reasoningBlock.id, reasoningBlock);
@@ -94,6 +96,8 @@ class StreamingMessageProcessor {
     finishReasoningBlock(blockId) {
         if (this._activeReasoningBlock && this._activeReasoningBlock.id === blockId) {
             this._activeReasoningBlock.isComplete = true;
+            // Same doneAt stamp pattern as edit/file/shell blocks: live → now, reload → 0.
+            this._activeReasoningBlock.thinkingDoneAt = this._live ? Date.now() : 0;
             this._activeReasoningBlock = null;
         }
     }
@@ -109,6 +113,7 @@ class StreamingMessageProcessor {
         // Finish any active reasoning block before adding content
         if (this._activeReasoningBlock) {
             this._activeReasoningBlock.isComplete = true;
+            this._activeReasoningBlock.thinkingDoneAt = this._live ? Date.now() : 0;
             this._activeReasoningBlock = null;
         }
         this._chatContent += text;
@@ -446,6 +451,7 @@ class StreamingMessageProcessor {
         // Finish any remaining active reasoning block
         if (this._activeReasoningBlock) {
             this._activeReasoningBlock.isComplete = true;
+            this._activeReasoningBlock.thinkingDoneAt = this._live ? Date.now() : 0;
             this._activeReasoningBlock = null;
         }
     }

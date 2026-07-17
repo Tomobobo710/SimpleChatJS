@@ -472,6 +472,27 @@ function armEditCollapse(el, metadata) {
     }, remaining);
 }
 
+// Auto-collapse a finished thinking dropdown. Mirrors armEditCollapse: re-derives
+// remaining time from a persisted thinkingDoneAt timestamp instead of a one-shot
+// timer, so it's safe to call on every render. User's manual toggle always wins.
+function armThinkingCollapse(dropdown, metadata) {
+    if (dropdown._userToggled || dropdown._thinkingCollapseArmed) return;
+    if (metadata.isComplete === false) return;
+    const opts = getToolDisplaySettings('thinking');
+    if (!opts.autoCollapse) return;
+    dropdown._thinkingCollapseArmed = true;
+    const doneAt = metadata.thinkingDoneAt || 0;
+    const remaining = doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) : 0;
+    if (remaining <= 0) {
+        if (dropdown.element.classList.contains('dd-open')) dropdown.toggleOpen(dropdown.element);
+        return;
+    }
+    setTimeout(() => {
+        if (dropdown._userToggled) return;
+        if (dropdown.element.classList.contains('dd-open')) dropdown.toggleOpen(dropdown.element);
+    }, remaining);
+}
+
 // Collapse/expand by tweening the clip height (WAAPI), mirroring the shell console.
 function setEditDiffCollapsed(el, collapsed, animate) {
     if (!el) return;
@@ -1441,7 +1462,7 @@ class ChatRenderer {
 
         switch (type) {
             case "thinking":
-                return this.renderThinkingBlock(content, metadata, isOpen);
+                return this.renderThinkingBlock(content, { ...metadata, isComplete: blockData.isComplete, thinkingDoneAt: blockData.thinkingDoneAt }, isOpen);
             case "tool":
                 return this.renderToolBlock(content, metadata, isOpen);
             case "codeblock":
@@ -1542,13 +1563,18 @@ class ChatRenderer {
         return dropdown.element;
     }
 
-    // Render thinking block as dropdown
+    // Render thinking block as dropdown. Same auto-expand/auto-collapse policy as
+    // tool blocks (getToolDisplaySettings('thinking')): auto-expand while the model
+    // is still thinking; a completed block on reload stays at its saved state.
     renderThinkingBlock(content, metadata, isOpen = false) {
         const dropdownId = `thinking-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         // Use title from metadata if available (Gemini), otherwise use default
         const title = metadata.title || "Thinking Process";
-        const dropdown = new StreamingDropdown(dropdownId, title, "thinking", !isOpen);
+        let open = isOpen;
+        if (metadata.isComplete === false && getToolDisplaySettings('thinking').autoExpand) open = true;
+        const dropdown = new StreamingDropdown(dropdownId, title, "thinking", !open);
         dropdown.setContent(content);
+        armThinkingCollapse(dropdown, metadata);
         return dropdown.element;
     }
 

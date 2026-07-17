@@ -132,9 +132,16 @@ function setupEventListeners() {
 
     // Keep the button in sync (Stop⇄Steer) as the user types while streaming, and
     // drive the slash-command palette off the current input value.
+    let draftAutosaveTimer = null;
     messageInput.addEventListener('input', () => {
         if (typeof streamManager !== "undefined") streamManager.refreshSendButton();
         if (typeof handleSlashInput === "function") handleSlashInput();
+
+        // Debounced persist so a draft survives an app close, not just a chat switch.
+        if (typeof saveDraftForCurrentChat === "function") {
+            clearTimeout(draftAutosaveTimer);
+            draftAutosaveTimer = setTimeout(saveDraftForCurrentChat, 800);
+        }
     });
     
     // Settings modal (old settings button removed from sidebar, kept for compatibility)

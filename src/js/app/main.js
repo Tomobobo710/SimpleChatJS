@@ -22,6 +22,7 @@ let chatList, chatTitle, chatInfo;
 
 // Chat state
 let chatHistories = new Map(); // Store chat histories locally
+let chatDrafts = new Map(); // Unsent message-input text, per chat_id
 
 // Initialize the application
 document.addEventListener("DOMContentLoaded", function () {
@@ -161,6 +162,10 @@ async function onSubmitRequest(retryContent = null, retryAfterCompact = false) {
     // Clear input and files, show loading (skip on retry — already cleared).
     if (!retryAfterCompact) {
         messageInput.value = "";
+        if (typeof currentChatId !== "undefined" && currentChatId) {
+            chatDrafts.delete(currentChatId);
+            saveChatDraft(currentChatId, "").catch(() => {});
+        }
         clearSelectedImages();
         clearSelectedDocuments();
     }

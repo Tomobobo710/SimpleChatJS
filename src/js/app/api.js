@@ -419,6 +419,24 @@ async function getChatHistory(chatId = null) {
     }
 }
 
+// Save (or clear) a chat's unsent-message draft
+async function saveChatDraft(chatId, draft) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/draft`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ draft })
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        logger.error("Error saving chat draft:", error, true);
+        throw error;
+    }
+}
+
 // Get available MCP servers status
 async function getMCPStatus() {
     try {

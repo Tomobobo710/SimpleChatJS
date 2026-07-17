@@ -15,7 +15,7 @@ const CONFIG_FILE = 'simple_tools_config.json';
 const DEFAULT_OUTPUT_LIMIT_KB = 99;
 const MIN_OUTPUT_LIMIT_KB = 2;
 const KB = 1000;
-const SHELL_TRUNCATE_NOTICE = 'NOTICE: The output of this tool call was truncated.. additional content above is omitted.\n';
+const SHELL_TRUNCATE_NOTICE = 'NOTICE: Output was too long and was truncated to the most recent lines (this is not an error) — earlier content was omitted.\n';
 
 // Resolve the configured limit in KB, clamped to the minimum; falls back to the
 // default for missing/invalid values. read cap = limitKb * KB; shell cap is 1KB
@@ -81,7 +81,7 @@ function isToolEnabled(toolName, config) {
 const READ_FILE_TPL = "Read the contents of a file at the given path. You'll use this the most to read content.\nYou are on {os_name}.\nFile path example: {example_path}\nOptional: start_line and end_line to read a specific line range; line_numbers (boolean) to prefix each line with its number.\nOutput is capped at {read_cap_kb}KB; if a file exceeds that, read a portion with start_line/end_line.\nRequired: path.";
 const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, content.';
 const EDIT_FILE_TPL = 'This is the primary tool for modifying files — prefer it over shell commands (sed, awk, Set-Content, etc.) for any edit.\nApplies one or more exact-text find/replace edits to a file. Provide an "edits" array; each edit has old_string (exact text to find, including whitespace and newlines) and new_string (replacement).\nEdits apply in order, each operating on the result of the previous one. Either all edits apply or none do — if any old_string is not found, nothing is written and the error names which edit failed.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, edits.';
-const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. This tool should be used for non-file operations, use read_file, write_file, and edit_file for those operations. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nOutput is capped at {shell_cap_kb}KB; if exceeded, the top is truncated and only the last lines are returned. Required: command.';
+const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. This tool should be used for non-file operations, use read_file, write_file, and edit_file for those operations. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nOutput is capped at {shell_cap_kb}KB; if exceeded, the top is truncated and only the last lines are returned.\nCommands are killed after {shell_timeout_sec}s by default; pass timeout_sec to override for a single call. Required: command.';
 
 // OS display names keyed by process.platform.
 const OS_NAMES = {
@@ -126,7 +126,7 @@ function getShellValues(shellName) {
     return process.platform === 'win32' ? SHELL_TEMPLATES.cmd : SHELL_TEMPLATES.sh;
 }
 
-function fillTemplate(tpl, shellName, limitKb) {
+function fillTemplate(tpl, shellName, limitKb, timeoutSec) {
     const os = getOsValues();
     const shell = getShellValues(shellName);
     return tpl
@@ -135,10 +135,11 @@ function fillTemplate(tpl, shellName, limitKb) {
         .replaceAll('{shell_name}', shell.shellName)
         .replaceAll('{shell_syntax}', shell.shellSyntax)
         .replaceAll('{read_cap_kb}', String(limitKb))
-        .replaceAll('{shell_cap_kb}', String(limitKb - 1));
+        .replaceAll('{shell_cap_kb}', String(limitKb - 1))
+        .replaceAll('{shell_timeout_sec}', String(timeoutSec));
 }
 
-function getToolDefinitions(shellInfo, config) {
+function getToolDefinitions(shellInfo, config, defaultTimeoutSec = 360) {
     const shellName = shellInfo && shellInfo.name ? shellInfo.name : 'cmd';
     const limitKb = getLimitKb(config);
     return [
@@ -197,11 +198,12 @@ function getToolDefinitions(shellInfo, config) {
         },
         {
             name: 'shell_run',
-            description: fillTemplate(SHELL_RUN_TPL, shellName, limitKb),
+            description: fillTemplate(SHELL_RUN_TPL, shellName, limitKb, defaultTimeoutSec),
             input_schema: {
                 type: 'object',
                 properties: {
-                    command: { type: 'string', description: 'Shell command to execute' }
+                    command: { type: 'string', description: 'Shell command to execute' },
+                    timeout_sec: { type: 'integer', description: `Optional. Override the default ${defaultTimeoutSec}s timeout for this command.` }
                 },
                 required: ['command'],
                 additionalProperties: false
@@ -452,7 +454,7 @@ const SHELL_MAX_CAPTURE = 10 * 1024 * 1024;
 // onChunk(streamName, text) is invoked for each stdout/stderr chunk as it arrives,
 // which is what feeds the live console in the UI (the resolved result, separately,
 // is the capped text the model sees — one source, two sinks).
-function runShellAsync(shell, argv, options, onChunk) {
+function runShellAsync(shell, argv, options, onChunk, timeoutMs) {
     return new Promise((resolve) => {
         let child;
         try {
@@ -466,6 +468,7 @@ function runShellAsync(shell, argv, options, onChunk) {
         let stdoutTotal = 0;
         let stderr = '';
         let spawnError = null;
+        let timedOut = false;
 
         const append = (chunk, isOut) => {
             if (typeof onChunk === 'function') {
@@ -494,8 +497,18 @@ function runShellAsync(shell, argv, options, onChunk) {
             child.stderr.on('data', (d) => append(d, false));
         }
         child.on('error', (err) => { spawnError = err; });
+
+        let timer = null;
+        if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+            timer = setTimeout(() => {
+                timedOut = true;
+                try { child.kill(); } catch (_) {}
+            }, timeoutMs);
+        }
+
         child.on('close', (code) => {
-            resolve({ stdout, stdout_total: stdoutTotal, stderr, status: code, error: spawnError });
+            if (timer) clearTimeout(timer);
+            resolve({ stdout, stdout_total: stdoutTotal, stderr, status: code, error: spawnError, timedOut });
         });
     });
 }
@@ -514,27 +527,34 @@ async function doShellRun(args, opts = {}, shellCap = (DEFAULT_OUTPUT_LIMIT_KB -
     const os = require('os');
     const cwd = opts.cwd || os.homedir();
 
+    const defaultTimeoutSec = Number.isFinite(opts.defaultTimeoutSec) ? opts.defaultTimeoutSec : 360;
+    const requestedTimeoutSec = Number(args?.timeout_sec);
+    const timeoutSec = Number.isFinite(requestedTimeoutSec) && requestedTimeoutSec > 0 ? requestedTimeoutSec : defaultTimeoutSec;
+
     try {
         // spawn passes args as an array — no shell interpolation, no double-quoting
         // of the command by an outer shell. Async so it doesn't block the event loop.
         const result = await runShellAsync(shellArgs.shell, shellArgs.args, {
             windowsHide: true,
             cwd
-        }, opts.onChunk);
+        }, opts.onChunk, timeoutSec * 1000);
 
         const stdout = result.stdout || '';
         const stderr = result.stderr || '';
         const exitCode = result.status ?? 0;
-        const failed = result.status !== 0 || result.error;
+        const failed = (result.status !== 0 || result.error) && !result.timedOut;
 
         const { output, truncated } = truncateShellOutput(stdout, shellCap);
 
         const base = {
-            success: !failed,
+            success: !failed && !result.timedOut,
             output,
             exit_code: exitCode,
-            error: failed ? (stderr || (result.error ? result.error.message : 'Command failed')) : null
+            error: result.timedOut ? `Command timed out after ${timeoutSec}s`
+                : failed ? (stderr || (result.error ? result.error.message : 'Command failed'))
+                : null
         };
+        if (result.timedOut) base.timed_out = true;
         if (truncated) {
             base.truncated = true;
             base.total_output_size = result.stdout_total ?? stdout.length;

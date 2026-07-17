@@ -96,7 +96,13 @@ function getDefaultProfileSettings() {
             cwd: true,
             shell: true,
             date: true
-        }
+        },
+        // Off by default: injecting a synthetic system message on stop/connection-error
+        // doesn't work well for a lot of models. Debug-only opt-in.
+        injectErrorSystemMessage: false,
+        // Default shell_run timeout, in seconds. The AI can override per-call via the
+        // tool's timeout_sec argument, capped by this unless the user raises it here.
+        shellTimeoutSec: 360
     };
 }
 
