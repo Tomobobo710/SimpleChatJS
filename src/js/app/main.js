@@ -172,14 +172,14 @@ async function onSubmitRequest(retryContent = null, retryAfterCompact = false) {
     setLoading(true);
 
     try {
-        const parentTurnId = await getActiveTerminalTurnId(currentChatId);
+        const history = await getChatHistory(currentChatId);
+        const parentTurnId = await getActiveTerminalTurnId(currentChatId, history);
 
         let messages = [{ role: "user", content: messageContent }];
 
         // If this chat has no messages yet, inject the system prompt
         // as the first message in the request turn.
         try {
-            const history = await getChatHistory(currentChatId);
             if (!history || !history.messages || history.messages.length === 0) {
                 const settings = window.cachedSettings();
                 if (settings && settings.enableSystemPrompt && settings.systemPrompt?.trim()) {

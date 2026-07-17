@@ -402,68 +402,17 @@ function hasToolCalls(msg) {
 // Track if we're already loading to prevent concurrent calls
 let isLoadingHistory = false;
 
-// Build rendered turn list using lineage-based filtering. Selects
-// siblings per chat-scoped selections.
-function buildRenderedTurns(allTurns, chatId) {
-    return walkActiveBranch(allTurns, chatId);
-}
-
-// Walk the turn DAG from 'root', selecting siblings and returning
-// turns in render order. Writes default selections for unpicked
-// parents. Chat-scoped.
-function walkActiveBranch(allTurns, chatId) {
+// Group turns by parent (childrenByParent) and resolve the selected sibling at
+// every parent key, writing defaults into selectedSiblings for unpicked parents.
+// Shared by buildRenderedTurns and buildBranchMap so a reload only walks the
+// turn DAG once instead of twice.
+function groupTurnsByParentAndSelectSiblings(allTurns, chatId) {
     const scopeKey = (parentKey) => `${chatId}::${parentKey}`;
 
     // A compaction record threads inline at the tip: its parent is the branch's
     // terminal turn, and the next user turn parents onto the compaction turn. So it
     // IS a walked lineage node (excluding it would break the chain to post-compaction
     // turns). The render loop renders it as a marker instead of a normal turn.
-    const childrenByParent = new Map();
-    for (const turn of allTurns) {
-        const parentKey = turn.parentTurnId || "root";
-        if (!childrenByParent.has(parentKey)) {
-            childrenByParent.set(parentKey, []);
-        }
-        childrenByParent.get(parentKey).push(turn);
-    }
-
-    const rendered = [];
-    // `visited` guards against DB cycles: skip if a turn_id is revisited.
-    const visited = new Set();
-    const walk = (parentKey) => {
-        if (visited.has(parentKey)) {
-            console.warn(`[RENDER-CYCLE] Skipping parentKey="${parentKey}" — already visited. Likely a DB cycle.`);
-            return;
-        }
-        visited.add(parentKey);
-
-        const children = childrenByParent.get(parentKey) || [];
-        if (children.length === 0) return;
-
-        // Honor selectedSiblings for all parent keys, including 'root'.
-        const selectedTurnId = selectedSiblings[scopeKey(parentKey)] ?? null;
-        const matched = selectedTurnId ? children.find((child) => child.turnId === selectedTurnId) : null;
-        const chosen = matched ?? children[children.length - 1];
-        selectedSiblings[scopeKey(parentKey)] = chosen.turnId;
-
-        if (chosen) {
-            rendered.push(chosen);
-            if (chosen.turnId) walk(chosen.turnId);
-        }
-    };
-
-    walk("root");
-
-    return rendered;
-}
-
-// Build a Map<turnId, {siblings, currentIndex, hasPrev, hasNext, total}>
-// for every turn in `allTurns` that has more than one sibling under the
-// same parent. Honors `selectedSiblings` and writes default selections
-// for unkeyed parents, mirroring walkActiveBranch. DOM-independent.
-function buildBranchMap(allTurns, chatId) {
-    const scopeKey = (parentKey) => `${chatId}::${parentKey}`;
-
     const childrenByParent = new Map();
     for (const turn of allTurns) {
         const parentKey = turn.parentTurnId || "root";
@@ -481,6 +430,57 @@ function buildBranchMap(allTurns, chatId) {
         const chosen = matched ?? children[children.length - 1];
         selectedSiblings[scopeKey(parentKey)] = chosen.turnId;
     }
+
+    return childrenByParent;
+}
+
+// Build rendered turn list using lineage-based filtering. Selects
+// siblings per chat-scoped selections.
+function buildRenderedTurns(allTurns, chatId, childrenByParent = null) {
+    return walkActiveBranch(allTurns, chatId, childrenByParent);
+}
+
+// Walk the turn DAG from 'root', selecting siblings and returning
+// turns in render order. Writes default selections for unpicked
+// parents. Chat-scoped.
+function walkActiveBranch(allTurns, chatId, childrenByParent = null) {
+    childrenByParent = childrenByParent || groupTurnsByParentAndSelectSiblings(allTurns, chatId);
+
+    const rendered = [];
+    // `visited` guards against DB cycles: skip if a turn_id is revisited.
+    const visited = new Set();
+    const walk = (parentKey) => {
+        if (visited.has(parentKey)) {
+            console.warn(`[RENDER-CYCLE] Skipping parentKey="${parentKey}" — already visited. Likely a DB cycle.`);
+            return;
+        }
+        visited.add(parentKey);
+
+        const children = childrenByParent.get(parentKey) || [];
+        if (children.length === 0) return;
+
+        const scopeKey = `${chatId}::${parentKey}`;
+        const selectedTurnId = selectedSiblings[scopeKey] ?? null;
+        const matched = selectedTurnId ? children.find((child) => child.turnId === selectedTurnId) : null;
+        const chosen = matched ?? children[children.length - 1];
+
+        if (chosen) {
+            rendered.push(chosen);
+            if (chosen.turnId) walk(chosen.turnId);
+        }
+    };
+
+    walk("root");
+
+    return rendered;
+}
+
+// Build a Map<turnId, {siblings, currentIndex, hasPrev, hasNext, total}>
+// for every turn in `allTurns` that has more than one sibling under the
+// same parent. Honors `selectedSiblings` and writes default selections
+// for unkeyed parents, mirroring walkActiveBranch. DOM-independent.
+function buildBranchMap(allTurns, chatId, childrenByParent = null) {
+    childrenByParent = childrenByParent || groupTurnsByParentAndSelectSiblings(allTurns, chatId);
 
     const map = new Map();
     for (const children of childrenByParent.values()) {
@@ -502,10 +502,11 @@ function buildBranchMap(allTurns, chatId) {
 
 // Resolve the deepest leaf turn_id on the selected branch. Used as
 // parent_turn_id for new messages. Returns null for empty chats.
-// DOM-independent.
-async function getActiveTerminalTurnId(chatId) {
+// DOM-independent. Pass a pre-fetched `history` (from getChatHistory) to skip the
+// fetch when the caller already has it — avoids re-fetching the whole chat twice.
+async function getActiveTerminalTurnId(chatId, history = null) {
     if (!chatId) return null;
-    const history = await getChatHistory(chatId);
+    history = history || await getChatHistory(chatId);
     if (!history?.messages || !Array.isArray(history.messages)) return null;
 
     if (history.messages.length === 0) return null;
@@ -516,8 +517,11 @@ async function getActiveTerminalTurnId(chatId) {
     return active[active.length - 1].turnId || null;
 }
 
-// Load chat history for a specific chat
-async function loadChatHistory(chatId) {
+// Load chat history for a specific chat. skipBranchSelectionsReload: true when the
+// caller (navigateBranch) already updated selectedSiblings in memory AND persisted
+// it via saveBranchSelections moments earlier — re-fetching would just read back the
+// exact same data we already have, so it's safe to skip.
+async function loadChatHistory(chatId, { skipBranchSelectionsReload = false } = {}) {
     // Set loading indicator before the guard so duplicate clicks during
     // a load show feedback.
     setLoading(true);
@@ -561,16 +565,19 @@ async function loadChatHistory(chatId) {
             chatDrafts.delete(chatId);
         }
 
-       // Load persisted branch selections and seed the selection map.
+        // Load persisted branch selections and seed the selection map, unless the
+        // caller just wrote the exact same data itself (see skipBranchSelectionsReload).
         // loadBranchSelections returns scoped keys already; errors throw.
-        const persistedSelections = await loadBranchSelections(chatId);
-        for (const [parentKey, selectedTurnId] of Object.entries(persistedSelections)) {
-            selectedSiblings[parentKey] = selectedTurnId;
-        }
-        if (Object.keys(persistedSelections).length > 0) {
-            console.log(
-                `[LOAD-HISTORY] Restored ${Object.keys(persistedSelections).length} branch selection(s) for chat ${chatId}`
-            );
+        if (!skipBranchSelectionsReload) {
+            const persistedSelections = await loadBranchSelections(chatId);
+            for (const [parentKey, selectedTurnId] of Object.entries(persistedSelections)) {
+                selectedSiblings[parentKey] = selectedTurnId;
+            }
+            if (Object.keys(persistedSelections).length > 0) {
+                console.log(
+                    `[LOAD-HISTORY] Restored ${Object.keys(persistedSelections).length} branch selection(s) for chat ${chatId}`
+                );
+            }
         }
 
         turnsContainer.innerHTML = "";
@@ -590,8 +597,9 @@ async function loadChatHistory(chatId) {
         logger.info("[UNIFIED-RENDERING] Loading chat history through Turn.renderable()");
 
         const allTurns = groupMessagesByTurn(history.messages);
-        const renderedTurns = buildRenderedTurns(allTurns, chatId);
-        const branchMap = buildBranchMap(allTurns, chatId);
+        const childrenByParent = groupTurnsByParentAndSelectSiblings(allTurns, chatId);
+        const renderedTurns = buildRenderedTurns(allTurns, chatId, childrenByParent);
+        const branchMap = buildBranchMap(allTurns, chatId, childrenByParent);
 
         // A compaction is a request/response PAIR of turns (walked inline at the tip);
         // each renders as its own dropdown turn. The response turn is self-contained —

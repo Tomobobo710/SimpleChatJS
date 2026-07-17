@@ -222,11 +222,11 @@ router.get("/chat/:id/history", (req, res) => {
             FROM messages
             WHERE chat_id = ?
         `;
-        
+
         if (!includeErrors) {
             query += ` AND error_state IS NULL`;
         }
-        
+
         query += ` ORDER BY timestamp ASC`;
 
         const messagesStmt = db.prepare(query);
@@ -238,6 +238,7 @@ router.get("/chat/:id/history", (req, res) => {
             parseDbRowToMessage(row, {
                 includeFileFields: true,
                 includeErrorState: true,
+                includeDebugData: true,
             })
         );
 

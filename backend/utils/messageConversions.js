@@ -30,10 +30,17 @@ function parseContent(content) {
 // Options control which optional fields to include:
 //   includeFileFields — add original_content, file_metadata (default: false)
 //   includeErrorState — add error_state (default: false)
+//   includeDebugData — add debug_data (default: false). MUST stay false for any
+//   message list that gets sent back to the AI provider: debug_data holds the full
+//   wire-level request/response for that turn, which itself embeds the prior turn's
+//   debug_data inside its logged request body — recursive nesting that compounds
+//   every turn (turn N's debug_data contains turn N-1's, which contains N-2's, ...).
+//   Only the UI-facing /history endpoint (for the debug panel) should opt in.
 function parseDbRowToMessage(row, options = {}) {
     const {
         includeFileFields = false,
         includeErrorState = false,
+        includeDebugData = false,
     } = options;
 
     const msg = {
@@ -67,8 +74,8 @@ function parseDbRowToMessage(row, options = {}) {
     }
 
     // Per-message debug (wire data: request/response). The single source for the
-    // debug panel — each message carries its own.
-    if (row.debug_data) {
+    // debug panel — each message carries its own. Opt-in only; see includeDebugData.
+    if (includeDebugData && row.debug_data) {
         msg.debug_data = safeJsonParse(row.debug_data, "debug_data");
     }
 

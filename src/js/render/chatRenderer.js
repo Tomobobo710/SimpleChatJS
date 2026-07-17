@@ -3694,8 +3694,9 @@ class ChatRenderer {
         );
         await saveBranchSelections(currentChatId, scopedMap);
 
-        // Re-render the chat history with the new sibling selected
-        await loadChatHistory(currentChatId);
+        // Re-render the chat history with the new sibling selected. selectedSiblings
+        // was already updated above and just persisted, so skip re-fetching it back.
+        await loadChatHistory(currentChatId, { skipBranchSelectionsReload: true });
 
         // Reconnect any active stream whose request turn is still present
         // after loadChatHistory — loadChatHistory destroyed the live
