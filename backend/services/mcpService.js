@@ -107,6 +107,7 @@ async function connectMcp() {
         mcpTools = [];
         
         let connected = 0;
+        const connectionErrors = [];
         
         // Connect to servers
         for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
@@ -143,6 +144,7 @@ async function connectMcp() {
                 log(`[MCP] Connected to ${name} with ${toolsResult.tools.length} tools`);
             } catch (error) {
                 log(`[MCP] Failed to connect to ${name}:`, error.message);
+                connectionErrors.push(`${name}: ${error.message}`);
             }
         }
         
@@ -152,7 +154,8 @@ async function connectMcp() {
             log(`[MCP] Connected to ${connected} servers, ${mcpTools.length} tools total`);
             return { success: true, toolCount: mcpTools.length, connectedServers: connected };
         } else {
-            return { success: false, error: 'Failed to connect to any servers' };
+            const details = connectionErrors.length > 0 ? `: ${connectionErrors.join('; ')}` : '';
+            return { success: false, error: `Failed to connect to any servers${details}` };
         }
         
     } catch (error) {

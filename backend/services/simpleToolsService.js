@@ -78,10 +78,10 @@ function isToolEnabled(toolName, config) {
 // (os_name, example_path) and the detected shell (shell_name, shell_syntax).
 // File tools use Node fs and don't touch the shell, so they only mention the OS
 // and a native example path. Only shell_run names the shell and its syntax.
-const READ_FILE_TPL = "Read the contents of a file at the given path. You'll use this the most to read content.\nYou are on {os_name}.\nFile path example: {example_path}\nOptional: start_line and end_line to read a specific line range; line_numbers (boolean) to prefix each line with its number.\nOutput is capped at {read_cap_kb}KB; if a file exceeds that, read a portion with start_line/end_line.\nRequired: path.";
+const READ_FILE_TPL = "Read the contents of a file at the given path. You'll use this the most to read content.\nYou are on {os_name}.\nFile path example: {example_path}\nOptional: start_line and end_line to read a specific line range.\nOutput is capped at {read_cap_kb}KB; if a file exceeds that, read a portion with start_line/end_line.\nRequired: path.";
 const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, content.';
 const EDIT_FILE_TPL = 'This is the primary tool for modifying files — prefer it over shell commands (sed, awk, Set-Content, etc.) for any edit.\nApplies one or more exact-text find/replace edits to a file. Provide an "edits" array; each edit has old_string (exact text to find, including whitespace and newlines) and new_string (replacement).\nEdits apply in order, each operating on the result of the previous one. Either all edits apply or none do — if any old_string is not found, nothing is written and the error names which edit failed.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, edits.';
-const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. This tool should be used for non-file operations, use read_file, write_file, and edit_file for those operations. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nOutput is capped at {shell_cap_kb}KB; if exceeded, the top is truncated and only the last lines are returned.\nCommands are killed after {shell_timeout_sec}s by default; pass timeout_sec to override for a single call. Required: command.';
+const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. This tool should be used for non-file operations, use read_file, write_file, and edit_file for those operations. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nKeep output focused to avoid unnecessary context usage. When a command may be verbose, use its filtering, limiting, or summary options where practical (for example, targeted tests, focused searches, summary output, or limited logs), but do not filter away errors or information needed to verify the result.\nConsecutive exactly repeated lines or multi-line blocks may be losslessly compacted between markers that state the copy and line counts. Output is capped at {shell_cap_kb}KB; if exceeded, the top is truncated and only the last lines are returned.\nCommands are killed after {shell_timeout_sec}s by default; pass timeout_sec to override for a single call. Required: command.';
 
 // OS display names keyed by process.platform.
 const OS_NAMES = {
@@ -151,8 +151,7 @@ function getToolDefinitions(shellInfo, config, defaultTimeoutSec = 360) {
                 properties: {
                     path: { type: 'string', description: 'File path to read (absolute or relative)' },
                     start_line: { type: 'integer', description: 'Optional 1-based first line to read. Required to read files larger than the size cap.' },
-                    end_line: { type: 'integer', description: 'Optional 1-based last line to read (inclusive). Defaults to start_line when omitted.' },
-                    line_numbers: { type: 'boolean', description: 'Optional. When true, prefix each returned line with its line number.' }
+                    end_line: { type: 'integer', description: 'Optional 1-based last line to read (inclusive). Defaults to start_line when omitted.' }
                 },
                 required: ['path'],
                 additionalProperties: false
@@ -247,7 +246,6 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB, cwd) {
 
     const startLine = args?.start_line;
     const endLine = args?.end_line;
-    const lineNumbers = args?.line_numbers === true;
     const hasRange = startLine !== undefined && startLine !== null;
 
     let content;
@@ -303,13 +301,9 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB, cwd) {
         };
     }
 
-    const finalContent = lineNumbers
-        ? outText.split('\n').map((line, i) => `${firstLine + i}\t${line}`).join('\n')
-        : outText;
-
     const result = {
         success: true,
-        content: finalContent,
+        content: outText,
         size: outText.length
     };
     if (hasRange) {
@@ -427,20 +421,146 @@ async function doEdit(args, cwd) {
     }
 }
 
+// Bound candidate width so pathological output cannot turn block detection into
+// unbounded quadratic work. This still covers long stack traces and log cycles.
+const MAX_REPEATED_BLOCK_LINES = 100;
+const MAX_REPEATED_BLOCK_COMPARISONS = 5_000_000;
+const MAX_COMPACTION_LINES = 200_000;
+
+function blocksEqual(lines, first, second, size, budget) {
+    for (let offset = 0; offset < size; offset++) {
+        if (budget.remaining-- <= 0) return null;
+        if (lines[first + offset] !== lines[second + offset]) return false;
+    }
+    return true;
+}
+
+// Losslessly compact adjacent, exactly equal line sequences in the model-facing
+// result. At each position, consider every block width up to the safety bound and
+// choose the match with the greatest character savings. Explicit markers retain
+// the copy count and block width; streamed chunks keep the command's raw output.
+function compactRepeatedBlocks(text) {
+    const unchanged = { output: text, protectedRanges: [] };
+    if (!text) return unchanged;
+
+    let lineCount = 1;
+    for (let newline = text.indexOf('\n'); newline !== -1; newline = text.indexOf('\n', newline + 1)) {
+        if (++lineCount > MAX_COMPACTION_LINES) return unchanged;
+    }
+
+    const endsWithNewline = text.endsWith('\n');
+    const lines = text.split('\n');
+    if (endsWithNewline) lines.pop();
+    // A CR in this position belongs to a CRLF delimiter, not the line's content.
+    // Treat CRLF and LF as equivalent while retaining the original text for output.
+    // An unterminated final CR remains content (for example, a progress update).
+    const lineIds = [];
+    const idsByContent = new Map();
+    for (let i = 0; i < lines.length; i++) {
+        const terminatedByLf = endsWithNewline || i < lines.length - 1;
+        const content = terminatedByLf && lines[i].endsWith('\r') ? lines[i].slice(0, -1) : lines[i];
+        if (!idsByContent.has(content)) idsByContent.set(content, idsByContent.size);
+        lineIds.push(idsByContent.get(content));
+    }
+    const lineLengthPrefix = [0];
+    for (const line of lines) {
+        lineLengthPrefix.push(lineLengthPrefix[lineLengthPrefix.length - 1] + line.length);
+    }
+
+    const budget = { remaining: MAX_REPEATED_BLOCK_COMPARISONS };
+    const entries = [];
+    for (let i = 0; i < lines.length;) {
+        let best = null;
+        const maxBlockSize = Math.min(MAX_REPEATED_BLOCK_LINES, Math.floor((lines.length - i) / 2));
+
+        for (let blockSize = 1; blockSize <= maxBlockSize; blockSize++) {
+            const firstRepeatMatches = blocksEqual(lineIds, i, i + blockSize, blockSize, budget);
+            if (firstRepeatMatches === null) return unchanged;
+            if (!firstRepeatMatches) continue;
+
+            let copies = 2;
+            while (i + ((copies + 1) * blockSize) <= lines.length) {
+                const nextRepeatMatches = blocksEqual(
+                    lineIds,
+                    i,
+                    i + (copies * blockSize),
+                    blockSize,
+                    budget
+                );
+                if (nextRepeatMatches === null) return unchanged;
+                if (!nextRepeatMatches) break;
+                copies++;
+            }
+
+            const consumedLines = copies * blockSize;
+            const sourceLength = lineLengthPrefix[i + consumedLines] - lineLengthPrefix[i] + consumedLines - 1;
+            const blockLength = lineLengthPrefix[i + blockSize] - lineLengthPrefix[i] + blockSize - 1;
+            const header = `<<< repeated block: ${copies} copies, ${blockSize} ${blockSize === 1 ? 'line' : 'lines'} each >>>`;
+            const replacementLength = header.length + 1 + blockLength + 1 + '<<< end repeated block >>>'.length;
+            const savings = sourceLength - replacementLength;
+            if (savings > 0 && (!best || savings > best.savings || (savings === best.savings && blockSize < best.blockSize))) {
+                best = { blockSize, copies, savings, header };
+            }
+        }
+
+        if (best) {
+            entries.push({
+                text: [
+                    best.header,
+                    ...lines.slice(i, i + best.blockSize),
+                    '<<< end repeated block >>>'
+                ].join('\n'),
+                protected: true
+            });
+            i += best.blockSize * best.copies;
+        } else {
+            entries.push({ text: lines[i], protected: false });
+            i++;
+        }
+    }
+
+    let output = '';
+    const protectedRanges = [];
+    for (let i = 0; i < entries.length; i++) {
+        if (i > 0) output += '\n';
+        const start = output.length;
+        output += entries[i].text;
+        if (entries[i].protected) protectedRanges.push({ start, end: output.length });
+    }
+    if (endsWithNewline) output += '\n';
+    return { output, protectedRanges };
+}
+
 // Shell output keeps the TAIL, not the head — for build logs, test runs, and
 // stack traces the important content (errors, summaries, final result) is at the
 // end. When truncated, trim to the next line boundary and prepend a notice so the
-// model knows content above was dropped.
-function truncateShellOutput(text, cap) {
+// model knows content above was dropped. Generated repeat blocks are atomic: if
+// the cutoff intersects one, omit the whole block instead of orphaning its markers.
+function truncateShellOutput(text, cap, protectedRanges = []) {
     if (text.length <= cap) {
         return { output: text, truncated: false };
     }
-    let tail = text.slice(text.length - cap);
-    const nl = tail.indexOf('\n');
+    let cutoff = text.length - cap;
+    const nl = text.indexOf('\n', cutoff);
     if (nl !== -1) {
-        tail = tail.slice(nl + 1);
+        cutoff = nl + 1;
     }
-    return { output: SHELL_TRUNCATE_NOTICE + tail, truncated: true };
+    const intersectedRange = protectedRanges.find(range => cutoff > range.start && cutoff < range.end);
+    if (intersectedRange) {
+        cutoff = intersectedRange.end;
+        if (text[cutoff] === '\n') cutoff++;
+    }
+    return { output: SHELL_TRUNCATE_NOTICE + text.slice(cutoff), truncated: true };
+}
+
+function prepareShellOutput(rawText, totalLength, cap) {
+    const compacted = compactRepeatedBlocks(rawText);
+    let result = truncateShellOutput(compacted.output, cap, compacted.protectedRanges);
+    const captureTruncated = (totalLength ?? rawText.length) > rawText.length;
+    if (captureTruncated && !result.truncated) {
+        result = { output: SHELL_TRUNCATE_NOTICE + result.output, truncated: true };
+    }
+    return result;
 }
 
 // Upper bound on bytes held in memory per stream. We only ever return the tail,
@@ -460,13 +580,14 @@ function runShellAsync(shell, argv, options, onChunk, timeoutMs) {
         try {
             child = spawn(shell, argv, options);
         } catch (error) {
-            resolve({ stdout: '', stdout_total: 0, stderr: '', status: null, error });
+            resolve({ stdout: '', stdout_total: 0, stderr: '', stderr_total: 0, status: null, error });
             return;
         }
 
         let stdout = '';
         let stdoutTotal = 0;
         let stderr = '';
+        let stderrTotal = 0;
         let spawnError = null;
         let timedOut = false;
 
@@ -481,6 +602,7 @@ function runShellAsync(shell, argv, options, onChunk, timeoutMs) {
                     stdout = stdout.slice(stdout.length - SHELL_MAX_CAPTURE);
                 }
             } else {
+                stderrTotal += chunk.length;
                 stderr += chunk;
                 if (stderr.length > SHELL_MAX_CAPTURE) {
                     stderr = stderr.slice(stderr.length - SHELL_MAX_CAPTURE);
@@ -508,7 +630,7 @@ function runShellAsync(shell, argv, options, onChunk, timeoutMs) {
 
         child.on('close', (code) => {
             if (timer) clearTimeout(timer);
-            resolve({ stdout, stdout_total: stdoutTotal, stderr, status: code, error: spawnError, timedOut });
+            resolve({ stdout, stdout_total: stdoutTotal, stderr, stderr_total: stderrTotal, status: code, error: spawnError, timedOut });
         });
     });
 }
@@ -539,25 +661,33 @@ async function doShellRun(args, opts = {}, shellCap = (DEFAULT_OUTPUT_LIMIT_KB -
             cwd
         }, opts.onChunk, timeoutSec * 1000);
 
-        const stdout = result.stdout || '';
-        const stderr = result.stderr || '';
         const exitCode = result.status ?? 0;
         const failed = (result.status !== 0 || result.error) && !result.timedOut;
-
-        const { output, truncated } = truncateShellOutput(stdout, shellCap);
+        const rawStdout = result.stdout || '';
+        const preparedOutput = prepareShellOutput(rawStdout, result.stdout_total, shellCap);
+        const rawStderr = result.stderr || '';
+        const preparedError = (failed || result.timedOut) && rawStderr
+            ? prepareShellOutput(rawStderr, result.stderr_total, shellCap)
+            : { output: rawStderr, truncated: false };
+        const timeoutError = `Command timed out after ${timeoutSec}s`
+            + (preparedError.output ? `\n${preparedError.output}` : '');
 
         const base = {
             success: !failed && !result.timedOut,
-            output,
+            output: preparedOutput.output,
             exit_code: exitCode,
-            error: result.timedOut ? `Command timed out after ${timeoutSec}s`
-                : failed ? (stderr || (result.error ? result.error.message : 'Command failed'))
+            error: result.timedOut ? timeoutError
+                : failed ? (preparedError.output || (result.error ? result.error.message : 'Command failed'))
                 : null
         };
         if (result.timedOut) base.timed_out = true;
-        if (truncated) {
+        if (preparedOutput.truncated) {
             base.truncated = true;
-            base.total_output_size = result.stdout_total ?? stdout.length;
+            base.total_output_size = result.stdout_total ?? rawStdout.length;
+        }
+        if (preparedError.truncated) {
+            base.error_truncated = true;
+            base.total_error_size = result.stderr_total ?? rawStderr.length;
         }
         return base;
     } catch (error) {

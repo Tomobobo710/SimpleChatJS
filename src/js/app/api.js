@@ -463,11 +463,13 @@ async function connectToMCPServers() {
             }
         });
 
+        const result = await response.json();
+
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(result.error || `HTTP ${response.status}: ${response.statusText}`);
         }
 
-        return await response.json();
+        return result;
     } catch (error) {
         logger.error("Error connecting to MCP servers:", error, true);
         throw error;
