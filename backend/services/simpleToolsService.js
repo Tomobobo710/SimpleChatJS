@@ -74,13 +74,49 @@ function isToolEnabled(toolName, config) {
     return config[key] === true;
 }
 
+function indent(text, prefix) {
+    return prefix + text.replace(/\n/g, '\n' + prefix);
+}
+
+// Normalize mixed line endings (CRLF, CR) to LF for matching.
+// Inverses: detect CRLF dominance, and re-apply CRLF on write.
+function normalizeLineEndings(text) {
+    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+function hasCrlf(text) {
+    return /\r\n/.test(text);
+}
+function toCrlf(text) {
+    return text.replace(/\n/g, '\r\n');
+}
+
+// When old_string is not found, find the longest prefix that does exist in the
+// (normalized) file content and report exactly where the model's text diverges.
+// Returns null if even 10 characters don't match anywhere.
+function diagnoseEditFailure(working, oldString) {
+    const maxLookup = Math.min(oldString.length, 300);
+    const minLookup = Math.min(10, maxLookup);
+    for (let len = maxLookup; len >= minLookup; len--) {
+        const prefix = oldString.substring(0, len);
+        const idx = working.indexOf(prefix);
+        if (idx !== -1) {
+            const oldNext = oldString.substring(len, Math.min(len + 80, oldString.length));
+            const fileNext = working.substring(idx + len, idx + len + 80);
+            if (oldNext !== fileNext) {
+                return { matchLen: len, oldNext, fileNext };
+            }
+        }
+    }
+    return null;
+}
+
 // Description templates. Placeholders are filled at request time from the OS
 // (os_name, example_path) and the detected shell (shell_name, shell_syntax).
 // File tools use Node fs and don't touch the shell, so they only mention the OS
 // and a native example path. Only shell_run names the shell and its syntax.
 const READ_FILE_TPL = "Read the contents of a file at the given path. You'll use this the most to read content.\nYou are on {os_name}.\nFile path example: {example_path}\nOptional: start_line and end_line to read a specific line range.\nOutput is capped at {read_cap_kb}KB; if a file exceeds that, read a portion with start_line/end_line.\nRequired: path.";
 const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, content.';
-const EDIT_FILE_TPL = 'This is the primary tool for modifying files — prefer it over shell commands (sed, awk, Set-Content, etc.) for any edit.\nApplies one or more exact-text find/replace edits to a file. Provide an "edits" array; each edit has old_string (exact text to find, including whitespace and newlines) and new_string (replacement).\nEdits apply in order, each operating on the result of the previous one. Either all edits apply or none do — if any old_string is not found, nothing is written and the error names which edit failed.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, edits.';
+const EDIT_FILE_TPL = 'This is the primary tool for modifying files — prefer it over shell commands (sed, awk, Set-Content, etc.) for any edit.\nApplies one or more find/replace edits to a file. Provide an "edits" array; each edit has old_string (the text to find) and new_string (the replacement).\nEdits apply in order, each operating on the result of the previous one. Either all edits apply or none do — if any old_string is not found, nothing is written and the error describes where the match failed.\nCRLF and LF line endings are treated as equivalent — you can use \\n in old_string even on Windows files.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, edits.';
 const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. This tool should be used for non-file operations, use read_file, write_file, and edit_file for those operations. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nKeep output focused to avoid unnecessary context usage. When a command may be verbose, use its filtering, limiting, or summary options where practical (for example, targeted tests, focused searches, summary output, or limited logs), but do not filter away errors or information needed to verify the result.\nConsecutive exactly repeated lines or multi-line blocks may be losslessly compacted between markers that state the copy and line counts. Output is capped at {shell_cap_kb}KB; if exceeded, the top is truncated and only the last lines are returned.\nCommands are killed after {shell_timeout_sec}s by default; pass timeout_sec to override for a single call. Required: command.';
 
 // OS display names keyed by process.platform.
@@ -371,41 +407,68 @@ async function doEdit(args, cwd) {
         throw new Error(`Cannot read '${resolvedPath}': ${kind} (${error.message})`);
     }
 
-    // Apply all edits to an in-memory copy first. Sequential — each edit sees the
-    // result of the previous one. All-or-nothing: if any edit fails to match,
-    // nothing is written and the error names which edit and against what state.
-    let working = content;
+    // Normalize the file content to LF for matching. Detect the original style so
+    // the written result preserves the file's convention (CRLF vs LF).
+    const useCrlf = hasCrlf(content);
+    let working = normalizeLineEndings(content);
+
     // 1-based file line where each edit's old_string matched, in the content as it
     // existed when that edit applied (edit 2 sees edit 1's result). Lets the UI show
     // real file line numbers in the diff, not snippet-relative ones.
     const editLines = [];
     for (let i = 0; i < edits.length; i++) {
         const edit = edits[i] || {};
-        const oldString = edit.old_string;
-        const newString = edit.new_string;
+        const rawOld = edit.old_string;
+        const rawNew = edit.new_string;
         const pos = `${i + 1} of ${edits.length}`;
 
-        if (oldString === undefined || oldString === null) {
-            throw new Error(`Edit ${pos} is missing old_string. No changes were written.`);
+        if (rawOld === undefined || rawOld === null) {
+            throw new Error(`Edit ${pos}: old_string is required but was not provided. The file was not modified.`);
         }
-        if (newString === undefined || newString === null) {
-            throw new Error(`Edit ${pos} is missing new_string. No changes were written.`);
+        if (rawNew === undefined || rawNew === null) {
+            throw new Error(`Edit ${pos}: new_string is required but was not provided. The file was not modified.`);
         }
+
+        // Normalize line endings in both old and new strings so CRLF/LF mismatches
+        // between the model and the file do not cause spurious failures.
+        const oldString = normalizeLineEndings(String(rawOld));
+        const newString = normalizeLineEndings(String(rawNew));
 
         const matchIndex = working.indexOf(oldString);
         if (matchIndex === -1) {
-            const snippet = oldString.length > 200 ? oldString.slice(0, 200) + '…' : oldString;
-            const against = i === 0 ? 'the original file' : `the file as modified by edits 1–${i}`;
+            const previewLines = rawOld.split('\n');
+            const previewTrunc = previewLines.length > 6
+                ? previewLines.slice(0, 3).join('\n') + `\n  … (${previewLines.length} lines total)`
+                : rawOld;
+            const against = i === 0 ? 'the original file' : `the file after edits 1–${i}`;
+
+            const diagnosis = diagnoseEditFailure(working, oldString);
+            let madlib = 'Read the file with read_file to see what is actually there. Line endings (CRLF/LF) are handled automatically.\n';
+            if (diagnosis) {
+                madlib =
+                    `The first ${diagnosis.matchLen} characters matched the file. After that:\n` +
+                    `  Your edit has:  ${JSON.stringify(diagnosis.oldNext)}\n` +
+                    `  The file has:   ${JSON.stringify(diagnosis.fileNext)}`;
+            } else {
+                madlib = 'None of your old_string was found in the file. Are you editing the correct file?';
+            }
+
             throw new Error(
-                `Edit ${pos} failed: old_string not found.\n  old_string: ${JSON.stringify(snippet)}\n` +
-                `No changes were written. old_string must match exactly, including whitespace and newlines ` +
-                `(matched against ${against}).`
+                `Edit ${pos} failed: old_string not found in ${against}.\n\n` +
+                `  Your text:\n${indent(previewTrunc, '    │ ')}\n\n` +
+                `  ${madlib}\n` +
+                `The file was not modified.`
             );
         }
 
         // Line number = how many newlines precede the match, + 1.
         editLines.push(working.slice(0, matchIndex).split('\n').length);
         working = working.slice(0, matchIndex) + newString + working.slice(matchIndex + oldString.length);
+    }
+
+    // Preserve the original file's line ending style.
+    if (useCrlf) {
+        working = toCrlf(working);
     }
 
     try {
