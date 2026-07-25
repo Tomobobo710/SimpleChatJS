@@ -381,6 +381,31 @@ function editFileName(p) {
     return parts[parts.length - 1] || String(p);
 }
 
+// Total +N -N across all edits, for the header summary. Uses the same diff function
+// the body uses (streaming vs done) so the numbers match what's rendered below.
+function editDiffCounts(metadata) {
+    const args = metadata.arguments;
+    const edits = args && Array.isArray(args.edits) ? args.edits : null;
+    if (!edits || edits.length === 0) return null;
+    const done = editDiffIsDone(metadata);
+    let adds = 0, dels = 0;
+    for (const edit of edits) {
+        const diff = done ? editLineDiff(edit.old_string, edit.new_string)
+                          : editStreamingDiff(edit.old_string, edit.new_string);
+        for (const d of diff) {
+            if (d.t === 'add') adds++;
+            else if (d.t === 'del') dels++;
+        }
+    }
+    return { adds, dels };
+}
+
+function editDiffCountsHtml(metadata) {
+    const c = editDiffCounts(metadata);
+    if (!c) return '';
+    return `<span class="edit-diff-header-counts"><span class="add">+${c.adds}</span><span class="del">-${c.dels}</span></span>`;
+}
+
 function editDiffStatusHtml(metadata) {
     const s = metadata.status;
     if (s === 'success') return `<span class="edit-diff-status ok">applied</span>`;
@@ -524,6 +549,7 @@ function buildEditDiffElement(metadata) {
             <span class="edit-diff-title">edit_file</span>
             <span class="edit-diff-path" title="${escapeHtml(path)}">${escapeHtml(editFileName(path))}</span>
             <button class="edit-diff-raw-toggle" title="Toggle raw JSON">{ }</button>
+            ${editDiffCountsHtml(metadata)}
             ${editDiffStatusHtml(metadata)}
         </div>
         <div class="edit-diff-clip"><div class="edit-diff-body"></div></div>
@@ -578,6 +604,15 @@ function updateEditDiffElement(el, metadata) {
     if (header) {
         const oldStatus = header.querySelector('.edit-diff-status');
         if (oldStatus) oldStatus.outerHTML = editDiffStatusHtml(metadata);
+        const oldCounts = header.querySelector('.edit-diff-header-counts');
+        const newCounts = editDiffCountsHtml(metadata);
+        if (oldCounts) {
+            if (newCounts) oldCounts.outerHTML = newCounts;
+            else oldCounts.remove();
+        } else if (newCounts) {
+            const statusEl = header.querySelector('.edit-diff-status');
+            if (statusEl) statusEl.insertAdjacentHTML('beforebegin', newCounts);
+        }
         const pathEl = header.querySelector('.edit-diff-path');
         const path = (metadata.arguments && metadata.arguments.path) || '';
         const name = editFileName(path);

@@ -243,9 +243,18 @@ class Turn {
                         data: { id: toolId, name: toolName, arguments: args }
                     });
 
+                    // The backend persists failures as tool messages whose content is
+                    // { error: "..." } (the catch path); successes are the tool's result
+                    // object (e.g. { success: true, ... }). Derive status from that shape
+                    // so a failed edit_file reloads as "failed", not "applied".
+                    const isError = resultContent && typeof resultContent === 'object'
+                        && resultContent.error != null && resultContent.success !== true;
+
                     processor.handleToolEvent({
                         type: 'tool_execution_complete',
-                        data: { id: toolId, name: toolName, status: 'success', result: resultContent, execution_time_ms: 0 }
+                        data: isError
+                            ? { id: toolId, name: toolName, status: 'error', error: resultContent.error, execution_time_ms: 0 }
+                            : { id: toolId, name: toolName, status: 'success', result: resultContent, execution_time_ms: 0 }
                     });
                 }
             }
