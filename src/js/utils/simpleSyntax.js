@@ -3,6 +3,10 @@
 // that disambiguates strings vs comments vs code by whichever opens first (so a
 // `//` inside a URL stays a string, not a comment), plus per-language configs.
 // Stays line-scoped so it's safe to run on partial/streaming code.
+//
+// ENHANCED: operators, punctuation, variables, properties, classes, decorators,
+// regex literals, template interpolations, arrow functions, JSON keys, HTML tags,
+// and more — giving ~10 distinct color groups instead of the old ~3.
 
 function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -44,6 +48,13 @@ const KW_SQL = [
     'union', 'all', 'values', 'set', 'primary', 'key', 'foreign', 'references', 'index', 'view', 'asc', 'desc'
 ];
 
+// Multi-character operators (longest first so `===` beats `=`).
+const OPS = [
+    '=>', '===', '!==', '==', '!=', '<=', '>=', '&&', '||', '??', '?.',
+    '+=', '-=', '*=', '/=', '%=', '**=', '<<', '>>', '>>>',
+    '!', '&&', '||', '++', '--', '...', '@', '#'
+];
+
 // Per-language config: line-comment tokens, block-comment [open, close] (or null),
 // string delimiters, keyword list, and case-insensitivity (SQL).
 const LANGS = {
@@ -53,6 +64,10 @@ const LANGS = {
     shell:      { line: ['#'],  block: null,          strings: ['"', "'", '`'], kw: KW_SHELL },
     sql:        { line: ['--'], block: ['/*', '*/'], strings: ["'", '"'],      kw: KW_SQL, ci: true },
     css:        { line: [],     block: ['/*', '*/'], strings: ['"', "'"],      kw: [] },
+    html:       { line: [],     block: null,          strings: ['"', "'"],      kw: [] },
+    xml:        { line: [],     block: null,          strings: ['"', "'"],      kw: [] },
+    json:       { line: [],     block: null,          strings: ['"', "'"],      kw: [] },
+    markdown:   { line: [],     block: null,          strings: ['"', "'"],      kw: [] },
     default:    { line: ['//', '#'], block: ['/*', '*/'], strings: ['"', "'", '`'], kw: KW_JS.concat(KW_PY) }
 };
 
@@ -67,7 +82,11 @@ const LANG_ALIASES = {
     dart: 'clike', scala: 'clike',
     sh: 'shell', bash: 'shell', zsh: 'shell', shell: 'shell', console: 'shell', ps1: 'shell',
     sql: 'sql', mysql: 'sql', postgres: 'sql', postgresql: 'sql', sqlite: 'sql',
-    css: 'css', scss: 'css', less: 'css'
+    css: 'css', scss: 'css', less: 'css',
+    html: 'html', xhtml: 'html',
+    xml: 'xml', svg: 'xml',
+    json: 'json', yaml: 'json', yml: 'json', toml: 'json',
+    md: 'markdown', markdown: 'markdown',
 };
 
 class SimpleSyntax {
@@ -137,6 +156,11 @@ class SimpleSyntax {
                 ? new RegExp('\\b(' + cfg.kw.map(escapeRegExp).join('|') + ')\\b', cfg.ci ? 'gi' : 'g')
                 : null;
         }
+        if (cfg._opRegex === undefined) {
+            cfg._opRegex = OPS.length
+                ? new RegExp('(?:' + OPS.map(escapeRegExp).join('|') + ')', 'g')
+                : null;
+        }
         return cfg;
     }
 
@@ -203,13 +227,22 @@ class SimpleSyntax {
     }
 
     // Highlight a pure-code segment (no strings/comments): escape, then keywords,
-    // numbers, functions. Later passes use the split-by-tags trick so they don't
-    // match inside spans emitted by earlier passes.
+    // numbers, functions, operators, variables, properties, classes, decorators,
+    // regex literals, template interpolations, JSON keys, HTML tags.
     static highlightCode(raw, cfg) {
         let code = this.escapeHtml(raw);
         code = this.highlightKeywords(code, cfg._kwRegex);
+        code = this.highlightOperators(code);
         code = this.highlightNumbers(code);
         code = this.highlightFunctions(code);
+        code = this.highlightVariables(code);
+        code = this.highlightProperties(code);
+        code = this.highlightClasses(code);
+        code = this.highlightDecorators(code, cfg);
+        code = this.highlightRegexLiterals(code);
+        code = this.highlightTemplateInterpolations(code);
+        code = this.highlightJsonKeys(code);
+        code = this.highlightHtmlTags(code);
         return code;
     }
 
@@ -219,24 +252,47 @@ class SimpleSyntax {
         return div.innerHTML;
     }
 
+    // ---- per-pass helpers that skip over existing <span> tags ----
+    // splitByTags returns an array where even indices are text, odd are tags.
+    static _split(code) {
+        return code.split(/(<[^>]*>)/);
+    }
+
+    // ---- Keywords ----
     static highlightKeywords(code, kwRegex) {
         if (!kwRegex) return code;
-        const parts = code.split(/(<[^>]*>)/);
+        const parts = this._split(code);
         for (let i = 0; i < parts.length; i += 2) {
             if (parts[i]) parts[i] = parts[i].replace(kwRegex, '<span class="syntax-keyword">$1</span>');
         }
         return parts.join('');
     }
 
-    // Numbers: integers, floats, hex, binary.
+    // ---- Operators ----
+    static highlightOperators(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                // Multi-char operators first
+                parts[i] = parts[i].replace(/(=>|===|!==|==|!=|<=|>=|&&|\|\||\?\?|\?\.)|(\+\=|\-\=|\*\=|\/=|\%=|\*\*=|<<|>>|>>>)|(!|\+\+|\-\-|\.\.\.|\@)/g,
+                    (match) => `<span class="syntax-operator">${match}</span>`);
+                // # as decorator/annotation, but NOT as CSS color (#569cd6)
+                parts[i] = parts[i].replace(/#(?![0-9a-fA-F]{3,8}\b)/g, '<span class="syntax-operator">#</span>');
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- Numbers: hex, binary, decimal (int/float/sci) ----
     static highlightNumbers(code) {
         const patterns = [
-            /\b0x[0-9a-fA-F]+\b/g,
-            /\b0b[01]+\b/g,
-            /\b\d+\.?\d*([eE][+-]?\d+)?\b/g
+            /\b0x[0-9a-fA-F]+(?:_[0-9a-fA-F]+)*\b/g,
+            /\b0b[01]+(?:_[01]+)*\b/g,
+            /\b\d+(?:_\d+)*\b/g,
+            /\b\d+(?:_\d+)*\.\d+(?:_\d+)*(?:[eE][+-]?\d+)?\b/g
         ];
         patterns.forEach(regex => {
-            const parts = code.split(/(<[^>]*>)/);
+            const parts = this._split(code);
             for (let i = 0; i < parts.length; i += 2) {
                 if (parts[i]) parts[i] = parts[i].replace(regex, '<span class="syntax-number">$&</span>');
             }
@@ -245,12 +301,129 @@ class SimpleSyntax {
         return code;
     }
 
-    // Function calls: identifier immediately before "(".
+    // ---- Function calls: identifier immediately before "(" ----
     static highlightFunctions(code) {
-        const parts = code.split(/(<[^>]*>)/);
+        const parts = this._split(code);
         for (let i = 0; i < parts.length; i += 2) {
             if (parts[i]) {
                 parts[i] = parts[i].replace(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(?=\()/g, '<span class="syntax-function">$1</span>');
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- Variables: camelCase identifiers in code (not keywords, not functions) ----
+    // Catches things like `myVar`, `requestBody`, `chatList` that appear as standalone
+    // identifiers or after operators/punctuation.
+    static highlightVariables(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                // Match camelCase words that aren't already inside a span
+                parts[i] = parts[i].replace(/\b([a-z]+[A-Z][a-zA-Z0-9]*)\b/g, (match) => {
+                    // Skip if it's a single uppercase (class) or all-uppercase (constant)
+                    if (/^[A-Z]+$/.test(match)) return match;
+                    // Skip if it's a known keyword pattern (already handled)
+                    if (/^[a-z]+$/.test(match)) return match;
+                    return `<span class="syntax-variable">${match}</span>`;
+                });
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- Properties: identifier after "." ----
+    // Catches `obj.property`, `.length`, `.forEach`, etc.
+    static highlightProperties(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                parts[i] = parts[i].replace(/\.([a-zA-Z_$][a-zA-Z0-9_$]*)/g, '.<span class="syntax-property">$1</span>');
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- Classes: PascalCase identifiers ----
+    // Catches things like `MyClass`, `ResponseAdapter`, `ChatRenderer`
+    // Only matches words with at least one lowercase letter after the initial uppercase,
+    // so all-caps words (SQL keywords, constants) are not matched.
+    static highlightClasses(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                parts[i] = parts[i].replace(/\b([A-Z][a-z]+[a-zA-Z0-9]*)\b/g, '<span class="syntax-class">$1</span>');
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- Decorators / Annotations: @word, #word (Python) ----
+    static highlightDecorators(code, cfg) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                // @decorator (JS/TS), # decorator / @decorator (Python)
+                parts[i] = parts[i].replace(/(@|#)\s*([a-zA-Z_$][a-zA-Z0-9_$]*)/g,
+                    '<span class="syntax-decorator">$1$2</span>');
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- Regex literals: /pattern/flags (naive — not inside strings) ----
+    static highlightRegexLiterals(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                // Match /.../ followed by optional flags, but not // (comment) or /= (assign)
+                parts[i] = parts[i].replace(/(?<!=)\/([^/\\]|\\.)*\/[gimsuy]*/g, (match) => {
+                    // Skip if it looks like a division or assignment
+                    if (/^\/=$/.test(match)) return match;
+                    return `<span class="syntax-regex">${match}</span>`;
+                });
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- Template interpolations: ${...} inside backtick strings ----
+    // This only works for complete `${...}` blocks already inside the string span.
+    // We highlight the ${ and } separately for visual distinction.
+    static highlightTemplateInterpolations(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                parts[i] = parts[i].replace(/\$\{([^}]*)\}/g,
+                    '<span class="syntax-interpolation">{$1}</span>');
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- JSON keys: "key": patterns ----
+    static highlightJsonKeys(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                parts[i] = parts[i].replace(/("([^"\\]|\\.)*")\s*:/g,
+                    '<span class="syntax-json-key">$1</span>:');
+            }
+        }
+        return parts.join('');
+    }
+
+    // ---- HTML/XML tags: <tag>, </tag>, <tag attr="val"> ----
+    static highlightHtmlTags(code) {
+        const parts = this._split(code);
+        for (let i = 0; i < parts.length; i += 2) {
+            if (parts[i]) {
+                // Tag name: <word or </word
+                parts[i] = parts[i].replace(/(<\/?)([a-zA-Z][a-zA-Z0-9-]*)/g,
+                    '$1<span class="syntax-tag-name">$2</span>');
+                // Attributes: word=" or word='
+                parts[i] = parts[i].replace(/\b([a-zA-Z_:][a-zA-Z0-9_:.-]*)(?==)/g,
+                    '<span class="syntax-attr">$1</span>');
             }
         }
         return parts.join('');

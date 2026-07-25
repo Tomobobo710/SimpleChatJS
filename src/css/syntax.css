@@ -1,17 +1,18 @@
-/* SimpleSyntax.js - Syntax highlighting colors */
+/* SimpleSyntax.js - Enhanced Syntax highlighting colors */
+/* ~10 distinct color groups for rich, readable code blocks */
 
-/* Comments - Green */
+/* Comments - Green (italic) */
 .syntax-comment {
     color: #6a9955;
     font-style: italic;
 }
 
-/* Strings - Orange */
+/* Strings - Orange/Coral */
 .syntax-string {
     color: #ce9178;
 }
 
-/* Keywords - Blue */
+/* Keywords - Blue (bold) */
 .syntax-keyword {
     color: #569cd6;
     font-weight: bold;
@@ -22,46 +23,93 @@
     color: #b5cea8;
 }
 
-/* Functions - Yellow */
+/* Functions - Yellow/Gold */
 .syntax-function {
     color: #dcdcaa;
 }
 
-/* Operators - Light Gray */
+/* Operators - Light Gray (subtle but distinct) */
 .syntax-operator {
     color: #d4d4d4;
+    font-weight: bold;
 }
 
-/* HTML Tags - Red */
-.syntax-tag {
-    color: #808080;
-}
-
-.syntax-tag-name {
-    color: #569cd6;
-}
-
-/* CSS Properties - Light Blue */
-.syntax-property {
-    color: #9cdcfe;
-}
-
-/* CSS Selectors - Yellow */
-.syntax-selector {
-    color: #d7ba7d;
-}
-
-/* CSS Units - Light Green */
-.syntax-unit {
-    color: #b5cea8;
-}
-
-/* Variables - Light Blue */
+/* Variables - Light Blue (camelCase identifiers) */
 .syntax-variable {
     color: #9cdcfe;
 }
 
-/* Constants - Purple */
+/* Properties - Teal (after dot: obj.prop) */
+.syntax-property {
+    color: #4ec9b0;
+}
+
+/* Classes - Light Purple (PascalCase identifiers) */
+.syntax-class {
+    color: #c586c0;
+    font-weight: bold;
+}
+
+/* Decorators/Annotations - Yellow-Orange (@decorator, #comment) */
+.syntax-decorator {
+    color: #d7ba7d;
+    font-style: italic;
+}
+
+/* Regex literals - Red */
+.syntax-regex {
+    color: #d16969;
+}
+
+/* Template interpolations ${...} - Purple */
+.syntax-interpolation {
+    color: #c586c0;
+}
+
+/* JSON keys - Light Blue (bold) */
+.syntax-json-key {
+    color: #9cdcfe;
+    font-weight: bold;
+}
+
+/* HTML/XML tag names - Blue */
+.syntax-tag-name {
+    color: #569cd6;
+    font-weight: bold;
+}
+
+/* HTML/XML attributes - Light Blue */
+.syntax-attr {
+    color: #9cdcfe;
+}
+
+/* Units (CSS) - Light Green */
+.syntax-unit {
+    color: #b5cea8;
+}
+
+/* Selectors (CSS) - Yellow */
+.syntax-selector {
+    color: #d7ba7d;
+}
+
+/* Constants (all-caps) - Purple */
 .syntax-constant {
     color: #c586c0;
 }
+
+/* ============================================================
+   Dark theme overrides (if the app uses a light theme, swap colors)
+   ============================================================ */
+
+/* Light theme support: uncomment and adjust as needed */
+/*
+.light-theme .syntax-comment  { color: #008000; }
+.light-theme .syntax-string   { color: #a31515; }
+.light-theme .syntax-keyword  { color: #0000ff; }
+.light-theme .syntax-number   { color: #098658; }
+.light-theme .syntax-function { color: #795e26; }
+.light-theme .syntax-variable { color: #001080; }
+.light-theme .syntax-property { color: #0070c1; }
+.light-theme .syntax-class    { color: #267f99; }
+*/
