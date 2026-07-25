@@ -790,6 +790,50 @@
     /* Text content styling */
 }
 
+/* Markdown tables (rendered by formatMessage) */
+.md-table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0 0 24px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+.md-table th,
+.md-table td {
+    border: 1px solid var(--border-strong);
+    padding: 6px 10px;
+}
+.md-table th {
+    background: var(--bg-deep);
+    font-weight: 600;
+    color: var(--text);
+}
+.md-table td {
+    background: var(--bg-panel);
+    color: var(--text-soft);
+}
+.md-table tbody tr:nth-child(even) td {
+    background: var(--bg-mid);
+}
+.md-table :is(td, th):hover,
+.md-table tbody tr:nth-child(even) td:hover {
+    background: var(--bg-raised);
+}
+
+/* Markdown headings (rendered by formatMessage). Scoped to .md-heading so
+   they only affect message content, not app-level headings. */
+.md-heading {
+    margin: 24px 0px 12px;
+    line-height: 1.5;
+    color: var(--text);
+}
+h1.md-heading { font-size: 24px; font-weight: 700; }
+h2.md-heading { font-size: 21px; font-weight: 700; }
+h3.md-heading { font-size: 18px; font-weight: 600; }
+h4.md-heading { font-size: 16px; font-weight: 600; }
+h5.md-heading { font-size: 15px; font-weight: 600; }
+h6.md-heading { font-size: 14px; font-weight: 600; color: var(--text-dim); }
+
 .image-part {
     /* Image content styling */
     display: flex;
