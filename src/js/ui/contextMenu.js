@@ -32,6 +32,19 @@ class ElectronContextMenu {
     showMenu(x, y, items) {
         this.hideMenu(); // Hide any existing menu
 
+        // Capture the focused element and its selection NOW — the textarea
+        // still has focus and the misspelled word is selected. By the time the
+        // user clicks a menu item, the click steals focus and the selection is
+        // lost, so we can't read it at click time.
+        const el = document.activeElement;
+        if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) {
+            this.targetEl = el;
+            this.targetSelection = { start: el.selectionStart, end: el.selectionEnd };
+        } else {
+            this.targetEl = null;
+            this.targetSelection = null;
+        }
+
         // Create menu element
         this.menu = document.createElement('div');
         this.menu.className = 'electron-context-menu';
@@ -52,8 +65,17 @@ class ElectronContextMenu {
                 menuItem.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.hideMenu();
-                    if (window.electronAPI) {
-                        window.electronAPI.executeContextAction(item.action);
+                    if (item.action === 'replace-word' && this.targetEl && this.targetSelection) {
+                        // Replace the misspelled word directly — the textarea
+                        // lost focus on this click, so use the selection we
+                        // captured when the menu opened.
+                        const target = this.targetEl;
+                        const { start, end } = this.targetSelection;
+                        target.focus();
+                        target.setRangeText(item.suggestion, start, end, 'end');
+                        target.dispatchEvent(new Event('input', { bubbles: true }));
+                    } else if (window.electronAPI) {
+                        window.electronAPI.executeContextAction(item.action, item);
                     }
                 });
 

@@ -114,7 +114,7 @@ function diagnoseEditFailure(working, oldString) {
 // (os_name, example_path) and the detected shell (shell_name, shell_syntax).
 // File tools use Node fs and don't touch the shell, so they only mention the OS
 // and a native example path. Only shell_run names the shell and its syntax.
-const READ_FILE_TPL = "Read the contents of a file at the given path. You'll use this the most to read content.\nYou are on {os_name}.\nFile path example: {example_path}\nOptional: start_line and end_line to read a specific line range.\nOutput is capped at {read_cap_kb}KB; if a file exceeds that, read a portion with start_line/end_line.\nRequired: path.";
+const READ_FILE_TPL = "Read the contents of a file at the given path. You'll use this the most to read content.\nYou are on {os_name}.\nFile path example: {example_path}\nOptional: start_line and end_line to read a specific line range. If you provide either, you must provide both — providing only one is an error. Use \"EOF\" as end_line to read from start_line to the end of the file.\nOutput is capped at {read_cap_kb}KB; if a file exceeds that, read a portion with start_line/end_line.\nRequired: path.";
 const WRITE_FILE_TPL = 'Create or overwrite a file at the given path with the specified content.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, content.';
 const EDIT_FILE_TPL = 'This is the primary tool for modifying files — prefer it over shell commands (sed, awk, Set-Content, etc.) for any edit.\nApplies one or more find/replace edits to a file. Provide an "edits" array; each edit has old_string (the text to find) and new_string (the replacement).\nEdits apply in order, each operating on the result of the previous one. Either all edits apply or none do — if any old_string is not found, nothing is written and the error describes where the match failed.\nCRLF and LF line endings are treated as equivalent — you can use \\n in old_string even on Windows files.\nYou are on {os_name}.\nFile path example: {example_path}\nRequired: path, edits.';
 const SHELL_RUN_TPL = 'Run a {shell_name} command and return its output. This tool should be used for non-file operations, use read_file, write_file, and edit_file for those operations. Use for: executing commands, scripts, build tools, git operations.\nYou are on {os_name} using {shell_name}.\n{shell_syntax}\nKeep output focused to avoid unnecessary context usage. When a command may be verbose, use its filtering, limiting, or summary options where practical (for example, targeted tests, focused searches, summary output, or limited logs), but do not filter away errors or information needed to verify the result.\nConsecutive exactly repeated lines or multi-line blocks may be losslessly compacted between markers that state the copy and line counts. Output is capped at {shell_cap_kb}KB; if exceeded, the top is truncated and only the last lines are returned.\nCommands are killed after {shell_timeout_sec}s by default; pass timeout_sec to override for a single call. Required: command.';
@@ -186,8 +186,8 @@ function getToolDefinitions(shellInfo, config, defaultTimeoutSec = 360) {
                 type: 'object',
                 properties: {
                     path: { type: 'string', description: 'File path to read (absolute or relative)' },
-                    start_line: { type: 'integer', description: 'Optional 1-based first line to read. Required to read files larger than the size cap.' },
-                    end_line: { type: 'integer', description: 'Optional 1-based last line to read (inclusive). Defaults to start_line when omitted.' }
+                    start_line: { type: 'integer', description: 'Optional 1-based first line to read. Required to read files larger than the size cap. If provided, end_line must also be provided.' },
+                    end_line: { type: ['integer', 'string'], description: '1-based last line to read (inclusive), or "EOF" to read to the end of the file. Must be provided together with start_line.' }
                 },
                 required: ['path'],
                 additionalProperties: false
@@ -280,9 +280,40 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB, cwd) {
         ? path.resolve(cwd, filePath)
         : filePath;
 
-    const startLine = args?.start_line;
-    const endLine = args?.end_line;
-    const hasRange = startLine !== undefined && startLine !== null;
+    const rawStartLine = args?.start_line;
+    const rawEndLine = args?.end_line;
+
+    // Coerce numeric strings to integers — models sometimes send line numbers
+    // as strings (e.g. "80" instead of 80). "EOF" is preserved as a string.
+    const coerceLine = (v) => {
+        if (typeof v === 'string') {
+            const upper = v.toUpperCase();
+            if (upper === 'EOF') return 'EOF';
+            const num = Number(v);
+            if (Number.isInteger(num)) return num;
+        }
+        return v;
+    };
+
+    const startLine = coerceLine(rawStartLine);
+    const endLine = coerceLine(rawEndLine);
+    const hasStart = startLine !== undefined && startLine !== null;
+    const hasEnd = endLine !== undefined && endLine !== null;
+
+    // start_line and end_line must be used together: both or neither.
+    // Silently defaulting end_line to start_line (reading one line) was
+    // confusing — the model expects a chunk, not a single line.
+    if (hasStart !== hasEnd) {
+        const provided = hasStart ? 'start_line' : 'end_line';
+        const missing = hasStart ? 'end_line' : 'start_line';
+        throw new Error(
+            `start_line and end_line must be provided together. You provided only ${provided} but not ${missing}. ` +
+            `Either provide both (use "EOF" as end_line to read to the end of the file) ` +
+            `or provide neither to read the whole file.`
+        );
+    }
+
+    const hasRange = hasStart && hasEnd;
 
     let content;
     try {
@@ -308,7 +339,7 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB, cwd) {
         return {
             success: false,
             error: 'File too large',
-            message: `File '${resolvedPath}' is ${content.length} characters (${totalLines} lines), which exceeds the ${readCap}-character limit. Read a portion with start_line/end_line.`,
+            message: `File '${resolvedPath}' is ${content.length} characters (${totalLines} lines), which exceeds the ${readCap}-character limit. Read a portion with start_line/end_line (use "EOF" as end_line to read to the end of the file).`,
             total_size: content.length,
             line_count: totalLines
         };
@@ -318,9 +349,30 @@ async function doReadFile(args, readCap = DEFAULT_OUTPUT_LIMIT_KB * KB, cwd) {
     let outText = content;
     let firstLine = 1;
     if (hasRange) {
+        if (!Number.isInteger(startLine) || startLine < 1) {
+            throw new Error(`start_line must be a positive integer (1-based). Got: ${JSON.stringify(startLine)}`);
+        }
+
         const lines = content.split('\n');
-        const startIdx = Math.max(0, startLine - 1);
-        const endIdx = (endLine !== undefined && endLine !== null) ? endLine : startIdx + 1;
+        const startIdx = startLine - 1;
+
+        let endIdx;
+        if (typeof endLine === 'string') {
+            if (endLine.toUpperCase() === 'EOF') {
+                endIdx = lines.length;
+            } else {
+                throw new Error(`end_line must be a positive integer (1-based) or "EOF". Got: ${JSON.stringify(endLine)}`);
+            }
+        } else {
+            if (!Number.isInteger(endLine) || endLine < 1) {
+                throw new Error(`end_line must be a positive integer (1-based) or "EOF". Got: ${JSON.stringify(endLine)}`);
+            }
+            if (endLine < startLine) {
+                throw new Error(`end_line (${endLine}) must be greater than or equal to start_line (${startLine}).`);
+            }
+            endIdx = endLine;
+        }
+
         const slice = lines.slice(startIdx, endIdx);
         outText = slice.join('\n');
         firstLine = startIdx + 1;

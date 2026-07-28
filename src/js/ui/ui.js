@@ -143,7 +143,24 @@ function setupEventListeners() {
             draftAutosaveTimer = setTimeout(saveDraftForCurrentChat, 800);
         }
     });
-    
+
+    // Escape key stops AI generation for the current chat.
+    // In Electron, the find-bar library registers ESC as a global shortcut
+    // that swallows the keydown event, so we also listen for an IPC message
+    // from the main process. The keydown listener covers browser mode.
+    const handleEscapeStop = () => {
+        if (document.querySelector('.aim-modal:not(.hidden), .image-modal:not(.hidden), .modal-overlay, .confirm-overlay')) return;
+        if (typeof streamManager === 'undefined' || !streamManager.isStreaming(currentChatId)) return;
+        stopGeneration();
+    };
+    window.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        handleEscapeStop();
+    });
+    if (window.electronAPI && window.electronAPI.onEscapePressed) {
+        window.electronAPI.onEscapePressed(handleEscapeStop);
+    }
+
     // Settings modal (old settings button removed from sidebar, kept for compatibility)
     if (settingsBtn) {
         settingsBtn.addEventListener('click', async () => {

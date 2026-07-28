@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, globalShortcut } = require("electron");
 const path = require("path");
 const setFindBar = require("find-bar");
 
@@ -153,6 +153,27 @@ function createWindow() {
         });
         // Add find bar to this window
         setFindBar(mainWindow, { darkMode: true });
+
+        // The find-bar library registers ESC as a global shortcut that
+        // intercepts Escape at the OS level — no keydown event ever reaches
+        // the renderer. Override it so Escape stops AI generation when the
+        // find bar isn't visible, and still hides the find bar when it is.
+        // Our 'focus' listener is registered after setFindBar's, so it runs
+        // second and replaces the find-bar's ESC registration each time.
+        const overrideEscShortcut = () => {
+            globalShortcut.unregister('ESC');
+            globalShortcut.register('ESC', () => {
+                const findBar = mainWindow.getChildWindows().find(w => w._isFindBar && w.isVisible());
+                if (findBar) {
+                    findBar.hide();
+                    mainWindow.webContents.stopFindInPage('clearSelection');
+                } else {
+                    mainWindow.webContents.send('escape-pressed');
+                }
+            });
+        };
+        mainWindow.on('focus', overrideEscShortcut);
+        if (mainWindow.isFocused()) overrideEscShortcut();
     }).catch((err) => {
         console.error("Server failed to start, cannot load window:", err);
     });
@@ -172,6 +193,21 @@ function createWindow() {
     mainWindow.webContents.on("context-menu", (event, params) => {
         // Build menu items array
         const menuItems = [];
+
+        // Spell check suggestions (Chromium selects the misspelled word on
+        // right-click, so the textarea selection brackets it — the preload
+        // replaces that selection with the chosen suggestion).
+        if (params.misspelledWord) {
+            const suggestions = params.dictionarySuggestions || [];
+            for (const suggestion of suggestions) {
+                menuItems.push({ action: "replace-word", label: suggestion, suggestion });
+            }
+            if (suggestions.length > 0) {
+                menuItems.push({ action: "separator" });
+            }
+            menuItems.push({ action: "add-to-dictionary", label: "Add to Dictionary", word: params.misspelledWord });
+            menuItems.push({ action: "separator" });
+        }
 
         // Add copy menu item if there is text selection
         if (params.selectionText) {
@@ -267,6 +303,14 @@ app.whenReady().then(() => {
     ipcMain.on("inspect-element", () => {
         if (mainWindow) {
             mainWindow.webContents.toggleDevTools();
+        }
+    });
+
+    // Handle add-to-dictionary IPC (persists across restarts via the session's
+    // custom dictionary file in the Electron user-data directory).
+    ipcMain.on("add-to-dictionary", (event, word) => {
+        if (mainWindow && word) {
+            mainWindow.webContents.session.addWordToUserDictionary(word);
         }
     });
 

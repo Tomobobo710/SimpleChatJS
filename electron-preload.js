@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onShowContextMenu: (callback) => {
         ipcRenderer.on('show-context-menu', (event, data) => callback(data));
     },
-    executeContextAction: (action) => {
+    executeContextAction: (action, data) => {
         if (action === 'copy') {
             document.execCommand('copy');
         } else if (action === 'cut') {
@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
             document.execCommand('paste');
         } else if (action === 'inspect') {
             ipcRenderer.send('inspect-element');
+        } else if (action === 'add-to-dictionary') {
+            if (data && data.word) {
+                ipcRenderer.send('add-to-dictionary', data.word);
+            }
         }
     },
     pickFolder: () => {
@@ -38,5 +42,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     getHomeDir: () => {
         return ipcRenderer.invoke('get-home-dir');
+    },
+    onEscapePressed: (callback) => {
+        ipcRenderer.on('escape-pressed', () => callback());
     }
 });
