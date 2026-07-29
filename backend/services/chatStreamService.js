@@ -482,6 +482,11 @@ async function executeStreamingLoop(
                             });
                         }
                     }
+                    // Forward live timing stats to the frontend so the footer
+                    // can update in real time during streaming.
+                    if (event.type === "stats_update") {
+                        writeSSEEvent(res, "stats_update", event.data);
+                    }
                 }
 
                 Object.assign(context, result.context);

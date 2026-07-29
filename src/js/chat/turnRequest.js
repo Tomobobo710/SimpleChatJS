@@ -175,6 +175,19 @@ class TurnRequest {
         container.appendChild(responseTurnDiv);
         responseTurnDiv.appendChild(tempContainer);
 
+        // Live stats footer — shows real tokens/sec during streaming (from
+        // llama-server's timings_per_token + return_progress), replaced by
+        // the final timings when the completed RenderableTurnObject is rendered.
+        const liveFooter = document.createElement("div");
+        liveFooter.className = "turn-footer live-footer";
+        liveFooter.style.visibility = "hidden";
+        responseTurnDiv.appendChild(liveFooter);
+
+        // Cumulative token count across all rounds (tool-calling may produce
+        // multiple generation rounds, each resetting predicted_n to 0).
+        let cumulativeTokens = 0;
+        let lastPredictedN = 0;
+
         // The response owns its identity: the backend mints the response turn_id
         // and announces it in the X-Response-Turn-Id header. We expose it on the
         // entry as a promise so a steer issued before the header lands can await
@@ -310,8 +323,45 @@ class TurnRequest {
                         case 'reasoning_start': processor.startReasoningBlock(event.data.blockId); break;
                         case 'reasoning_delta': processor.addReasoningDelta(event.data.blockId, event.data.text); break;
                         case 'reasoning_end': processor.finishReasoningBlock(event.data.blockId); break;
-                        case 'content_delta': processor.addContentDelta(event.data.text); break;
+                        case 'content_delta':
+                            processor.addContentDelta(event.data.text);
+                            break;
                         case 'response_debug': if (event.data) collectedResponseDebug.push(event.data); break;
+                        case 'stats_update': {
+                            const d = event.data;
+                            // Prompt-processing phase: show progress before any
+                            // generation tokens are produced.
+                            if (d.prompt_progress) {
+                                const pp = d.prompt_progress;
+                                if (pp.processed != null && pp.total != null) {
+                                    liveFooter.innerHTML =
+                                        `<span class="footer-stat">processing ${pp.processed.toLocaleString()}/${pp.total.toLocaleString()}</span>`;
+                                    liveFooter.style.visibility = "visible";
+                                }
+                            }
+                            // Generation phase: show token count + speeds.
+                            if (d.timings) {
+                                const t = d.timings;
+                                // Detect round reset: predicted_n drops below
+                                // the last value when a new generation round starts.
+                                if (t.predicted_n != null && t.predicted_n < lastPredictedN) {
+                                    cumulativeTokens += lastPredictedN;
+                                }
+                                if (t.predicted_n != null) lastPredictedN = t.predicted_n;
+                                const totalTokens = cumulativeTokens + (t.predicted_n ?? 0);
+                                const stats = [];
+                                stats.push(`<span class="footer-stat">↓ ${totalTokens.toLocaleString()} tok</span>`);
+                                if (t.predicted_per_second != null && t.predicted_per_second > 0) {
+                                    stats.push(`<span class="footer-stat">${t.predicted_per_second.toFixed(1)} tok/s</span>`);
+                                }
+                                if (t.prompt_per_second != null && t.prompt_per_second > 0) {
+                                    stats.push(`<span class="footer-stat">prompt ${t.prompt_per_second.toFixed(1)} tok/s</span>`);
+                                }
+                                liveFooter.innerHTML = stats.join('<span class="footer-sep">·</span>');
+                                liveFooter.style.visibility = "visible";
+                            }
+                            break;
+                        }
                         case 'done': processor.finalize(event.data); break;
                     }
                     scheduleLiveRender();

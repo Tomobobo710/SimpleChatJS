@@ -417,7 +417,9 @@
 /* Turn footer — token counts and timing stats */
 .turn-footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: 12px;
     margin-top: 6px;
     padding-top: 5px;
@@ -437,6 +439,12 @@
 
 .turn-footer .footer-sep {
     color: var(--border-strong);
+}
+
+/* Live stats footer — shown during streaming, replaced by final stats on completion */
+.turn-footer.live-footer {
+    opacity: 0.5;
+    font-variant-numeric: tabular-nums;
 }
 
 }

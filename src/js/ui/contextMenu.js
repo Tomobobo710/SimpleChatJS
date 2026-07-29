@@ -17,9 +17,28 @@ class ElectronContextMenu {
                 this.hideMenu();
             });
 
-            // Hide menu on scroll
+            // Hide menu on user-initiated scroll only. During AI streaming the
+            // auto-scroll (ResizeObserver / smartScrollToBottom) sets scrollTop
+            // programmatically, which fires scroll events that would close the
+            // menu while the user is mid-interaction. Track whether the scroll
+            // was caused by a user input (wheel, touch, keyboard) and only
+            // dismiss then.
+            let userScrolling = false;
+            let userScrollTimer = null;
+            const markUserScroll = () => {
+                userScrolling = true;
+                clearTimeout(userScrollTimer);
+                userScrollTimer = setTimeout(() => { userScrolling = false; }, 150);
+            };
+            document.addEventListener('wheel', markUserScroll, true);
+            document.addEventListener('touchmove', markUserScroll, true);
+            document.addEventListener('keydown', (e) => {
+                if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) {
+                    markUserScroll();
+                }
+            }, true);
             document.addEventListener('scroll', () => {
-                this.hideMenu();
+                if (userScrolling) this.hideMenu();
             }, true);
 
             // Hide menu on window resize

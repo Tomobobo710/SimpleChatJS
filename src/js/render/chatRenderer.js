@@ -2015,20 +2015,24 @@ class ChatRenderer {
 
         const stats = [];
 
-        if (usage) {
-            const promptTok = usage.prompt_tokens ?? usage.input_tokens;
-            const completionTok = usage.completion_tokens ?? usage.output_tokens;
-            if (promptTok != null) stats.push(`<span class="footer-stat">↑ ${promptTok.toLocaleString()}</span>`);
-            if (completionTok != null) stats.push(`<span class="footer-stat">↓ ${completionTok.toLocaleString()} tok</span>`);
-        }
-
+        // When timings are available (llama-server), show the same 3 stats
+        // the live footer showed: token count, generation tok/s, prompt tok/s.
         if (timings) {
+            if (timings.predicted_n != null) {
+                stats.push(`<span class="footer-stat">↓ ${timings.predicted_n.toLocaleString()} tok</span>`);
+            }
             if (timings.predicted_per_second != null) {
                 stats.push(`<span class="footer-stat">${timings.predicted_per_second.toFixed(1)} tok/s</span>`);
             }
             if (timings.prompt_per_second != null) {
                 stats.push(`<span class="footer-stat">prompt ${timings.prompt_per_second.toFixed(1)} tok/s</span>`);
             }
+        } else if (usage) {
+            // Non-timing providers: show usage-based token counts.
+            const promptTok = usage.prompt_tokens ?? usage.input_tokens;
+            const completionTok = usage.completion_tokens ?? usage.output_tokens;
+            if (promptTok != null) stats.push(`<span class="footer-stat">↑ ${promptTok.toLocaleString()}</span>`);
+            if (completionTok != null) stats.push(`<span class="footer-stat">↓ ${completionTok.toLocaleString()} tok</span>`);
         }
 
         if (stats.length === 0) return;
