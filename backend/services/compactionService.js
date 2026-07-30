@@ -20,7 +20,7 @@ const http = require("http");
 const { log } = require("../utils/logger");
 const { getCurrentSettings, DEFAULT_COMPACTION_TEMPLATE } = require("./settingsService");
 const { saveMessage, getChatHistoryForAPI } = require("./messageRepository");
-const { getTurnInfo } = require("./turnService");
+const { getTurnInfo, getAncestorTurnIds } = require("./turnService");
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
 const { addToolEvent } = require("./toolEventService");
@@ -278,13 +278,19 @@ function groupTurns(messages) {
 const BOUNDARY_TURN_TYPES = new Set(["compaction_request", "compaction_response", "compaction_kept"]);
 function isBoundaryTurnType(t) { return BOUNDARY_TURN_TYPES.has(t); }
 
-// Latest summary text for a chat (newest compaction_response wins), or null. Queried
-// directly so incremental re-summaries can feed the prior summary back in.
-function getLatestSummary(chatId) {
+// Latest summary text on the SAME BRANCH as the anchor (newest compaction_response
+// among the anchor's ancestor turn IDs wins), or null. Lineage-scoped so a summary
+// from a different branch never leaks into this branch's prompt shell. Returns null
+// if the anchor has no compaction ancestor (first compaction on this branch).
+function getLatestSummary(chatId, anchorTurnId = null) {
     const { db } = require("../config/database");
+    if (!anchorTurnId) return null;
+    const ancestorIds = getAncestorTurnIds(chatId, anchorTurnId);
+    if (!ancestorIds.length) return null;
+    const placeholders = ancestorIds.map(() => "?").join(",");
     const row = db
-        .prepare("SELECT content FROM messages WHERE chat_id = ? AND turn_type = 'compaction_response' AND content != '' ORDER BY id DESC LIMIT 1")
-        .get(chatId);
+        .prepare(`SELECT content FROM messages WHERE chat_id = ? AND turn_type = 'compaction_response' AND content != '' AND turn_id IN (${placeholders}) ORDER BY id DESC LIMIT 1`)
+        .get(chatId, ...ancestorIds);
     return row ? row.content : null;
 }
 
@@ -344,7 +350,7 @@ async function compactChat(chatId, { keepTurns, anchorTurnId = null, requestId =
     // are lineage-transparent (their parent is the last covered turn, not on the tail's
     // ancestor chain), so the anchored history query may not include them — look the
     // latest one up directly instead of scanning `turns`.
-    const previousSummary = getLatestSummary(chatId);
+    const previousSummary = getLatestSummary(chatId, anchorTurnId);
 
     // Compaction is summarize-only. Build the prompt SHELL (stored on the request), then
     // append the transcript for the model call. An edited shell (Edit & Retry) is used
