@@ -5,15 +5,15 @@
 // A browser tab is a job like any other in the shared registry — its kill
 // handler destroys the BrowserWindow instead of killing a child process.
 //
-// Screenshot caveat: browser_screenshot returns the PNG as a base64 STRING
-// field in the JSON tool result, not a real multimodal image content block.
-// True inline image tool-results would need every adapter's tool-result
-// serialization changed (today message.content is always a plain
-// JSON.stringify'd string — see chatStreamService.js and
-// AnthropicAdapter.js's tool_result conversion), which is a bigger plumbing
-// change than this slice takes on. A future pass could wire that through
-// properly; for now this is an honest, working v1 (useful for automation/
-// debugging even if the model can't currently "see" it as a real image).
+// browser_screenshot's tool result still carries the image as a base64
+// string field (useful for automation/debugging and for the Web Tabs panel's
+// thumbnail), but the model actually SEES the screenshot via a separate
+// mechanism: chatStreamService.js pushes a synthetic role:'user' message
+// with a real {type:'image',...} content part right after the tool result,
+// reusing the exact same multimodal path a human's uploaded image goes
+// through (main.js's buildMessageContentFromInput) — no adapter-specific
+// tool-result plumbing needed, since every adapter already knows how to
+// convert that content shape correctly.
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
@@ -99,6 +99,7 @@ const consoleLogs = new Map(); // jobId -> Array<{level, message, line, sourceId
 registry.registerKillHandler('browser_tab', (job) => {
     const win = liveWindows.get(job.id);
     if (win && !win.isDestroyed()) {
+        win._simplechatAllowClose = true; // real kill, not the OS window's X button — let 'close' through
         try { win.destroy(); } catch (_) {}
     }
     // finishJob is called from the window's own 'closed' event handler
@@ -282,7 +283,7 @@ async function openBrowserTab({ url, chatId, config }) {
         chatId,
         label: url,
         startedBy: 'ai',
-        meta: { url, title: '', cacheEnabled: config.default_cache_enabled }
+        meta: { url, title: '', cacheEnabled: config.default_cache_enabled, visible: false }
     });
 
     // Isolated session per tab so cache behavior can be toggled per-tab
@@ -307,6 +308,19 @@ async function openBrowserTab({ url, chatId, config }) {
     });
     liveWindows.set(jobId, win);
     consoleLogs.set(jobId, []);
+
+    // The user clicking the OS window's own close button (X) should behave
+    // like the panel's "Hide" button, not "Close" — the tab (and the AI's
+    // job) keeps running, just hidden again. 'close' fires BEFORE
+    // destruction and is cancelable; 'closed' (below) fires after and is
+    // the REAL teardown, reached only via explicit destroy() (panel Close /
+    // job_kill / registry kill handler), never by the window's X button.
+    win.on('close', (event) => {
+        if (win._simplechatAllowClose) return; // real close in progress (see closeBrowserTab/kill handler)
+        event.preventDefault();
+        win.hide();
+        setTabVisibleMeta(jobId, false);
+    });
 
     win.on('closed', () => {
         liveWindows.delete(jobId);
@@ -429,10 +443,46 @@ async function typeText(jobId, text) {
     return { success: true, job_id: jobId, length: String(text).length };
 }
 
+// Progressive scale/quality compression, same target and ladder as
+// imageProcessing.js's browser-side compressor (canvas.toBlob there,
+// nativeImage here — no DOM in the Electron main process, so this is the
+// main-process equivalent rather than a call to that function directly).
+// Raw screenshots are large (a 1280x800 PNG easily exceeds 1MB); this keeps
+// the resulting message reasonably sized before it's sent to the model.
+const SCREENSHOT_MAX_BASE64_KB = 100;
+const SCREENSHOT_TARGET_KB = Math.floor(SCREENSHOT_MAX_BASE64_KB * 0.75);
+const SCREENSHOT_QUALITIES = Array.from({ length: 7 }, (_, i) => 70 - i * 10); // 70..10, toJPEG wants 0-100
+const SCREENSHOT_SCALES = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
+
+function compressNativeImage(image) {
+    const { width, height } = image.getSize();
+    for (const scale of SCREENSHOT_SCALES) {
+        const scaledW = Math.round(width * scale);
+        const scaledH = Math.round(height * scale);
+        const scaled = scale === 1.0 ? image : image.resize({ width: scaledW, height: scaledH });
+        for (const quality of SCREENSHOT_QUALITIES) {
+            const buf = scaled.toJPEG(quality);
+            const base64 = buf.toString('base64');
+            if (base64.length / 1024 <= SCREENSHOT_TARGET_KB) {
+                return base64;
+            }
+        }
+    }
+    // Every rung failed to hit the target (e.g. a tiny/already-simple image
+    // that still won't compress further) — fall back to the smallest/lowest
+    // quality attempt rather than erroring, same spirit as the browser-side
+    // compressor throwing only when NOTHING produced output at all.
+    const smallest = image.resize({
+        width: Math.round(width * SCREENSHOT_SCALES[SCREENSHOT_SCALES.length - 1]),
+        height: Math.round(height * SCREENSHOT_SCALES[SCREENSHOT_SCALES.length - 1])
+    });
+    return smallest.toJPEG(SCREENSHOT_QUALITIES[SCREENSHOT_QUALITIES.length - 1]).toString('base64');
+}
+
 async function captureScreenshot(jobId) {
     const win = getLiveWindow(jobId);
     const image = await win.webContents.capturePage();
-    return image.toPNG().toString('base64');
+    return { base64: compressNativeImage(image), mimeType: 'image/jpeg' };
 }
 
 function readConsoleLogs(jobId) {
@@ -464,6 +514,7 @@ async function setCacheEnabled(jobId, enabled) {
 async function closeBrowserTab(jobId) {
     const win = liveWindows.get(jobId);
     if (win && !win.isDestroyed()) {
+        win._simplechatAllowClose = true; // real close, not the OS window's X button
         win.destroy();
     }
     const job = registry.getJob(jobId);
@@ -479,16 +530,29 @@ async function closeBrowserTab(jobId) {
 // at it" is a user action, not something the model should decide (mirrors the
 // job registry's "kill is always available to the user" principle).
 
+// meta.visible is mirrored into the job registry (not just tracked on the
+// live window) so the panel's poll of /api/jobs picks up visibility changes
+// it didn't itself cause — e.g. the user clicking the OS window's own close
+// button, which now hides rather than kills (see the 'close' handler above).
+// Without this the Reveal/Hide button's label would go stale after that.
+function setTabVisibleMeta(jobId, visible) {
+    const job = registry.getJob(jobId);
+    if (!job) return;
+    registry.updateJob(jobId, { meta: { ...job.meta, visible } });
+}
+
 function revealTab(jobId) {
     const win = getLiveWindow(jobId);
     win.show();
     win.focus();
+    setTabVisibleMeta(jobId, true);
     return { success: true, job_id: jobId, visible: true };
 }
 
 function hideTab(jobId) {
     const win = getLiveWindow(jobId);
     win.hide();
+    setTabVisibleMeta(jobId, false);
     return { success: true, job_id: jobId, visible: false };
 }
 
@@ -502,7 +566,7 @@ function isTabVisible(jobId) {
 // AI-tool-shaped executeBrowserTool (no config.enabled gate — a user viewing
 // their own already-open tab isn't an AI capability to gate).
 async function captureThumbnail(jobId) {
-    return await captureScreenshot(jobId);
+    return await captureScreenshot(jobId); // { base64, mimeType }
 }
 
 // ===== Tool execution =====
@@ -545,8 +609,8 @@ async function executeBrowserTool(toolName, args, opts = {}) {
         }
         case 'browser_screenshot': {
             if (!args?.job_id) throw new Error('Missing required field: job_id');
-            const imageBase64 = await captureScreenshot(args.job_id);
-            return { success: true, job_id: args.job_id, image_base64: imageBase64, mime_type: 'image/png' };
+            const shot = await captureScreenshot(args.job_id);
+            return { success: true, job_id: args.job_id, image_base64: shot.base64, mime_type: shot.mimeType };
         }
         case 'browser_read_console': {
             if (!args?.job_id) throw new Error('Missing required field: job_id');

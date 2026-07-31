@@ -76,7 +76,7 @@ const WebTabsPanel = {
             // poll — without this, every 2s tick nukes the row list (losing
             // hover state, in-progress clicks, etc.) even when idle. Signature
             // covers everything a row renders, so a real change is never missed.
-            const signature = JSON.stringify(jobs.map(j => [j.id, j.status, j.startedBy, j.killedBy, j.meta?.title, j.meta?.url]));
+            const signature = JSON.stringify(jobs.map(j => [j.id, j.status, j.startedBy, j.killedBy, j.meta?.title, j.meta?.url, j.meta?.visible]));
             if (signature === this._lastSignature) return;
             this._lastSignature = signature;
             this._render(jobs, data.other_running_count || 0);
@@ -139,6 +139,12 @@ const WebTabsPanel = {
         const title = (job.meta && job.meta.title) || '';
         const url = (job.meta && job.meta.url) || job.label || '';
         const canClose = job.status === 'running';
+        // meta.visible reflects the REAL window state (see browserToolService.js's
+        // setTabVisibleMeta) — reading it from every poll instead of trusting
+        // the button's own last-clicked label means the label stays correct
+        // even when visibility changed some other way, e.g. the user clicking
+        // the OS window's own close button (which now hides rather than kills).
+        const isVisible = !!(job.meta && job.meta.visible);
         const cachedThumb = this._thumbCache[job.id];
         const thumbInner = cachedThumb
             ? `<img src="${cachedThumb}" alt="tab preview">`
@@ -159,7 +165,7 @@ const WebTabsPanel = {
                     <span>started by ${startedByLabel}${killedByNote}</span>
                 </div>
                 <div class="job-row-actions">
-                    <button class="job-row-btn reveal-btn" ${canClose ? '' : 'disabled'}>Reveal</button>
+                    <button class="job-row-btn reveal-btn" ${canClose ? '' : 'disabled'}>${isVisible ? 'Hide' : 'Reveal'}</button>
                     <button class="job-row-btn kill-btn" ${canClose ? '' : 'disabled'}>Close</button>
                 </div>
             </div>

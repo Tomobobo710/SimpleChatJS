@@ -125,8 +125,8 @@ router.post('/jobs/:jobId/hide', (req, res) => {
 
 router.get('/jobs/:jobId/thumbnail', async (req, res) => {
     try {
-        const base64 = await browserToolService.captureThumbnail(req.params.jobId);
-        res.json({ success: true, image_base64: base64, mime_type: 'image/png' });
+        const shot = await browserToolService.captureThumbnail(req.params.jobId);
+        res.json({ success: true, image_base64: shot.base64, mime_type: shot.mimeType });
     } catch (err) {
         res.status(400).json({ error: err.message });
     }

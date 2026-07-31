@@ -853,6 +853,26 @@ async function executeToolCallsAndContinue(
                 log(`[CHAT-SAVE] Saved tool response for ${toolCall.function.name}`);
             }
 
+            // browser_screenshot: the model can't "see" an image sitting inside a
+            // tool-result JSON string (every adapter treats tool content as text).
+            // Instead, push a synthetic user-role message with a real image content
+            // part — the SAME shape/path a human's uploaded image goes through
+            // (see main.js's buildMessageContentFromInput) — so every adapter's
+            // already-correct image handling picks it up with no adapter changes.
+            if (toolCall.function.name === 'browser_screenshot' && toolResult && toolResult.success && toolResult.image_base64) {
+                const screenshotMessage = {
+                    role: "user",
+                    content: [
+                        { type: "image", imageData: toolResult.image_base64, mimeType: toolResult.mime_type || 'image/jpeg' }
+                    ]
+                };
+                messages.push(screenshotMessage);
+                if (chatId) {
+                    await saveMessage(chatId, screenshotMessage, turnInfo);
+                    log(`[CHAT-SAVE] Saved synthetic image message for browser_screenshot`);
+                }
+            }
+
             if (requestId) {
                 addToolEvent(requestId, {
                     type: "tool_execution_complete",
