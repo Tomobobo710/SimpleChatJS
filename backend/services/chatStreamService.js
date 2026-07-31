@@ -730,11 +730,21 @@ async function executeToolCallsAndContinue(
         responseDebugEntry = { response: debugPayload.response };
     }
 
+    // Validate tool calls before saving/executing: strip any whose arguments
+    // are not valid JSON (incomplete/truncated from a streaming parse issue).
+    // This prevents malformed tool_calls from being saved to the DB and sent
+    // back to the provider in the continuation round, which would cause a 500
+    // from providers like llama-server that validate tool call arguments.
+    const validToolCalls = validateToolCalls(toolCalls) || [];
+    if (validToolCalls.length < toolCalls.length) {
+        log(`[TOOL-EXECUTION] Stripped ${toolCalls.length - validToolCalls.length} tool call(s) with invalid JSON arguments`);
+    }
+
     // Add assistant message with tool calls to conversation
     const assistantMessageWithTools = {
         role: "assistant",
         content: assistantMessage || "",
-        tool_calls: toolCalls,
+        tool_calls: validToolCalls,
         reasoning: reasoning || null,
         debug_data: responseDebugEntry
     };
@@ -744,7 +754,7 @@ async function executeToolCallsAndContinue(
     // Save assistant message with tool calls FIRST (before tool results)
     if (chatId) {
         await saveMessage(chatId, assistantMessageWithTools, turnInfo);
-        log(`[CHAT-SAVE] Saved response message with ${toolCalls.length} tool calls`);
+        log(`[CHAT-SAVE] Saved response message with ${validToolCalls.length} tool calls`);
     }
     // Emit this round's debug on the MAIN stream (ordered with content/done on the same
     // connection — the tool channel races `done` and can be closed before delivery).
@@ -754,7 +764,7 @@ async function executeToolCallsAndContinue(
 
     // Execute each tool call. Results are persisted as tool-role messages (saveMessage
     // below) and streamed live via tool events — that is the single source the UI reads.
-    for (const toolCall of toolCalls) {
+    for (const toolCall of validToolCalls) {
         log(`[TOOL-EXECUTION] Executing tool: ${toolCall.function.name}`);
 
         let toolArgs;

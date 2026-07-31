@@ -87,9 +87,20 @@ class OpenAIAdapter extends BaseResponseAdapter {
                         
                         // Handle tool calls
                         if (delta.tool_calls) {
+                            // Track tool calls by their streaming index so that
+                            // multiple tool calls in one response are each handled
+                            // independently. The OpenAI streaming format assigns
+                            // each tool call an index (0, 1, 2, ...); the first
+                            // chunk for each carries id + function.name, and
+                            // subsequent chunks carry argument deltas for that index.
+                            if (!context.toolCallsByIndex) context.toolCallsByIndex = {};
+
                             for (const toolCall of delta.tool_calls) {
-                                if (toolCall.index === 0 && toolCall.id) {
-                                    // New tool call
+                                const idx = toolCall.index ?? 0;
+                                const existing = context.toolCallsByIndex[idx];
+
+                                if (toolCall.id && !existing) {
+                                    // New tool call (first chunk for this index)
                                     const newToolCall = {
                                         id: toolCall.id,
                                         type: 'function',
@@ -99,8 +110,11 @@ class OpenAIAdapter extends BaseResponseAdapter {
                                         }
                                     };
                                     response.addToolCall(newToolCall);
-                                    context.currentToolCall = newToolCall;
-                                    context.currentToolCallArgsComplete = isCompleteJson(newToolCall.function.arguments);
+                                    // Store the NORMALIZED object from response.toolCalls
+                                    // (addToolCall creates a copy), so argument deltas
+                                    // accumulate on the same object the response holds.
+                                    context.toolCallsByIndex[idx] = response.toolCalls[response.toolCalls.length - 1];
+                                    context.currentToolCall = context.toolCallsByIndex[idx];
 
                                     // Emit tool call detected event
                                     events.push({
@@ -110,31 +124,33 @@ class OpenAIAdapter extends BaseResponseAdapter {
                                             toolId: newToolCall.id
                                         }
                                     });
-                                } else if (context.currentToolCall && toolCall.function?.arguments) {
-                                    if (context.currentToolCallArgsComplete) {
-                                        continue;
+
+                                    // If the initial chunk already included arguments
+                                    // (some servers send name+args in one chunk), emit
+                                    // the delta so the UI can start rendering live.
+                                    if (newToolCall.function.arguments) {
+                                        events.push({
+                                            type: 'tool_call_arguments_delta',
+                                            data: {
+                                                toolId: newToolCall.id,
+                                                toolName: newToolCall.function.name,
+                                                arguments: newToolCall.function.arguments
+                                            }
+                                        });
                                     }
-                                    // Continue building arguments
-                                    context.currentToolCall.function.arguments += normalizeArgsDelta(toolCall.function.arguments);
+                                } else if (existing && toolCall.function?.arguments) {
+                                    // Continue building arguments for this tool call
+                                    existing.function.arguments += normalizeArgsDelta(toolCall.function.arguments);
 
                                     // Emit tool call arguments delta for incremental streaming
                                     events.push({
                                         type: 'tool_call_arguments_delta',
                                         data: {
-                                            toolId: context.currentToolCall.id,
-                                            toolName: context.currentToolCall.function.name,
-                                            arguments: context.currentToolCall.function.arguments
+                                            toolId: existing.id,
+                                            toolName: existing.function.name,
+                                            arguments: existing.function.arguments
                                         }
                                     });
-
-                                    // Update the tool call in response
-                                    const latestToolCall = response.getLatestToolCall();
-                                    if (latestToolCall) {
-                                        latestToolCall.function.arguments = context.currentToolCall.function.arguments;
-                                    }
-                                    if (isCompleteJson(latestToolCall?.function.arguments)) {
-                                        context.currentToolCallArgsComplete = true;
-                                    }
                                 }
                             }
                         }
@@ -207,16 +223,6 @@ function normalizeArgsDelta(delta) {
     if (typeof delta === 'string') return delta;
     if (typeof delta === 'object') return JSON.stringify(delta);
     return String(delta);
-}
-
-function isCompleteJson(str) {
-    if (typeof str !== 'string' || !str) return false;
-    try {
-        JSON.parse(str);
-        return true;
-    } catch (e) {
-        return false;
-    }
 }
 
 module.exports = OpenAIAdapter;
