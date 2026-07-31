@@ -249,6 +249,33 @@ function attachFollowBody(body, metadata, scrollKey) {
     };
 }
 
+// "Locate" button (section 9.3 of web-tool-plan.md): only shown for a shell
+// console tracking a background job (metadata.jobId set — see
+// streamingMessageProcessor.js's background branch). Jumps to/flashes the
+// matching row in the Processes panel, or disables itself if the job is no
+// longer known to the registry (cleared, or the app restarted since — jobs
+// don't survive a restart, per the "dies with the client" design decision).
+function shellConsoleLocateHtml(metadata) {
+    if (!metadata.jobId) return '';
+    return `<button class="shell-console-locate-btn" title="Locate in Processes panel">Locate</button>`;
+}
+
+function wireShellConsoleLocateButton(el, metadata) {
+    const btn = el.querySelector('.shell-console-locate-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (typeof JobsPanel === 'undefined') return;
+        const exists = await JobsPanel.jobExists(metadata.jobId);
+        if (!exists) {
+            btn.disabled = true;
+            btn.title = 'Job no longer available';
+            return;
+        }
+        JobsPanel.locateJob(metadata.jobId);
+    });
+}
+
 function buildShellConsoleElement(metadata) {
     const el = document.createElement('div');
     el.className = 'shell-console';
@@ -256,6 +283,7 @@ function buildShellConsoleElement(metadata) {
         <div class="shell-console-header">
             <span class="shell-console-chevron"></span>
             <span class="shell-console-title">shell_run</span>
+            ${shellConsoleLocateHtml(metadata)}
             <button class="shell-console-raw-toggle" title="Toggle raw JSON">{ }</button>
             ${shellConsoleStatusHtml(metadata)}
         </div>
@@ -266,6 +294,7 @@ function buildShellConsoleElement(metadata) {
     el.classList.toggle('raw-mode', !!metadata.shellShowRaw);
     if (shellConsoleIsCollapsed(metadata)) el.classList.add('collapsed');
     armShellCollapse(el, metadata);
+    wireShellConsoleLocateButton(el, metadata);
 
     // Raw JSON toggle (Arguments/Result, like the other tools). Lives left of the
     // status badge, only visible when expanded (CSS). stopPropagation so it doesn't

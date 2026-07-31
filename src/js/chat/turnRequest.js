@@ -234,6 +234,36 @@ class TurnRequest {
             if (ss) updateLiveRendering(processor, ss.liveRenderer, ss.tempContainer);
         };
 
+        // Background jobs (shell_run background:true) keep running after their
+        // tool_execution_complete already arrived — the processor marks the
+        // owning block with metadata.jobId in that case. Watch for newly
+        // revealed job ids after every tool event and open one job-scoped
+        // EventSource per job, feeding events back through the SAME shell
+        // console renderer via processor.handleJobEvent. Each job's stream
+        // self-closes (server-side) once the job finishes, so no explicit
+        // cleanup beyond the set is needed — closed EventSources are inert.
+        const watchedJobIds = new Set();
+        const watchNewJobs = () => {
+            for (const block of processor._toolBlocks.values()) {
+                const jobId = block.metadata && block.metadata.jobId;
+                if (!jobId || watchedJobIds.has(jobId)) continue;
+                watchedJobIds.add(jobId);
+                const jobSource = new EventSource(`${window.location.origin}/api/jobs/${jobId}/events`);
+                jobSource.onmessage = (event) => {
+                    try {
+                        const jobEvent = JSON.parse(event.data);
+                        if (jobEvent.type === 'connected') return;
+                        processor.handleJobEvent(jobId, jobEvent);
+                        scheduleLiveRender();
+                        if (jobEvent.type === 'job_finished') jobSource.close();
+                    } catch (parseError) {
+                        logger.warn('Failed to parse job event:', parseError);
+                    }
+                };
+                jobSource.onerror = () => {};
+            }
+        };
+
         let toolEventSource = null;
         try {
             toolEventSource = new EventSource(`${window.location.origin}/api/tools/${requestId}`);
@@ -241,6 +271,7 @@ class TurnRequest {
                 try {
                     const toolEvent = JSON.parse(event.data);
                     processor.handleToolEvent(toolEvent);
+                    watchNewJobs();
                     scheduleLiveRender();
                 } catch (parseError) {
                     logger.warn("Failed to parse tool event:", parseError);

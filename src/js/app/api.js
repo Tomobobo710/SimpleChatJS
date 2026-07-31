@@ -187,6 +187,70 @@ async function saveSimpleToolsConfig(config) {
     }
 }
 
+// Background jobs config (shell_run background:true, job_list/job_output/job_kill)
+async function loadBackgroundJobsConfig() {
+    try {
+        const response = await fetch(`${window.location.origin}/api/background-jobs/config`);
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        logger.warn("Failed to load background jobs config:", error);
+    }
+    return { enabled: true, max_concurrent_jobs: 5, max_runtime_sec: 0, output_buffer_kb: 512 };
+}
+
+async function saveBackgroundJobsConfig(config) {
+    try {
+        const response = await fetch(`${window.location.origin}/api/background-jobs/config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config)
+        });
+        return response.ok;
+    } catch (error) {
+        logger.warn("Failed to save background jobs config:", error);
+        return false;
+    }
+}
+
+// Browser tool config (browser_open/navigate/read_page/close/click/type/
+// screenshot/read_console/set_cache)
+async function loadBrowserToolConfig() {
+    try {
+        const response = await fetch(`${window.location.origin}/api/browser-tool/config`);
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        logger.warn("Failed to load browser tool config:", error);
+    }
+    return {
+        enabled: true,
+        max_concurrent_tabs: 3,
+        default_cache_enabled: true,
+        cache_control_user_locked: false,
+        allow_file_protocol: true,
+        allow_hard_refresh: true,
+        background_throttling_disabled: true,
+        max_console_log_lines: 500
+    };
+}
+
+async function saveBrowserToolConfig(config) {
+    try {
+        const response = await fetch(`${window.location.origin}/api/browser-tool/config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config)
+        });
+        return response.ok;
+    } catch (error) {
+        logger.warn("Failed to save browser tool config:", error);
+        return false;
+    }
+}
+
 // Shell config — reads detected + configured shell, saves the configured shell.
 async function loadShellConfig() {
     try {

@@ -374,6 +374,48 @@ class StreamingMessageProcessor {
         block.content = `__shell__|status:running|len:${out.length}`;
     }
 
+    // Find the tool block currently tracking a given background job (by
+    // metadata.jobId, set in _onToolExecutionComplete's background branch).
+    _findToolBlockByJobId(jobId) {
+        for (const block of this._toolBlocks.values()) {
+            if (block.metadata && block.metadata.jobId === jobId) return block;
+        }
+        return null;
+    }
+
+    // Apply one event from a background job's own SSE stream (/api/jobs/:id/events)
+    // to its tracking block. Mirrors _onShellOutputChunk / the done branch of
+    // _onToolExecutionComplete so the same shell-console renderer handles both
+    // sources identically. jobEvent is one of the registry's raw event shapes:
+    // { type: 'chunk', stream, text } | { type: 'job_finished', status, ... }.
+    handleJobEvent(jobId, jobEvent) {
+        const block = this._findToolBlockByJobId(jobId);
+        if (!block || !jobEvent) return;
+
+        if (jobEvent.type === 'chunk') {
+            let out = (block.metadata.shellOutput || '') + (jobEvent.text || '');
+            const max = StreamingMessageProcessor.SHELL_CONSOLE_MAX;
+            if (out.length > max) out = out.slice(out.length - max);
+            block.metadata.shellOutput = out;
+            block.metadata.shellStatus = 'running';
+            block.content = `__shell__|status:running|job:${jobId}|len:${out.length}`;
+            return;
+        }
+
+        if (jobEvent.type === 'job_finished') {
+            const exitCode = (jobEvent.exit_code !== undefined) ? jobEvent.exit_code : null;
+            block.metadata.shellExitCode = exitCode;
+            block.metadata.shellSuccess = jobEvent.status === 'exited' && (exitCode === 0 || exitCode === null);
+            block.metadata.shellResult = { success: block.metadata.shellSuccess, exit_code: exitCode, job_id: jobId, job_status: jobEvent.status };
+            block.metadata.shellTruncated = false;
+            block.metadata.shellError = jobEvent.status === 'error' ? (jobEvent.error || 'Job errored') : (jobEvent.status === 'killed' ? 'Killed' : null);
+            block.metadata.shellStatus = 'done';
+            block.metadata.shellDoneAt = this._live ? Date.now() : 0;
+            block.metadata.status = jobEvent.status === 'exited' ? 'success' : 'error';
+            block.content = `__shell__|status:done|job:${jobId}|exit:${exitCode}|len:${(block.metadata.shellOutput || '').length}`;
+        }
+    }
+
     _onToolExecutionComplete(data) {
         const block = this._findToolBlock(data.id);
         if (!block) return;
@@ -400,6 +442,25 @@ class StreamingMessageProcessor {
         if (block.metadata.isShellConsole || data.name === 'shell_run') {
             block.metadata.isShellConsole = true;
             const result = (data.status === 'success' && data.result) ? data.result : (data.result || {});
+
+            // Background mode (shell_run background:true): the tool call itself
+            // already returned (this IS tool_execution_complete), but the actual
+            // process keeps running. Don't mark the console done — mark it
+            // running and hand back the job_id so the live path (turnRequest.js)
+            // can subscribe to that job's own SSE stream for further updates.
+            // Reload never hits this: a finished/killed job's LAST state is what
+            // got persisted into the tool result, so on reload result.job_id is
+            // still present but there is nothing live to subscribe to — the
+            // caller only subscribes when this._live is true.
+            if (result && result.job_id) {
+                block.metadata.jobId = result.job_id;
+                block.metadata.shellStatus = 'running';
+                block.metadata.command = block.metadata.command || (block.metadata.arguments && block.metadata.arguments.command);
+                block.metadata.status = data.status;
+                block.content = `__shell__|status:running|job:${result.job_id}|len:${(block.metadata.shellOutput || '').length}`;
+                return;
+            }
+
             if (!block.metadata.shellOutput) {
                 block.metadata.shellOutput = (result && typeof result.output === 'string') ? result.output : '';
             }

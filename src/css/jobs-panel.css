@@ -1,0 +1,237 @@
+/* Processes / Web Tabs side panels — slide out from the right edge of
+   .chat-main, ~1/3 width, overlaying rather than reflowing the chat (mirrors
+   the mobile sidebar drawer's overlay approach rather than pushing content).
+   See web-tool-plan.md section 6 for the design. */
+
+.header-panel-toggle-btn {
+    position: relative;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    font-family: Tahoma, Arial, sans-serif;
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 4px;
+    line-height: 1;
+    opacity: 0.75;
+    white-space: nowrap;
+}
+.header-panel-toggle-btn:hover { opacity: 1; background: var(--bg-mid); }
+.header-panel-toggle-btn.active { opacity: 1; background: var(--bg-raised); }
+
+.header-panel-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: #3b8eea;
+    color: #fff;
+    font-size: 10px;
+    line-height: 14px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.side-panel {
+    position: absolute;
+    /* Starts below the real chat header instead of underneath/behind it —
+       --chat-header-height is kept live by panelSplitLayout.js's
+       ResizeObserver (zoom/content-driven, not a fixed guess). The 50px
+       fallback matches .chat-header's min-height for the brief window before
+       JS sets the real value. */
+    top: var(--chat-header-height, 50px);
+    right: 0;
+    bottom: 0;
+    width: 33%;
+    min-width: 280px;
+    max-width: 480px;
+    background: var(--bg-panel);
+    border-left: 1px solid var(--border-strong);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 50;
+    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.25);
+}
+.side-panel.panel-open {
+    transform: translateX(0);
+}
+
+/* Two panels open at once split the same right-hand column vertically
+   (section 6.2) rather than doubling total width. */
+.side-panel.panel-split-top {
+    bottom: 50%;
+    border-bottom: 1px solid var(--border-strong);
+}
+.side-panel.panel-split-bottom {
+    top: 50%;
+}
+
+.side-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: linear-gradient(to bottom, var(--bg-elevated), var(--border));
+    border-bottom: 1px solid var(--border-strong);
+    flex-shrink: 0;
+}
+
+.side-panel-title {
+    font-weight: bold;
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+}
+
+.side-panel-other-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.side-panel-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.side-panel-close-btn:hover { background: var(--bg-mid); color: var(--text); }
+
+.side-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.side-panel-empty {
+    color: var(--text-faint);
+    font-size: 12px;
+    padding: 16px 8px;
+    text-align: center;
+}
+
+/* One row per job */
+.job-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+}
+.job-row.job-locate-flash {
+    animation: jobLocateFlash 1.2s ease;
+}
+@keyframes jobLocateFlash {
+    0%, 100% { background: var(--bg-raised); }
+    30% { background: #3b8eea33; }
+}
+
+.job-row-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.job-row-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.job-row-status {
+    font-size: 10px;
+    font-weight: bold;
+    padding: 1px 6px;
+    border-radius: 8px;
+    white-space: nowrap;
+}
+.job-row-status.running { background: #3b8eea33; color: #3b8eea; }
+.job-row-status.exited { background: #23d18b33; color: #23d18b; }
+.job-row-status.killed { background: #88888833; color: #aaaaaa; }
+.job-row-status.error { background: #f14c4c33; color: #f14c4c; }
+
+.job-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.job-row-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.job-row-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+    color: var(--text);
+    cursor: pointer;
+}
+.job-row-btn:hover { background: var(--bg-mid); }
+.job-row-btn:disabled { opacity: 0.4; cursor: default; }
+.job-row-btn.kill-btn:hover { background: #f14c4c33; border-color: #f14c4c; }
+
+/* Web Tabs panel row additions: thumbnail preview above the usual job-row
+   content, and a Reveal/Hide button alongside Close. */
+.web-tab-row {
+    gap: 6px;
+}
+
+.web-tab-thumb {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.web-tab-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+}
+.web-tab-thumb-placeholder {
+    font-size: 11px;
+    color: var(--text-faint);
+}
+
+/* "Locate" button embedded in the in-chat shell console header (section 9.3) */
+.shell-console-locate-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+}
+.shell-console-locate-btn:hover { background: var(--bg-mid); color: var(--text); }
+.shell-console-locate-btn:disabled { opacity: 0.3; cursor: default; }

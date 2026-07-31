@@ -68,11 +68,13 @@ async function loadInitialSettings() {
 // Load settings into modal
 async function loadSettingsIntoModal() {
     try {
-        // Fetch all three configs in parallel
-        const [response, simpleConfig, shellConfig] = await Promise.all([
+        // Fetch all configs in parallel
+        const [response, simpleConfig, shellConfig, bgJobsConfig, browserToolConfig] = await Promise.all([
             fetch(`${window.location.origin}/api/settings`).then(r => r.json()),
             loadSimpleToolsConfig(),
             loadShellConfig(),
+            loadBackgroundJobsConfig(),
+            loadBrowserToolConfig(),
         ]);
         const settings = response;
         logger.info('Loading fresh settings into modal:', settings);
@@ -119,6 +121,27 @@ async function loadSettingsIntoModal() {
         document.getElementById('st-shell-run').checked = simpleConfig.shell_run !== false;
         document.getElementById('st-output-limit').value =
             Number.isFinite(simpleConfig.output_limit_kb) ? simpleConfig.output_limit_kb : 99;
+
+        // Background jobs config
+        document.getElementById('bg-jobs-enabled').checked = bgJobsConfig.enabled !== false;
+        document.getElementById('bg-jobs-max-concurrent').value =
+            Number.isFinite(bgJobsConfig.max_concurrent_jobs) ? bgJobsConfig.max_concurrent_jobs : 5;
+        document.getElementById('bg-jobs-max-runtime').value =
+            Number.isFinite(bgJobsConfig.max_runtime_sec) ? bgJobsConfig.max_runtime_sec : 0;
+        document.getElementById('bg-jobs-output-buffer').value =
+            Number.isFinite(bgJobsConfig.output_buffer_kb) ? bgJobsConfig.output_buffer_kb : 512;
+
+        // Browser tool config
+        document.getElementById('bt-enabled').checked = browserToolConfig.enabled !== false;
+        document.getElementById('bt-max-tabs').value =
+            Number.isFinite(browserToolConfig.max_concurrent_tabs) ? browserToolConfig.max_concurrent_tabs : 3;
+        document.getElementById('bt-allow-file-protocol').checked = browserToolConfig.allow_file_protocol !== false;
+        document.getElementById('bt-allow-hard-refresh').checked = browserToolConfig.allow_hard_refresh !== false;
+        document.getElementById('bt-background-throttling-disabled').checked = browserToolConfig.background_throttling_disabled !== false;
+        document.getElementById('bt-max-console-lines').value =
+            Number.isFinite(browserToolConfig.max_console_log_lines) ? browserToolConfig.max_console_log_lines : 500;
+        document.getElementById('bt-default-cache-enabled').checked = browserToolConfig.default_cache_enabled !== false;
+        document.getElementById('bt-cache-control-user-locked').checked = browserToolConfig.cache_control_user_locked === true;
 
         // Per-tool display preferences (auto expand / auto collapse). Lives in both
         // the Tools tab (built-in tools) and the Thinking tab (thinking dropdown).
@@ -313,6 +336,33 @@ async function handleSaveSettings() {
             output_limit_kb: Number.isFinite(parsedLimit) ? Math.max(2, parsedLimit) : 99
         };
         await saveSimpleToolsConfig(simpleToolsConfig);
+
+        // Save Background Jobs config
+        const parsedMaxConcurrent = parseInt(document.getElementById('bg-jobs-max-concurrent').value, 10);
+        const parsedMaxRuntime = parseInt(document.getElementById('bg-jobs-max-runtime').value, 10);
+        const parsedOutputBuffer = parseInt(document.getElementById('bg-jobs-output-buffer').value, 10);
+        const backgroundJobsConfig = {
+            enabled: document.getElementById('bg-jobs-enabled').checked,
+            max_concurrent_jobs: Number.isFinite(parsedMaxConcurrent) ? Math.max(1, parsedMaxConcurrent) : 5,
+            max_runtime_sec: Number.isFinite(parsedMaxRuntime) ? Math.max(0, parsedMaxRuntime) : 0,
+            output_buffer_kb: Number.isFinite(parsedOutputBuffer) ? Math.max(16, parsedOutputBuffer) : 512
+        };
+        await saveBackgroundJobsConfig(backgroundJobsConfig);
+
+        // Save Browser Tool config
+        const parsedMaxTabs = parseInt(document.getElementById('bt-max-tabs').value, 10);
+        const parsedMaxConsoleLines = parseInt(document.getElementById('bt-max-console-lines').value, 10);
+        const browserToolConfigToSave = {
+            enabled: document.getElementById('bt-enabled').checked,
+            max_concurrent_tabs: Number.isFinite(parsedMaxTabs) ? Math.max(1, parsedMaxTabs) : 3,
+            default_cache_enabled: document.getElementById('bt-default-cache-enabled').checked,
+            cache_control_user_locked: document.getElementById('bt-cache-control-user-locked').checked,
+            allow_file_protocol: document.getElementById('bt-allow-file-protocol').checked,
+            allow_hard_refresh: document.getElementById('bt-allow-hard-refresh').checked,
+            background_throttling_disabled: document.getElementById('bt-background-throttling-disabled').checked,
+            max_console_log_lines: Number.isFinite(parsedMaxConsoleLines) ? Math.max(50, parsedMaxConsoleLines) : 500
+        };
+        await saveBrowserToolConfig(browserToolConfigToSave);
 
         // Update cached settings immediately
         const currentSettings = window.cachedSettings();

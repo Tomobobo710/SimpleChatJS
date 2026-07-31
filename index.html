@@ -73,13 +73,46 @@
                     <select id="mainModelSelect" class="model-dropdown">
                         <option value="">Loading...</option>
                     </select>
+                    <button id="processesPanelToggleBtn" class="header-panel-toggle-btn" title="Processes">
+                        Processes<span class="header-panel-badge" id="processesPanelBadge" style="display:none;"></span>
+                    </button>
+                    <button id="webTabsPanelToggleBtn" class="header-panel-toggle-btn" title="Web Tabs">
+                        Web Tabs<span class="header-panel-badge" id="webTabsPanelBadge" style="display:none;"></span>
+                    </button>
                 </div>
             </div>
-            
+
             <div id="messagesContainer" class="messages-container">
                 <div id="messages" class="messages"></div>
             </div>
-            
+
+            <!-- Processes and Web Tabs panels: slide out from the right. Both scoped
+                 to the current chat. If both are open at once, JS adds
+                 panel-split-top/panel-split-bottom so they share the same ~1/3-width
+                 column stacked vertically instead of doubling total width
+                 (see web-tool-plan.md section 6.2). -->
+            <div id="processesPanel" class="side-panel" aria-hidden="true">
+                <div class="side-panel-header">
+                    <span class="side-panel-title">Processes</span>
+                    <span class="side-panel-other-count" id="processesOtherCount" style="display:none;"></span>
+                    <button class="side-panel-close-btn" id="processesPanelCloseBtn" title="Close">&times;</button>
+                </div>
+                <div class="side-panel-body" id="processesPanelBody">
+                    <div class="side-panel-empty">No background processes for this chat.</div>
+                </div>
+            </div>
+
+            <div id="webTabsPanel" class="side-panel" aria-hidden="true">
+                <div class="side-panel-header">
+                    <span class="side-panel-title">Web Tabs</span>
+                    <span class="side-panel-other-count" id="webTabsOtherCount" style="display:none;"></span>
+                    <button class="side-panel-close-btn" id="webTabsPanelCloseBtn" title="Close">&times;</button>
+                </div>
+                <div class="side-panel-body" id="webTabsPanelBody">
+                    <div class="side-panel-empty">No browser tabs for this chat.</div>
+                </div>
+            </div>
+
             <div id="inputContainer" class="input-container">
                 <div class="input-row">
                     <textarea id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
@@ -470,6 +503,62 @@
                         <input type="number" id="shellTimeoutSec" min="1" step="1" value="360">
                         <p class="setting-description">Commands are killed if they run longer than this. The AI can override it per-call with timeout_sec.</p>
                     </div>
+
+                    <div class="settings-section">
+                        <h3>Background Jobs</h3>
+                        <p class="setting-description">Lets shell_run run in the background (background:true) instead of blocking for completion — for long builds, dev servers, or watch tasks. The AI can list, poll, and kill its own background jobs (job_list/job_output/job_kill); you can always see and kill any job from the Processes panel regardless.</p>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bg-jobs-enabled" checked>
+                            <label for="bg-jobs-enabled">Enable background jobs</label>
+                        </div>
+                        <label for="bg-jobs-max-concurrent">Max concurrent background jobs (per chat)</label>
+                        <input type="number" id="bg-jobs-max-concurrent" min="1" step="1" value="5">
+                        <label for="bg-jobs-max-runtime">Max runtime before auto-kill (seconds)</label>
+                        <input type="number" id="bg-jobs-max-runtime" min="0" step="1" value="0">
+                        <p class="setting-description">0 = no limit. A background job is meant to run long, so this is off by default — set it if you want a safety net.</p>
+                        <label for="bg-jobs-output-buffer">Output buffer size (KB, per job)</label>
+                        <input type="number" id="bg-jobs-output-buffer" min="16" step="1" value="512">
+                        <p class="setting-description">Oldest output is dropped once a job's live buffer exceeds this, so a long-running/chatty job can't grow memory unbounded.</p>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Browser Tool</h3>
+                        <p class="setting-description">Lets the AI open and drive real (hidden) browser tabs — navigate, read page text, click, type, screenshot, read console output. You can always see, reveal, or close any tab from the Web Tabs panel regardless of what the AI is doing.</p>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-enabled" checked>
+                            <label for="bt-enabled">Enable browser tool</label>
+                        </div>
+                        <label for="bt-max-tabs">Max concurrent tabs (per chat)</label>
+                        <input type="number" id="bt-max-tabs" min="1" step="1" value="3">
+
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-allow-file-protocol" checked>
+                            <label for="bt-allow-file-protocol">Allow file:// URLs</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-allow-hard-refresh" checked>
+                            <label for="bt-allow-hard-refresh">Allow hard refresh (bypass cache)</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-background-throttling-disabled" checked>
+                            <label for="bt-background-throttling-disabled">Keep hidden tabs running at full speed (disable background throttling)</label>
+                        </div>
+                        <p class="setting-description">When on, a tab's timers/animation frames keep running at full rate even while hidden, instead of Chromium's usual power-saving throttle for unfocused windows.</p>
+
+                        <label for="bt-max-console-lines">Console log buffer (lines, per tab)</label>
+                        <input type="number" id="bt-max-console-lines" min="50" step="1" value="500">
+
+                        <h4>Cache Control</h4>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-default-cache-enabled" checked>
+                            <label for="bt-default-cache-enabled">New tabs cache normally by default</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-cache-control-user-locked">
+                            <label for="bt-cache-control-user-locked">Lock this — don't let the AI change cache behavior</label>
+                        </div>
+                        <p class="setting-description">When locked, the AI isn't even offered a tool to change cache behavior — the option above is enforced for every tab it opens, with no way for it to ask otherwise.</p>
+                    </div>
                 </div>
 
                 <!-- Tokens Tab -->
@@ -618,6 +707,9 @@
     
     <!-- UI components -->
     <script src="src/js/ui/debugPanel.js"></script>
+    <script src="src/js/ui/panelSplitLayout.js"></script>
+    <script src="src/js/ui/jobsPanel.js"></script>
+    <script src="src/js/ui/webTabsPanel.js"></script>
     <script src="src/js/ui/settings.js"></script>
     <script src="src/js/ui/slashCommands.js"></script>
     <script src="src/js/ui/ui.js"></script>

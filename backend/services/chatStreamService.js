@@ -8,6 +8,8 @@ const { log } = require("../utils/logger");
 const { getCurrentSettings } = require("./settingsService");
 const { executeMCPTool, getAvailableToolsForChat } = require("./mcpService");
 const simpleTools = require("./simpleToolsService");
+const backgroundJobs = require("./backgroundJobsService");
+const browserTool = require("./browserToolService");
 const shellService = require("./shellService");
 const projectService = require("./projectService");
 const { addToolEvent, initializeToolEvents } = require("./toolEventService");
@@ -803,6 +805,20 @@ async function executeToolCallsAndContinue(
             let toolResult;
             if (toolCall.function.name.startsWith('mcp__')) {
                 toolResult = await executeMCPTool(toolCall.function.name, toolArgs);
+            } else if (toolCall.function.name === 'shell_run' && toolArgs && toolArgs.background) {
+                // Background mode: hand off to backgroundJobsService instead of
+                // simpleTools' blocking doShellRun. Returns immediately with a
+                // job_id — the process keeps running after this tool result
+                // is already sent back to the model.
+                const bgConfig = backgroundJobs.loadConfig();
+                const jobId = backgroundJobs.startBackgroundShell({
+                    command: toolArgs.command,
+                    chatId,
+                    cwd,
+                    shellInfo,
+                    config: bgConfig
+                });
+                toolResult = { success: true, job_id: jobId, status: 'running' };
             } else if (toolCall.function.name === 'shell_run') {
                 // Stream stdout/stderr chunks to the live console as they arrive.
                 // The resolved result (capped) is still what the model sees.
@@ -815,6 +831,10 @@ async function executeToolCallsAndContinue(
                 const settings = getCurrentSettings();
                 const defaultTimeoutSec = Number.isFinite(settings.shellTimeoutSec) ? settings.shellTimeoutSec : 360;
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd, onChunk, defaultTimeoutSec });
+            } else if (toolCall.function.name === 'job_list' || toolCall.function.name === 'job_output' || toolCall.function.name === 'job_kill') {
+                toolResult = await backgroundJobs.executeBackgroundJobTool(toolCall.function.name, toolArgs, { chatId });
+            } else if (toolCall.function.name.startsWith('browser_')) {
+                toolResult = await browserTool.executeBrowserTool(toolCall.function.name, toolArgs, { chatId });
             } else {
                 toolResult = await simpleTools.executeSimpleTool(toolCall.function.name, toolArgs, { shellInfo, cwd });
             }
@@ -969,6 +989,35 @@ async function processRequest(req, res) {
                     }
                 });
             }
+        }
+
+        // Background job tools (job_list/job_output/job_kill) — only offered
+        // when background jobs are enabled in settings.
+        const bgJobsConfig = backgroundJobs.loadConfig();
+        for (const def of backgroundJobs.getToolDefinitions(bgJobsConfig)) {
+            tools.push({
+                type: 'function',
+                function: {
+                    name: def.name,
+                    description: def.description,
+                    parameters: def.input_schema
+                }
+            });
+        }
+
+        // Browser tool (browser_open/browser_navigate/browser_read_page/browser_close)
+        // — only offered when enabled in settings. Schema itself omits disallowed
+        // options (hard_refresh, file://) rather than exposing and rejecting them.
+        const browserConfig = browserTool.loadConfig();
+        for (const def of browserTool.getToolDefinitions(browserConfig)) {
+            tools.push({
+                type: 'function',
+                function: {
+                    name: def.name,
+                    description: def.description,
+                    parameters: def.input_schema
+                }
+            });
         }
 
         const requestId = request_id || 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);

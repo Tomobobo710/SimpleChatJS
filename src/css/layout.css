@@ -434,6 +434,13 @@
        wide child (e.g. a long shell console command/output) can't push the chat
        area past the viewport. Without this, flex min-width:auto lets it grow. */
     min-width: 0;
+    /* Anchors the Processes/Web Tabs side panels (.side-panel), which overlay
+       the right edge of this area rather than reflowing it. */
+    position: relative;
+    /* Without this, a closed side-panel (translateX past its own width) keeps
+       rendering past .chat-main's right edge instead of being clipped, since
+       nothing else in this layout constrains horizontal overflow here. */
+    overflow: hidden;
 }
 
 /* Live-streaming render container (the temp div blocks stream into during a
@@ -451,6 +458,13 @@
     min-height: 50px;
     display: flex;
     justify-content: space-between;
+    /* Sits above the Processes/Web Tabs side panels (z-index 50 in
+       jobs-panel.css), which span .chat-main's full height (top:0) and would
+       otherwise render over the header — covering its toggle buttons — since
+       they're both direct children of .chat-main with no other stacking order
+       between them. */
+    position: relative;
+    z-index: 60;
     align-items: center;
 }
 
