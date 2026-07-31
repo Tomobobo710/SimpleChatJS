@@ -233,7 +233,9 @@ async function loadBrowserToolConfig() {
         allow_file_protocol: true,
         allow_hard_refresh: true,
         background_throttling_disabled: true,
-        max_console_log_lines: 500
+        max_console_log_lines: 500,
+        screenshot_max_long_edge_px: 1568,
+        screenshot_max_base64_kb: 100
     };
 }
 

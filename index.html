@@ -558,6 +558,20 @@
                             <label for="bt-cache-control-user-locked">Lock this — don't let the AI change cache behavior</label>
                         </div>
                         <p class="setting-description">When locked, the AI isn't even offered a tool to change cache behavior — the option above is enforced for every tab it opens, with no way for it to ask otherwise.</p>
+
+                        <h4>Screenshot Compression</h4>
+                        <p class="setting-description">Two independent knobs. Max resolution controls vision-model token cost directly (a bigger image costs more tokens regardless of file size) — pick the option matching your model, or set Custom. Max file size only bounds request/storage size; it has little effect on token cost by itself.</p>
+                        <label for="bt-screenshot-max-resolution">Max resolution (long edge)</label>
+                        <select id="bt-screenshot-max-resolution">
+                            <option value="1568">1568px — Anthropic Claude (recommended sweet spot)</option>
+                            <option value="2000">2000px — OpenAI GPT-4V / GPT-4o (high-detail tier)</option>
+                            <option value="1024">1024px — smaller/local vision models, lower token cost</option>
+                            <option value="0">No cap — send the raw captured resolution</option>
+                            <option value="custom">Custom&hellip;</option>
+                        </select>
+                        <input type="number" id="bt-screenshot-max-resolution-custom" min="128" step="1" value="1568" style="display:none;" placeholder="Custom max long edge, px">
+                        <label for="bt-screenshot-max-kb">Max file size (KB, base64)</label>
+                        <input type="number" id="bt-screenshot-max-kb" min="10" step="1" value="100">
                     </div>
                 </div>
 

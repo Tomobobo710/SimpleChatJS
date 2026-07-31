@@ -143,6 +143,33 @@ async function loadSettingsIntoModal() {
         document.getElementById('bt-default-cache-enabled').checked = browserToolConfig.default_cache_enabled !== false;
         document.getElementById('bt-cache-control-user-locked').checked = browserToolConfig.cache_control_user_locked === true;
 
+        // Screenshot compression: max_long_edge_px maps to one of the preset
+        // dropdown options if it matches exactly, otherwise "Custom" with the
+        // raw value shown in the adjacent number field.
+        const savedLongEdge = Number.isFinite(browserToolConfig.screenshot_max_long_edge_px) ? browserToolConfig.screenshot_max_long_edge_px : 1568;
+        const resolutionSelect = document.getElementById('bt-screenshot-max-resolution');
+        const resolutionCustomInput = document.getElementById('bt-screenshot-max-resolution-custom');
+        const knownValues = Array.from(resolutionSelect.options).map(o => o.value).filter(v => v !== 'custom');
+        if (knownValues.includes(String(savedLongEdge))) {
+            resolutionSelect.value = String(savedLongEdge);
+            resolutionCustomInput.style.display = 'none';
+        } else {
+            resolutionSelect.value = 'custom';
+            resolutionCustomInput.value = savedLongEdge;
+            resolutionCustomInput.style.display = '';
+        }
+        document.getElementById('bt-screenshot-max-kb').value =
+            Number.isFinite(browserToolConfig.screenshot_max_base64_kb) ? browserToolConfig.screenshot_max_base64_kb : 100;
+
+        // Toggle the custom field's visibility live as the user changes the
+        // dropdown. Guarded so re-opening the modal doesn't stack listeners.
+        if (!resolutionSelect.dataset.changeWired) {
+            resolutionSelect.dataset.changeWired = '1';
+            resolutionSelect.addEventListener('change', () => {
+                resolutionCustomInput.style.display = resolutionSelect.value === 'custom' ? '' : 'none';
+            });
+        }
+
         // Per-tool display preferences (auto expand / auto collapse). Lives in both
         // the Tools tab (built-in tools) and the Thinking tab (thinking dropdown).
         const toolDisplay = settings.toolDisplay || {};
@@ -352,6 +379,11 @@ async function handleSaveSettings() {
         // Save Browser Tool config
         const parsedMaxTabs = parseInt(document.getElementById('bt-max-tabs').value, 10);
         const parsedMaxConsoleLines = parseInt(document.getElementById('bt-max-console-lines').value, 10);
+        const resolutionSelectVal = document.getElementById('bt-screenshot-max-resolution').value;
+        const parsedLongEdge = resolutionSelectVal === 'custom'
+            ? parseInt(document.getElementById('bt-screenshot-max-resolution-custom').value, 10)
+            : parseInt(resolutionSelectVal, 10);
+        const parsedScreenshotKb = parseInt(document.getElementById('bt-screenshot-max-kb').value, 10);
         const browserToolConfigToSave = {
             enabled: document.getElementById('bt-enabled').checked,
             max_concurrent_tabs: Number.isFinite(parsedMaxTabs) ? Math.max(1, parsedMaxTabs) : 3,
@@ -360,7 +392,11 @@ async function handleSaveSettings() {
             allow_file_protocol: document.getElementById('bt-allow-file-protocol').checked,
             allow_hard_refresh: document.getElementById('bt-allow-hard-refresh').checked,
             background_throttling_disabled: document.getElementById('bt-background-throttling-disabled').checked,
-            max_console_log_lines: Number.isFinite(parsedMaxConsoleLines) ? Math.max(50, parsedMaxConsoleLines) : 500
+            max_console_log_lines: Number.isFinite(parsedMaxConsoleLines) ? Math.max(50, parsedMaxConsoleLines) : 500,
+            // 0 = "No cap" option — preserved as 0 (compressNativeImage treats
+            // <=0 as "skip the long-edge stage entirely"), not clamped to a floor.
+            screenshot_max_long_edge_px: Number.isFinite(parsedLongEdge) ? Math.max(0, parsedLongEdge) : 1568,
+            screenshot_max_base64_kb: Number.isFinite(parsedScreenshotKb) ? Math.max(10, parsedScreenshotKb) : 100
         };
         await saveBrowserToolConfig(browserToolConfigToSave);
 

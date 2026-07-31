@@ -40,7 +40,23 @@ const DEFAULT_CONFIG = {
     // Max console/network log lines retained per tab (oldest dropped first) —
     // separate from the job registry's own byte-capped event buffer, since a
     // console-message flood shouldn't be able to push nav/title events out.
-    max_console_log_lines: 500
+    max_console_log_lines: 500,
+    // Screenshot compression. Two INDEPENDENT knobs, not one:
+    //   - max_long_edge_px caps PIXEL DIMENSIONS, which is what actually
+    //     drives vision-model token/patch cost (Anthropic's docs recommend
+    //     <=1568px on the long edge; other providers have their own similar
+    //     sweet spots). This must be applied BEFORE any byte-size compression,
+    //     and independent of devicePixelRatio — capturePage() returns a bitmap
+    //     at DEVICE-pixel resolution (CSS size x scale factor), so on a
+    //     150%/200%-scaled display the raw capture is already 1.5-2x the
+    //     window's own CSS width before any of this runs.
+    //   - max_base64_kb caps BYTE SIZE (JPEG quality/further scale, applied
+    //     to whatever the long-edge cap already produced) — this bounds
+    //     request/storage size, but has only a loose relationship to token
+    //     cost, since a blocky low-quality JPEG at a given resolution costs
+    //     the same vision-model tokens as a crisp one at that resolution.
+    screenshot_max_long_edge_px: 1568,
+    screenshot_max_base64_kb: 100
 };
 
 function getConfigPath() {
@@ -443,27 +459,47 @@ async function typeText(jobId, text) {
     return { success: true, job_id: jobId, length: String(text).length };
 }
 
-// Progressive scale/quality compression, same target and ladder as
-// imageProcessing.js's browser-side compressor (canvas.toBlob there,
-// nativeImage here — no DOM in the Electron main process, so this is the
-// main-process equivalent rather than a call to that function directly).
-// Raw screenshots are large (a 1280x800 PNG easily exceeds 1MB); this keeps
-// the resulting message reasonably sized before it's sent to the model.
-const SCREENSHOT_MAX_BASE64_KB = 100;
-const SCREENSHOT_TARGET_KB = Math.floor(SCREENSHOT_MAX_BASE64_KB * 0.75);
+// Two-stage screenshot compression: cap PIXEL DIMENSIONS first (what
+// actually drives vision-model token/patch cost), then run a progressive
+// scale/quality ladder to hit a BYTE-SIZE target (bounds request/storage
+// size — a much weaker relationship to token cost, since a low-quality JPEG
+// costs the same tokens as a crisp one at the same resolution). Both knobs
+// are user-configurable (Settings > Tools > Browser Tool). See
+// web-tool-plan.md and the design discussion for why these are separate.
+//
+// capturePage() returns a bitmap at DEVICE-pixel resolution (CSS window size
+// x devicePixelRatio) — on a 150%/200%-scaled display the raw capture is
+// already 1.5-2x the window's own configured CSS width, so the long-edge cap
+// below is essential even at a fixed window size; it's not redundant with
+// openBrowserTab's width/height.
 const SCREENSHOT_QUALITIES = Array.from({ length: 7 }, (_, i) => 70 - i * 10); // 70..10, toJPEG wants 0-100
 const SCREENSHOT_SCALES = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
 
-function compressNativeImage(image) {
+// Stage 1: resize down to maxLongEdgePx if the captured image exceeds it.
+// Never upscales — a smaller-than-cap screenshot is left alone.
+function capLongEdge(image, maxLongEdgePx) {
+    const { width, height } = image.getSize();
+    const longEdge = Math.max(width, height);
+    if (!Number.isFinite(maxLongEdgePx) || maxLongEdgePx <= 0 || longEdge <= maxLongEdgePx) {
+        return image;
+    }
+    const capScale = maxLongEdgePx / longEdge;
+    return image.resize({ width: Math.round(width * capScale), height: Math.round(height * capScale) });
+}
+
+// Stage 2: progressive scale/quality ladder against the (already long-edge-
+// capped) image to hit a byte-size target, same spirit as
+// imageProcessing.js's browser-side compressor (canvas.toBlob there,
+// nativeImage here — no DOM in the Electron main process).
+function compressToByteTarget(image, maxBase64Kb) {
+    const targetKb = Math.floor((Number.isFinite(maxBase64Kb) && maxBase64Kb > 0 ? maxBase64Kb : 100) * 0.75);
     const { width, height } = image.getSize();
     for (const scale of SCREENSHOT_SCALES) {
-        const scaledW = Math.round(width * scale);
-        const scaledH = Math.round(height * scale);
-        const scaled = scale === 1.0 ? image : image.resize({ width: scaledW, height: scaledH });
+        const scaled = scale === 1.0 ? image : image.resize({ width: Math.round(width * scale), height: Math.round(height * scale) });
         for (const quality of SCREENSHOT_QUALITIES) {
             const buf = scaled.toJPEG(quality);
             const base64 = buf.toString('base64');
-            if (base64.length / 1024 <= SCREENSHOT_TARGET_KB) {
+            if (base64.length / 1024 <= targetKb) {
                 return base64;
             }
         }
@@ -479,10 +515,16 @@ function compressNativeImage(image) {
     return smallest.toJPEG(SCREENSHOT_QUALITIES[SCREENSHOT_QUALITIES.length - 1]).toString('base64');
 }
 
+function compressNativeImage(image, config) {
+    const longEdgeCapped = capLongEdge(image, config.screenshot_max_long_edge_px);
+    return compressToByteTarget(longEdgeCapped, config.screenshot_max_base64_kb);
+}
+
 async function captureScreenshot(jobId) {
     const win = getLiveWindow(jobId);
+    const config = loadConfig();
     const image = await win.webContents.capturePage();
-    return { base64: compressNativeImage(image), mimeType: 'image/jpeg' };
+    return { base64: compressNativeImage(image, config), mimeType: 'image/jpeg' };
 }
 
 function readConsoleLogs(jobId) {
