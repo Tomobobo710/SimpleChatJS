@@ -572,6 +572,18 @@
                         <input type="number" id="bt-screenshot-max-resolution-custom" min="128" step="1" value="1568" style="display:none;" placeholder="Custom max long edge, px">
                         <label for="bt-screenshot-max-kb">Max file size (KB, base64)</label>
                         <input type="number" id="bt-screenshot-max-kb" min="10" step="1" value="100">
+
+                        <h4>Tab Dimensions</h4>
+                        <p class="setting-description">The real page size (in pixels) every browser tab opens at — this is the coordinate space browser_click uses, separate from the screenshot resolution above. Larger tabs show more of a page at once but take longer to render; smaller tabs are faster but may cut off content.</p>
+                        <label for="bt-tab-width">Tab width (px)</label>
+                        <input type="number" id="bt-tab-width" min="200" max="4000" step="1" value="1280">
+                        <label for="bt-tab-height">Tab height (px)</label>
+                        <input type="number" id="bt-tab-height" min="200" max="4000" step="1" value="720">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-tab-dimensions-user-locked">
+                            <label for="bt-tab-dimensions-user-locked">Lock this — don't let the AI request different tab dimensions</label>
+                        </div>
+                        <p class="setting-description">When locked, browser_open's width/height parameters are removed from the AI's tool entirely — every tab always opens at the size set above, with no way for the AI to ask for a different one.</p>
                     </div>
                 </div>
 

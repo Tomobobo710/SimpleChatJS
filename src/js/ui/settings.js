@@ -161,6 +161,12 @@ async function loadSettingsIntoModal() {
         document.getElementById('bt-screenshot-max-kb').value =
             Number.isFinite(browserToolConfig.screenshot_max_base64_kb) ? browserToolConfig.screenshot_max_base64_kb : 100;
 
+        document.getElementById('bt-tab-width').value =
+            Number.isFinite(browserToolConfig.tab_width_px) ? browserToolConfig.tab_width_px : 1280;
+        document.getElementById('bt-tab-height').value =
+            Number.isFinite(browserToolConfig.tab_height_px) ? browserToolConfig.tab_height_px : 720;
+        document.getElementById('bt-tab-dimensions-user-locked').checked = browserToolConfig.tab_dimensions_user_locked === true;
+
         // Toggle the custom field's visibility live as the user changes the
         // dropdown. Guarded so re-opening the modal doesn't stack listeners.
         if (!resolutionSelect.dataset.changeWired) {
@@ -384,6 +390,8 @@ async function handleSaveSettings() {
             ? parseInt(document.getElementById('bt-screenshot-max-resolution-custom').value, 10)
             : parseInt(resolutionSelectVal, 10);
         const parsedScreenshotKb = parseInt(document.getElementById('bt-screenshot-max-kb').value, 10);
+        const parsedTabWidth = parseInt(document.getElementById('bt-tab-width').value, 10);
+        const parsedTabHeight = parseInt(document.getElementById('bt-tab-height').value, 10);
         const browserToolConfigToSave = {
             enabled: document.getElementById('bt-enabled').checked,
             max_concurrent_tabs: Number.isFinite(parsedMaxTabs) ? Math.max(1, parsedMaxTabs) : 3,
@@ -396,7 +404,10 @@ async function handleSaveSettings() {
             // 0 = "No cap" option — preserved as 0 (compressNativeImage treats
             // <=0 as "skip the long-edge stage entirely"), not clamped to a floor.
             screenshot_max_long_edge_px: Number.isFinite(parsedLongEdge) ? Math.max(0, parsedLongEdge) : 1568,
-            screenshot_max_base64_kb: Number.isFinite(parsedScreenshotKb) ? Math.max(10, parsedScreenshotKb) : 100
+            screenshot_max_base64_kb: Number.isFinite(parsedScreenshotKb) ? Math.max(10, parsedScreenshotKb) : 100,
+            tab_width_px: Number.isFinite(parsedTabWidth) ? Math.min(4000, Math.max(200, parsedTabWidth)) : 1280,
+            tab_height_px: Number.isFinite(parsedTabHeight) ? Math.min(4000, Math.max(200, parsedTabHeight)) : 720,
+            tab_dimensions_user_locked: document.getElementById('bt-tab-dimensions-user-locked').checked
         };
         await saveBrowserToolConfig(browserToolConfigToSave);
 
