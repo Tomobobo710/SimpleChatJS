@@ -581,6 +581,41 @@ input[type="checkbox"]:disabled {
     border: 1px inset var(--border-strong);
     background: linear-gradient(to bottom, #3d1a1a, #5a2d2d);
 }
+
+/* Checkpoint warning dialog - extends the confirm-dialog with a checkbox
+   and pre-formatted warning text. The Enable button uses an info-blue
+   palette (not destructive like confirm-yes's red). */
+.cp-warning-dialog {
+    max-width: 500px;
+}
+.cp-warning-message {
+    white-space: pre-line;
+    text-align: left;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.cp-warning-checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding-left: 2px;
+    font-size: 13px;
+}
+.cp-warning-checkbox-group label {
+    cursor: pointer;
+}
+.cp-warning-enable-btn {
+    background: linear-gradient(to bottom, #2d5a7a, #1a3d5a);
+    border: 1px outset #479;
+}
+.cp-warning-enable-btn:hover {
+    background: linear-gradient(to bottom, #3d6a8a, #2d4d6a);
+}
+.cp-warning-enable-btn:active {
+    border: 1px inset var(--border-strong);
+    background: linear-gradient(to bottom, #1a3d5a, #2d5a7a);
+}
 /* Legacy budget presets - removed in favor of unified version */
 
 /* Unified thinking sections */

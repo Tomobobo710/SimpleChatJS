@@ -70,7 +70,8 @@
    pointer-events is intentionally NOT disabled so the explanatory tooltip can
    still show on hover. */
 .chat-streaming .retry-btn,
-.chat-streaming .edit-retry-btn {
+.chat-streaming .edit-retry-btn,
+.chat-streaming .checkpoint-btn:not(:disabled) {
     background: var(--bg-panel);
     color: #777;
     border: 1px solid var(--border);
@@ -80,7 +81,8 @@
 
 /* Keep the disabled look on hover (don't show the action-colored hover state). */
 .chat-streaming .retry-btn:hover,
-.chat-streaming .edit-retry-btn:hover {
+.chat-streaming .edit-retry-btn:hover,
+.chat-streaming .checkpoint-btn:not(:disabled):hover {
     background: var(--bg-panel);
     color: #777;
     border: 1px solid var(--border);
@@ -88,7 +90,8 @@
 
 /* Hover tooltip explaining why the action is unavailable. */
 .chat-streaming .retry-btn:hover::after,
-.chat-streaming .edit-retry-btn:hover::after {
+.chat-streaming .edit-retry-btn:hover::after,
+.chat-streaming .checkpoint-btn:not(:disabled):hover::after {
     content: "This action is unavailable during an in flight response.";
     position: absolute;
     bottom: calc(100% + 6px);
@@ -205,6 +208,19 @@
 .checkpoint-btn.checkpoint-ready:hover {
     background: var(--accent-info);
     color: white;
+}
+
+/* Disabled checkpoint button (no checkpoint for this turn) - visually
+   distinct so users don't click a dead button and wonder why nothing
+   happens. Keeps cursor:default and dims opacity to match the disabled
+   nav-btn pattern above. */
+.checkpoint-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.checkpoint-btn:disabled:hover {
+    background: var(--border-subtle);
+    border: 1px outset var(--border-bright);
 }
 
 /* Primary button styling - 90s style */

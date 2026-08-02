@@ -144,6 +144,12 @@ function cancelInFlightRequest(requestId) {
             log(`[CANCEL] Failed to save user_stopped for requestId=${requestId}: ${saveError.message}`);
         });
 
+    // Response checkpoint: the user stopped mid-generation, but tools may
+    // have already run and modified files on disk. Snapshot whatever state
+    // the project is in so it's recoverable — same rationale as the success
+    // path's checkpointOnResponseEnd. Fire-and-forget, never blocks.
+    checkpointOnResponseEnd(state.chatId, state.cwd, state.turnInfo);
+
     // Tear down the upstream.
     if (state.apiReq) {
         try { state.apiReq.destroy(); } catch (_) {}
@@ -351,6 +357,7 @@ async function executeStreamingLoop(
         apiReq: null,
         chatId,
         turnInfo,
+        cwd,
         unifiedResponse,
         cancelledByUser: false,
         saved: false,
@@ -403,6 +410,10 @@ async function executeStreamingLoop(
             .catch((saveError) => {
                 log(`[ERROR-HANDLING] Failed to save connection error: ${saveError.message}`);
             });
+
+        // Snapshot whatever tools may have written to disk before the
+        // client disconnected — fire-and-forget, same as all checkpoints.
+        checkpointOnResponseEnd(chatId, cwd, turnInfo);
     });
 
     const apiReq = httpModule.request(options, (apiRes) => {
@@ -479,6 +490,10 @@ async function executeStreamingLoop(
                 }
                 res.write(userErrorMessage);
                 res.end();
+
+                // Snapshot project files even on API error — tools from a
+                // prior round in this turn may have modified files.
+                checkpointOnResponseEnd(chatId, cwd, turnInfo);
             });
             return;
         }
@@ -710,6 +725,10 @@ saveMessage(chatId, errorMessage, turnInfo, "connection_error")
         }
         res.write(`Connection error: ${error.message}`);
         res.end();
+
+        // Snapshot project files even on connection error — tools from a
+        // prior round in this turn may have modified files.
+        checkpointOnResponseEnd(chatId, cwd, turnInfo);
     });
 
     const actualRequestPayload = JSON.stringify(requestData);
@@ -1144,6 +1163,10 @@ async function processRequest(req, res) {
             res.write(`\n[ERROR] ${error.message}`);
             res.end();
         }
+
+        // Snapshot project files even on processing error — tools from a
+        // prior round in this turn may have modified files.
+        checkpointOnResponseEnd(chat_id, cwd, turnInfo);
     }
 }
 

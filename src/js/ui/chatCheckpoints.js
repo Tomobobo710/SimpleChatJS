@@ -12,7 +12,8 @@ const ChatCheckpoints = {
     _chatId: null,
     _isProjectScoped: false,
     _byTurnId: new Map(), // turn_id -> checkpoint row
-    _pollTimers: new Map(), // checkpoint row id -> interval handle
+    _pollTimers: new Map(), // checkpoint row id -> interval handle (pending rows)
+    _discoveryPolls: new Map(), // turnId -> interval handle (turns with no row yet)
 
     // Call once after a chat's history has loaded (and on every subsequent
     // switch/creation) — mirrors the old panel's onChatSwitched hook point.
@@ -47,9 +48,6 @@ const ChatCheckpoints = {
         this._refreshMountedButtons();
     },
 
-    // Called by chatRenderer.addMessageActions for every request/response
-    // turn. No-ops (returns null, nothing appended) for freeform chats or
-    // turns without a turnId — callers just skip appending in that case.
     buildButton(turnId, kind) {
         if (!this._isProjectScoped || !turnId) return null;
 
@@ -60,19 +58,19 @@ const ChatCheckpoints = {
         btn.addEventListener("click", () => this._handleClick(btn));
 
         const existing = this._byTurnId.get(turnId) || null;
-        this._renderButtonState(btn, existing);
 
-        // Only chase a not-yet-landed row while this chat has an active
-        // stream — that's the one case where a missing row is "still being
-        // created", not "genuinely has no checkpoint" (e.g. pre-feature
-        // history, or a turn whose checkpoint no-op'd and was dropped).
-        // Without this guard every historical turn would poll uselessly.
-        const isLive = typeof streamManager !== "undefined" &&
-            typeof streamManager.isStreaming === "function" &&
-            streamManager.isStreaming(this._chatId);
-        if (!existing && isLive) {
+        if (existing) {
+            this._renderButtonState(btn, existing);
+        } else {
+            // No checkpoint row yet. The backend creates checkpoints
+            // asynchronously when a turn completes, so show a "creating"
+            // state immediately and poll for the row to appear. If no
+            // checkpoint is created (no file changes, not first turn),
+            // the poll gives up and the button goes grey.
+            this._renderCreating(btn);
             this._pollForNewRow(turnId, btn);
         }
+
         return btn;
     },
 
@@ -82,13 +80,22 @@ const ChatCheckpoints = {
     // at all, and gives up after a bounded number of attempts so a turn that
     // genuinely has no checkpoint (freeform edge cases, pre-feature history)
     // doesn't poll forever.
+    _renderCreating(btn) {
+        btn.classList.remove("loading", "checkpoint-error", "checkpoint-ready");
+        btn.textContent = "Checkpoint…";
+        btn.title = "Creating checkpoint…";
+        btn.classList.add("loading");
+        btn.disabled = true;
+    },
+
     _pollForNewRow(turnId, btn) {
         let attempts = 0;
-        const maxAttempts = 8; // ~12s at 1.5s interval — generous for a commit to land
+        const maxAttempts = 8; // ~12s at 1.5s interval
         const timer = setInterval(async () => {
             attempts++;
             if (!this._chatId || !document.body.contains(btn)) {
                 clearInterval(timer);
+                this._discoveryPolls.delete(turnId);
                 return;
             }
             try {
@@ -98,19 +105,39 @@ const ChatCheckpoints = {
                     this._byTurnId.set(turnId, row);
                     this._renderButtonState(btn, row);
                     clearInterval(timer);
+                    this._discoveryPolls.delete(turnId);
                     return;
                 }
             } catch (e) {
                 logger.warn("Failed to poll for new checkpoint row:", e);
             }
-            if (attempts >= maxAttempts) clearInterval(timer);
+            if (attempts >= maxAttempts) {
+                clearInterval(timer);
+                this._discoveryPolls.delete(turnId);
+                this._renderButtonState(btn, null);
+            }
         }, 1500);
+        this._discoveryPolls.set(turnId, timer);
+    },
+
+    _stopDiscoveryPoll(turnId) {
+        const timer = this._discoveryPolls.get(turnId);
+        if (timer) {
+            clearInterval(timer);
+            this._discoveryPolls.delete(turnId);
+        }
     },
 
     _refreshMountedButtons() {
         document.querySelectorAll(".checkpoint-btn").forEach((btn) => {
             const turnId = btn.dataset.turnId;
-            this._renderButtonState(btn, this._byTurnId.get(turnId) || null);
+            const row = this._byTurnId.get(turnId) || null;
+            if (row) {
+                this._renderButtonState(btn, row);
+            } else {
+                this._stopDiscoveryPoll(turnId);
+                this._renderButtonState(btn, null);
+            }
         });
     },
 
@@ -139,7 +166,7 @@ const ChatCheckpoints = {
             btn.classList.add("checkpoint-error");
             btn.disabled = false; // clickable to surface the error message
         } else {
-            btn.textContent = "Restore";
+            btn.textContent = "Checkpoint";
             btn.title = "Restore project files to this checkpoint";
             btn.classList.add("checkpoint-ready");
         }
@@ -152,19 +179,20 @@ const ChatCheckpoints = {
             try {
                 const rows = await fetchCheckpoints(this._chatId);
                 const updated = rows.find((r) => r.id === row.id);
+                const btn = document.querySelector(`.checkpoint-btn[data-turn-id="${row.turn_id}"]`);
                 if (!updated) {
-                    // Row was dropped (no-op commit) — stop polling and clear
+                    // Row was dropped (no-op commit) - stop polling and clear
                     // any stale map entry so the button reads as "no checkpoint".
                     this._byTurnId.delete(row.turn_id);
                     this._stopPolling(row.id);
-                    this._refreshMountedButtons();
+                    if (btn) this._renderButtonState(btn, null);
                     return;
                 }
                 this._byTurnId.set(updated.turn_id, updated);
                 if (updated.status !== "pending") {
                     this._stopPolling(row.id);
                 }
-                this._refreshMountedButtons();
+                if (btn) this._renderButtonState(btn, updated);
             } catch (e) {
                 logger.warn("Failed to poll checkpoint status:", e);
             }
@@ -183,9 +211,17 @@ const ChatCheckpoints = {
     _clearPolls() {
         this._pollTimers.forEach((timer) => clearInterval(timer));
         this._pollTimers.clear();
+        this._discoveryPolls.forEach((timer) => clearInterval(timer));
+        this._discoveryPolls.clear();
     },
 
     async _handleClick(btn) {
+        // Don't allow restore while a response is streaming - restoring
+        // would overwrite project files while the AI may be actively
+        // writing to them.
+        const turnsContainer = document.getElementById("messages");
+        if (turnsContainer && turnsContainer.classList.contains("chat-streaming")) return;
+
         const turnId = btn.dataset.turnId;
         const row = this._byTurnId.get(turnId);
         if (!row) return;
@@ -199,19 +235,22 @@ const ChatCheckpoints = {
 
         if (row.status !== "done" || !row.commit_hash) return;
 
-        const ok = window.confirm(
-            "Restore your project files to this checkpoint? This overwrites any uncommitted changes made since, including anything done outside the app."
+        if (typeof showCustomConfirm !== "function") return;
+        showCustomConfirm(
+            "Restore your project files to this checkpoint? This overwrites any uncommitted changes made since, including anything done outside the app.",
+            () => {
+                restoreCheckpoint(this._chatId, row.id)
+                    .then(() => {
+                        if (typeof showNotification === "function") {
+                            showNotification("Project files restored to this checkpoint.", "info");
+                        }
+                    })
+                    .catch((e) => {
+                        logger.warn("Failed to restore checkpoint:", e);
+                        if (typeof showError === "function") showError(`Failed to restore checkpoint: ${e.message}`);
+                    });
+            },
+            "Restore"
         );
-        if (!ok) return;
-
-        try {
-            await restoreCheckpoint(this._chatId, row.id);
-            if (typeof showNotification === "function") {
-                showNotification("Project files restored to this checkpoint.", "info");
-            }
-        } catch (e) {
-            logger.warn("Failed to restore checkpoint:", e);
-            if (typeof showError === "function") showError(`Failed to restore checkpoint: ${e.message}`);
-        }
     }
 };

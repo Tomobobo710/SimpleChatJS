@@ -17,9 +17,8 @@ function markDone(id, commitHash) {
     db.prepare(`UPDATE checkpoints SET status = 'done', commit_hash = ? WHERE id = ?`).run(commitHash, id);
 }
 
-// No-op commit (nothing changed) - drop the row entirely so the UI doesn't
-// show duplicate/empty checkpoints, matching Roo's saveCheckpoint returning
-// undefined on no changes.
+// No-op commit (nothing changed) - drop the row so the UI doesn't show
+// duplicate/empty checkpoints for turns where no files were modified.
 function markNoOp(id) {
     const { db } = require('../config/database');
     db.prepare(`DELETE FROM checkpoints WHERE id = ?`).run(id);

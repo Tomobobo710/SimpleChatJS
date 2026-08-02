@@ -597,12 +597,12 @@
                 <div id="checkpointsTab" class="tab-content">
                     <div class="settings-section">
                         <h3>Checkpoints</h3>
-                        <p class="setting-description">Enabled by default. For project-scoped chats, creates a snapshot of your project folder before and after every AI turn so you can restore it later from that turn's Checkpoint button in the chat. This can use a significant amount of disk space over time, especially on large projects — disable if you don't need it.</p>
+                        <p class="setting-description">For project-scoped chats, creates a snapshot of your project folder before and after every AI turn so you can restore it later from that turn's Checkpoint button in the chat. This can use a significant amount of disk space over time, especially on large projects — disable if you don't need it.</p>
                         <p id="cp-git-warning" class="setting-warning" style="display:none;">
                             Checkpoints require git to be installed and available on your system PATH. Git wasn't found, so checkpoints are disabled until it's installed — see <a href="https://git-scm.com/downloads" target="_blank" rel="noopener noreferrer">git-scm.com/downloads</a>.
                         </p>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="cp-enabled" checked>
+                            <input type="checkbox" id="cp-enabled">
                             <label for="cp-enabled">Enable checkpoints</label>
                         </div>
                         <label for="cp-exclude-patterns">Excluded paths (one pattern per line)</label>

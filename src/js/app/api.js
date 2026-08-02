@@ -339,7 +339,8 @@ async function loadCheckpointConfig() {
         logger.warn("Failed to load checkpoint config:", error);
     }
     return {
-        enabled: true,
+        enabled: false,
+        warningAccepted: false,
         excludePatterns: ['node_modules/', '.git/', 'dist/', 'build/', '.venv/', '__pycache__/', 'target/', '*.log'],
         gitAvailable: true
     };

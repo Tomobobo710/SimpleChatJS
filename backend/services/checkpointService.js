@@ -36,7 +36,8 @@ function isGitAvailable() {
 
 const CONFIG_FILE = 'checkpoint_config.json';
 const DEFAULT_CONFIG = {
-    enabled: true,
+    enabled: false,
+    warningAccepted: false,
     excludePatterns: [
         'node_modules/',
         '.git/',
@@ -194,15 +195,31 @@ async function stageAll(git) {
 // a diff against an expected prior state) so any out-of-band edit the user
 // made between checkpoints is captured automatically - no special-casing
 // needed. Returns { commit } or null if there was nothing to commit.
+//
+// First-turn rule: if nothing changed but the shadow repo only has its
+// initial commit, this is the first turn in the chat — always create an empty
+// commit so the user has a restorable baseline of their project at the point
+// the chat started. Checked via rev-list count (not the DB) so it's race-free on the
+// serial queue.
 function createCheckpoint(chatId, projectDir, message) {
     return enqueue(chatId, async () => {
         const git = await initShadowRepo(chatId, projectDir);
         await stageAll(git);
         const result = await git.commit(message);
-        if (!result.commit) {
-            return null;
+        if (result.commit) {
+            return { commit: result.commit };
         }
-        return { commit: result.commit };
+
+        // Nothing changed. Is this the first real checkpoint? If the repo
+        // only has the initial commit, yes — make an empty commit so the
+        // baseline is restorable.
+        const count = parseInt(await git.raw(['rev-list', '--count', 'HEAD']), 10);
+        if (count <= 1) {
+            const empty = await git.commit(message, { '--allow-empty': null });
+            return { commit: empty.commit };
+        }
+
+        return null;
     });
 }
 

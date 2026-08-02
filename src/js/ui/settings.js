@@ -142,6 +142,104 @@ async function loadSettingsIntoModal() {
         const cpGitWarning = document.getElementById('cp-git-warning');
         if (cpGitWarning) cpGitWarning.style.display = checkpointConfig.gitAvailable === false ? '' : 'none';
 
+        // Guard the enable checkbox: show a liability/warning dialog before
+        // letting the user opt in. Only when git is available (the git-missing
+        // case is already handled by the warning above + the backend no-oping).
+        // If the user previously checked "Don't show this warning again" and
+        // accepted (warningAccepted persisted in the checkpoint config), skip
+        // the dialog entirely. Decline -> uncheck, accept -> leave checked.
+        const cpEnabledCheckbox = document.getElementById('cp-enabled');
+        cpEnabledCheckbox.addEventListener('change', () => {
+            if (!cpEnabledCheckbox.checked) return;
+            if (checkpointConfig.gitAvailable === false) {
+                cpEnabledCheckbox.checked = false;
+                return;
+            }
+            // Already accepted the warning in a prior session — skip dialog.
+            if (checkpointConfig.warningAccepted === true) return;
+
+            const warning =
+                "WARNING: The checkpoint system is NOT a guarantee.\n\n" +
+                "It is a convenience feature, not a safety net. The authors of " +
+                "SimpleChat recommend that you make a backup of your project " +
+                "before relying on checkpoints. Be aware that there are risks " +
+                "and that the system could fail.\n\n" +
+                "Trusting AI with your files is at your own risk. The authors " +
+                "of SimpleChat take no responsibility for data loss.\n\n" +
+                "Do you want to enable checkpoints?";
+
+            // Build a custom modal (window.confirm can't host a checkbox).
+            // Reuses the existing .confirm-overlay/.confirm-dialog CSS for the
+            // 90s-style look, with a checkbox + pre-formatted warning text.
+            const overlay = document.createElement('div');
+            overlay.className = 'confirm-overlay';
+
+            const dialog = document.createElement('div');
+            dialog.className = 'confirm-dialog cp-warning-dialog';
+
+            const message = document.createElement('div');
+            message.className = 'confirm-message cp-warning-message';
+            message.textContent = warning;
+            dialog.appendChild(message);
+
+            const checkboxGroup = document.createElement('div');
+            checkboxGroup.className = 'cp-warning-checkbox-group';
+            const dontShowCheckbox = document.createElement('input');
+            dontShowCheckbox.type = 'checkbox';
+            dontShowCheckbox.id = 'cp-dont-show-warning';
+            const dontShowLabel = document.createElement('label');
+            dontShowLabel.htmlFor = 'cp-dont-show-warning';
+            dontShowLabel.textContent = "Don't show this warning again";
+            checkboxGroup.appendChild(dontShowCheckbox);
+            checkboxGroup.appendChild(dontShowLabel);
+            dialog.appendChild(checkboxGroup);
+
+            const buttons = document.createElement('div');
+            buttons.className = 'confirm-buttons';
+            const enableBtn = document.createElement('button');
+            enableBtn.className = 'confirm-btn cp-warning-enable-btn';
+            enableBtn.textContent = 'Enable';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'confirm-btn confirm-no';
+            cancelBtn.textContent = 'Cancel';
+            buttons.appendChild(enableBtn);
+            buttons.appendChild(cancelBtn);
+            dialog.appendChild(buttons);
+
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const cleanup = () => document.body.removeChild(overlay);
+
+            enableBtn.addEventListener('click', () => {
+                cleanup();
+                if (dontShowCheckbox.checked) {
+                    // Persist immediately so the warning is suppressed on
+                    // future settings opens even if the user closes without
+                    // saving. Update the closure variable too so subsequent
+                    // toggles within this same modal session skip the dialog.
+                    checkpointConfig.warningAccepted = true;
+                    saveCheckpointConfig({
+                        enabled: true,
+                        warningAccepted: true,
+                        excludePatterns: checkpointConfig.excludePatterns || []
+                    }).catch(() => {});
+                }
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                cleanup();
+                cpEnabledCheckbox.checked = false;
+            });
+
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    cleanup();
+                    cpEnabledCheckbox.checked = false;
+                }
+            });
+        });
+
         // Browser tool config
         document.getElementById('bt-enabled').checked = browserToolConfig.enabled !== false;
         document.getElementById('bt-max-tabs').value =
@@ -434,8 +532,14 @@ async function handleSaveSettings() {
         await saveBackgroundJobsConfig(backgroundJobsConfig);
 
         // Save Checkpoint config
+        // Re-fetch the current config to preserve warningAccepted (set by the
+        // enable-checkbox dialog), which lives in the backend config file, not
+        // in a DOM element we can read here.
+        let currentCpConfig = {};
+        try { currentCpConfig = await loadCheckpointConfig(); } catch (_) {}
         const checkpointConfigToSave = {
             enabled: document.getElementById('cp-enabled').checked,
+            warningAccepted: currentCpConfig.warningAccepted === true,
             excludePatterns: document.getElementById('cp-exclude-patterns').value
                 .split('\n')
                 .map(s => s.trim())
@@ -840,7 +944,7 @@ debugPanels: debugPanelsInput.checked,
 }
 
 // Show custom confirm dialog
-function showCustomConfirm(message, onConfirm) {
+function showCustomConfirm(message, onConfirm, confirmLabel = 'Delete') {
     // Create overlay
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
@@ -851,7 +955,7 @@ function showCustomConfirm(message, onConfirm) {
     dialog.innerHTML = `
         <div class="confirm-message">${message}</div>
         <div class="confirm-buttons">
-            <button class="confirm-btn confirm-yes">Delete</button>
+            <button class="confirm-btn confirm-yes">${confirmLabel}</button>
             <button class="confirm-btn confirm-no">Cancel</button>
         </div>
     `;
