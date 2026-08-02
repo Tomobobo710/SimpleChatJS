@@ -140,6 +140,9 @@ async function loadChatList() {
                 selectChat(currentChatId);
                 updateChatTitle("New Chat");
                 chatInfo.textContent = `Chat ID: ${currentChatId}`;
+                if (typeof ChatCheckpoints !== "undefined") {
+                    ChatCheckpoints.onChatLoaded(currentChatId).catch(() => {});
+                }
             } catch (error) {
                 logger.error("Failed to create initial chat:", error, true);
                 chatList.innerHTML =
@@ -164,6 +167,11 @@ async function loadChatList() {
             } catch {}
             currentChatId = targetId;
             selectChat(currentChatId);
+            // Checkpoint data must be indexed BEFORE history renders — see the
+            // matching comment in switchToChat for why.
+            if (typeof ChatCheckpoints !== "undefined") {
+                await ChatCheckpoints.onChatLoaded(currentChatId).catch(() => {});
+            }
             // Reconnect after the history renders so an in-flight live turn re-attaches
             // (switchToChat does this; the restore path must too).
             await loadChatHistory(currentChatId);
@@ -323,6 +331,13 @@ async function switchToChat(chatId) {
     currentChatId = chatId;
     selectChat(chatId);
     fetch(`${API_BASE}/api/ui-state`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ last_chat_id: chatId }) });
+
+    // Checkpoint data must be indexed BEFORE history renders — addMessageActions
+    // (chatRenderer.js) reads ChatCheckpoints synchronously while building each
+    // turn's action bar, so a late-populated map means every button is skipped.
+    if (typeof ChatCheckpoints !== "undefined") {
+        await ChatCheckpoints.onChatLoaded(chatId).catch(() => {});
+    }
 
     // Load chat history
     await loadChatHistory(chatId);
@@ -887,6 +902,9 @@ async function loadProjectChats(projectId) {
                 updateChatTitle("New Chat");
                 chatInfo.textContent = `Chat ID: ${currentChatId}`;
                 turnsContainer.innerHTML = "";
+                if (typeof ChatCheckpoints !== "undefined") {
+                    ChatCheckpoints.onChatLoaded(currentChatId).catch(() => {});
+                }
             } catch (error) {
                 logger.error("Failed to create initial project chat:", error, true);
                 chatList.innerHTML =
@@ -908,6 +926,11 @@ async function loadProjectChats(projectId) {
         } catch {}
         currentChatId = targetId;
         selectChat(currentChatId);
+        // Checkpoint data must be indexed BEFORE history renders — see the
+        // matching comment in switchToChat for why.
+        if (typeof ChatCheckpoints !== "undefined") {
+            await ChatCheckpoints.onChatLoaded(currentChatId).catch(() => {});
+        }
         // Reconnect after the history renders so an in-flight live turn re-attaches
         // (switchToChat does this; the restore path must too).
         await loadChatHistory(currentChatId);
@@ -957,6 +980,9 @@ async function handleNewChat() {
 
         addChatToList(chatId, "New Chat", "", new Date());
         selectChat(chatId);
+        if (typeof ChatCheckpoints !== "undefined") {
+            ChatCheckpoints.onChatLoaded(chatId).catch(() => {});
+        }
     } catch (error) {
         logger.error("Failed to create new chat:", error, true);
         showError("Failed to create new chat");

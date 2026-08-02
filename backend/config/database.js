@@ -78,6 +78,21 @@ db.exec(`CREATE TABLE IF NOT EXISTS projects (
                 PRIMARY KEY (chat_id, parent_key)
             )`);
 
+            // Shadow-git checkpoint records for project-scoped chats. One row
+            // per REQUEST/RESPONSE turn barrier; status tracks the async git
+            // operation (pending while committing, done/error after).
+            db.exec(`CREATE TABLE IF NOT EXISTS checkpoints (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                turn_id TEXT,
+                kind TEXT NOT NULL,
+                commit_hash TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                error TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+            db.exec("CREATE INDEX IF NOT EXISTS idx_checkpoints_chat ON checkpoints(chat_id, created_at)");
+
             log("[DB] Database initialized successfully");
             resolve();
         } catch (err) {

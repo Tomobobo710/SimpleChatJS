@@ -17,6 +17,7 @@ const debugRoutes = require('./routes/debug');
 const documentRoutes = require('./routes/documents');
 const shellConfigRoutes = require('./routes/shellConfig');
 const jobRoutes = require('./routes/jobs');
+const checkpointRoutes = require('./routes/checkpoints');
 
 const app = express();
 // PORT override: set PORT env var to change. Default 50505 for dev/local Electron.
@@ -38,6 +39,7 @@ app.use('/api', debugRoutes);
 app.use('/api', documentRoutes);
 app.use('/api', shellConfigRoutes);
 app.use('/api', jobRoutes);
+app.use('/api', checkpointRoutes);
 
 // Bind a single port, resolving with the actual bound port.
 function tryListen(port) {

@@ -2190,6 +2190,16 @@ class ChatRenderer {
         const rightCluster = document.createElement("div");
         rightCluster.className = "message-actions-right";
 
+        // Checkpoint button (project-scoped chats only — ChatCheckpoints.buildButton
+        // returns null otherwise). Plain request/response turns only: compaction
+        // turns don't correspond to a REQUEST/RESPONSE checkpoint barrier.
+        if ((identity === "request" || identity === "response") && turnId && typeof ChatCheckpoints !== "undefined") {
+            const checkpointBtn = ChatCheckpoints.buildButton(turnId, identity);
+            if (checkpointBtn) {
+                rightCluster.appendChild(checkpointBtn);
+            }
+        }
+
         // Add branch navigation to request/response turns AND compaction turns (all can
         // be branched — e.g. Retry on the compaction response makes a sibling summary).
         if ((isRequestLike || isResponseLike) && turnId) {

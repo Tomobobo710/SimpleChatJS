@@ -231,6 +231,7 @@ async function loadBrowserToolConfig() {
         default_cache_enabled: true,
         cache_control_user_locked: false,
         allow_file_protocol: true,
+        allow_js_execution: true,
         allow_hard_refresh: true,
         background_throttling_disabled: true,
         max_console_log_lines: 500,
@@ -306,6 +307,58 @@ async function getChatProjectPath(chatId) {
     }
     return null;
 }
+// ===== Checkpoints (shadow-git snapshots for project-scoped chats) =====
+
+async function fetchCheckpoints(chatId) {
+    const response = await fetch(`${API_BASE}/api/chat/${chatId}/checkpoints`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const data = await response.json();
+    return data.checkpoints || [];
+}
+
+async function restoreCheckpoint(chatId, checkpointId) {
+    const response = await fetch(`${API_BASE}/api/chat/${chatId}/checkpoints/${checkpointId}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+    });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+    return await response.json();
+}
+
+async function loadCheckpointConfig() {
+    try {
+        const response = await fetch(`${window.location.origin}/api/checkpoint-config`);
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        logger.warn("Failed to load checkpoint config:", error);
+    }
+    return {
+        enabled: true,
+        excludePatterns: ['node_modules/', '.git/', 'dist/', 'build/', '.venv/', '__pycache__/', 'target/', '*.log'],
+        gitAvailable: true
+    };
+}
+
+async function saveCheckpointConfig(config) {
+    try {
+        const response = await fetch(`${window.location.origin}/api/checkpoint-config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config)
+        });
+        return response.ok;
+    } catch (error) {
+        logger.warn("Failed to save checkpoint config:", error);
+        return false;
+    }
+}
+
 // Compact a chat's context (summarize-only). anchorTurnId restricts to the active
 // branch lineage (pass the terminal turn). Keep-mode/budget + estimation knobs live in
 // the settings profile (read server-side). Returns { success, record } or

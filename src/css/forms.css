@@ -294,6 +294,21 @@
     line-height: 1.4;
 }
 
+.setting-warning {
+    font-size: 12px;
+    color: #f14c4c;
+    background: #f14c4c1a;
+    border: 1px solid #f14c4c66;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 4px 0 10px;
+    line-height: 1.4;
+}
+.setting-warning a {
+    color: inherit;
+    text-decoration: underline;
+}
+
 .checkbox-group {
     display: flex;
     align-items: center;

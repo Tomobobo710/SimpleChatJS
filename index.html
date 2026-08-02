@@ -153,6 +153,7 @@
                     <button class="btn btn-tab" data-tab="system">System</button>
                     <button class="btn btn-tab" data-tab="thinking">Thinking</button>
                     <button class="btn btn-tab" data-tab="tools">Tools</button>
+                    <button class="btn btn-tab" data-tab="checkpoints">Checkpoints</button>
                     <button class="btn btn-tab" data-tab="tokens">Tokens</button>
                     <button class="btn btn-tab" data-tab="mcp">MCP</button>
                     <button class="btn btn-tab" data-tab="debug">Debug</button>
@@ -536,6 +537,11 @@
                             <label for="bt-allow-file-protocol">Allow file:// URLs</label>
                         </div>
                         <div class="checkbox-group">
+                            <input type="checkbox" id="bt-allow-js-execution" checked>
+                            <label for="bt-allow-js-execution">Allow JS execution (browser_execute_js, javascript:/data: URLs)</label>
+                        </div>
+                        <p class="setting-description">Lets the AI run arbitrary JavaScript in a tab's page — a full escape hatch beyond the narrow click/type/read tools, for automating your own app or page. Turn off for a more restricted, sandboxed browser tool.</p>
+                        <div class="checkbox-group">
                             <input type="checkbox" id="bt-allow-hard-refresh" checked>
                             <label for="bt-allow-hard-refresh">Allow hard refresh (bypass cache)</label>
                         </div>
@@ -584,6 +590,24 @@
                             <label for="bt-tab-dimensions-user-locked">Lock this — don't let the AI request different tab dimensions</label>
                         </div>
                         <p class="setting-description">When locked, browser_open's width/height parameters are removed from the AI's tool entirely — every tab always opens at the size set above, with no way for the AI to ask for a different one.</p>
+                    </div>
+                </div>
+
+                <!-- Checkpoints Tab -->
+                <div id="checkpointsTab" class="tab-content">
+                    <div class="settings-section">
+                        <h3>Checkpoints</h3>
+                        <p class="setting-description">Enabled by default. For project-scoped chats, creates a snapshot of your project folder before and after every AI turn so you can restore it later from that turn's Checkpoint button in the chat. This can use a significant amount of disk space over time, especially on large projects — disable if you don't need it.</p>
+                        <p id="cp-git-warning" class="setting-warning" style="display:none;">
+                            Checkpoints require git to be installed and available on your system PATH. Git wasn't found, so checkpoints are disabled until it's installed — see <a href="https://git-scm.com/downloads" target="_blank" rel="noopener noreferrer">git-scm.com/downloads</a>.
+                        </p>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="cp-enabled" checked>
+                            <label for="cp-enabled">Enable checkpoints</label>
+                        </div>
+                        <label for="cp-exclude-patterns">Excluded paths (one pattern per line)</label>
+                        <textarea id="cp-exclude-patterns" rows="6" placeholder="node_modules/&#10;.git/&#10;dist/"></textarea>
+                        <p class="setting-description">Patterns are written to the checkpoint repo's own git exclude file — never touches your project's .gitignore. Applies to new/changed checkpoints going forward.</p>
                     </div>
                 </div>
 
@@ -731,6 +755,7 @@
     <!-- Document processing (server-side via API) -->
     <script src="src/js/app/documentProcessing.js"></script>
     <script src="src/js/app/api.js"></script>
+    <script src="src/js/ui/chatCheckpoints.js"></script>
     <script src="src/js/app/message.js"></script>
     <script src="src/js/app/turn.js"></script>
     <script src="src/js/app/block.js"></script>

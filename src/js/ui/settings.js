@@ -69,12 +69,13 @@ async function loadInitialSettings() {
 async function loadSettingsIntoModal() {
     try {
         // Fetch all configs in parallel
-        const [response, simpleConfig, shellConfig, bgJobsConfig, browserToolConfig] = await Promise.all([
+        const [response, simpleConfig, shellConfig, bgJobsConfig, browserToolConfig, checkpointConfig] = await Promise.all([
             fetch(`${window.location.origin}/api/settings`).then(r => r.json()),
             loadSimpleToolsConfig(),
             loadShellConfig(),
             loadBackgroundJobsConfig(),
             loadBrowserToolConfig(),
+            loadCheckpointConfig(),
         ]);
         const settings = response;
         logger.info('Loading fresh settings into modal:', settings);
@@ -131,11 +132,22 @@ async function loadSettingsIntoModal() {
         document.getElementById('bg-jobs-output-buffer').value =
             Number.isFinite(bgJobsConfig.output_buffer_kb) ? bgJobsConfig.output_buffer_kb : 512;
 
+        // Checkpoint config
+        document.getElementById('cp-enabled').checked = checkpointConfig.enabled !== false;
+        document.getElementById('cp-exclude-patterns').value =
+            Array.isArray(checkpointConfig.excludePatterns) ? checkpointConfig.excludePatterns.join('\n') : '';
+        // gitAvailable is a derived status (not a saved field) — checkpointConfig.gitAvailable
+        // === false means git wasn't found on PATH when the backend checked, so checkpoints
+        // silently no-op every turn without this warning explaining why.
+        const cpGitWarning = document.getElementById('cp-git-warning');
+        if (cpGitWarning) cpGitWarning.style.display = checkpointConfig.gitAvailable === false ? '' : 'none';
+
         // Browser tool config
         document.getElementById('bt-enabled').checked = browserToolConfig.enabled !== false;
         document.getElementById('bt-max-tabs').value =
             Number.isFinite(browserToolConfig.max_concurrent_tabs) ? browserToolConfig.max_concurrent_tabs : 3;
         document.getElementById('bt-allow-file-protocol').checked = browserToolConfig.allow_file_protocol !== false;
+        document.getElementById('bt-allow-js-execution').checked = browserToolConfig.allow_js_execution !== false;
         document.getElementById('bt-allow-hard-refresh').checked = browserToolConfig.allow_hard_refresh !== false;
         document.getElementById('bt-background-throttling-disabled').checked = browserToolConfig.background_throttling_disabled !== false;
         document.getElementById('bt-max-console-lines').value =
@@ -421,6 +433,16 @@ async function handleSaveSettings() {
         };
         await saveBackgroundJobsConfig(backgroundJobsConfig);
 
+        // Save Checkpoint config
+        const checkpointConfigToSave = {
+            enabled: document.getElementById('cp-enabled').checked,
+            excludePatterns: document.getElementById('cp-exclude-patterns').value
+                .split('\n')
+                .map(s => s.trim())
+                .filter(Boolean)
+        };
+        await saveCheckpointConfig(checkpointConfigToSave);
+
         // Save Browser Tool config
         const parsedMaxTabs = parseInt(document.getElementById('bt-max-tabs').value, 10);
         const parsedMaxConsoleLines = parseInt(document.getElementById('bt-max-console-lines').value, 10);
@@ -437,6 +459,7 @@ async function handleSaveSettings() {
             default_cache_enabled: document.getElementById('bt-default-cache-enabled').checked,
             cache_control_user_locked: document.getElementById('bt-cache-control-user-locked').checked,
             allow_file_protocol: document.getElementById('bt-allow-file-protocol').checked,
+            allow_js_execution: document.getElementById('bt-allow-js-execution').checked,
             allow_hard_refresh: document.getElementById('bt-allow-hard-refresh').checked,
             background_throttling_disabled: document.getElementById('bt-background-throttling-disabled').checked,
             max_console_log_lines: Number.isFinite(parsedMaxConsoleLines) ? Math.max(50, parsedMaxConsoleLines) : 500,

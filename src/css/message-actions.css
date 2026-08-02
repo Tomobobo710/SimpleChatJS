@@ -185,6 +185,28 @@
     cursor: not-allowed;
 }
 
+/* Checkpoint button — pending/error/ready visual cues, reusing .action-btn.loading
+   for the pending state (pulsing text is the async-in-progress indicator). */
+.checkpoint-btn.loading {
+    animation: checkpointPulse 1.4s ease-in-out infinite;
+}
+@keyframes checkpointPulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.9; }
+}
+.checkpoint-btn.checkpoint-error {
+    background: #f14c4c33;
+    border-color: #f14c4c;
+    color: #f14c4c;
+}
+.checkpoint-btn.checkpoint-error:hover {
+    background: #f14c4c55;
+}
+.checkpoint-btn.checkpoint-ready:hover {
+    background: var(--accent-info);
+    color: white;
+}
+
 /* Primary button styling - 90s style */
 .message-actions .action-btn.primary {
     background: var(--accent-info);

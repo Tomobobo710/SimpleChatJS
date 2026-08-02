@@ -283,6 +283,10 @@ router.delete("/chat/:id", (req, res) => {
         tx();
         saveDraftForChat(chatId, "");
 
+        // Remove the shadow git checkpoint repo + rows, if any (project-scoped
+        // chats only ever create one, but the call is a no-op otherwise).
+        require("../services/checkpointService").deleteChatCheckpoints(chatId);
+
         log(`[CHAT] Deleted chat: ${chatId} (project: ${chat?.project_id || "freeform"})`);
         res.json({ success: true, project_id: chat?.project_id || null });
     } catch (err) {

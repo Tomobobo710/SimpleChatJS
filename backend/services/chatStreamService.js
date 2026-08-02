@@ -16,6 +16,7 @@ const { addToolEvent, initializeToolEvents } = require("./toolEventService");
 
 const { saveMessage, setMessageDebugByTurn, setLatestMessageDebug } = require("./messageRepository");
 const { getTurnInfo } = require("./turnService");
+const checkpointService = require("./checkpointService");
 const responseAdapterFactory = require("../adapters/ResponseAdapterFactory");
 const UnifiedResponse = require("../adapters/UnifiedResponse");
 
@@ -24,6 +25,27 @@ const UnifiedResponse = require("../adapters/UnifiedResponse");
 // first, then call this.
 async function pushTurnError(chatId, turnInfo, responsePayload, errorPayload) {
     setLatestMessageDebug(chatId, turnInfo.turn_id, { response: responsePayload, error: errorPayload });
+}
+
+// RESPONSE turn barrier: fire a checkpoint once a response has fully
+// finished (no more tool rounds pending). Fire-and-forget by design — never
+// awaited by callers, never delays the HTTP response. Only project-scoped
+// chats get a cwd from resolveCwdForChat's project lookup; freeform chats
+// (defaultCwd/home fallback) are intentionally excluded from checkpointing.
+function checkpointOnResponseEnd(chatId, cwd, turnInfo) {
+    if (!chatId || !cwd) return;
+    const projectService = require("./projectService");
+    if (!projectService.getProjectPathForChat(chatId)) return;
+
+    checkpointService
+        .maybeCreateCheckpoint(chatId, cwd, {
+            turnId: turnInfo?.turn_id || null,
+            kind: "response",
+            message: `Response checkpoint: ${turnInfo?.turn_id || Date.now()}`
+        })
+        .catch((err) => {
+            log(`[CHECKPOINT] response checkpoint failed for chat ${chatId}: ${err.message}`);
+        });
 }
 
 // In-flight chat requests, keyed by requestId.
@@ -629,6 +651,8 @@ async function executeStreamingLoop(
                 // (the queued steer will drain on this terminal `done` anyway).
                 if (requestId) steerBreakRequested.delete(requestId);
 
+                checkpointOnResponseEnd(chatId, cwd, turnInfo);
+
                 // Finish response
                 res.end();
             }
@@ -919,6 +943,7 @@ async function executeToolCallsAndContinue(
         steerBreakRequested.delete(requestId);
         log(`[STEER] Breaking at tool-round boundary for requestId=${requestId}`);
         writeSSEEvent(res, 'done', { content: assistantMessage || "" });
+        checkpointOnResponseEnd(chatId, cwd, turnInfo);
         res.end();
         return;
     }
@@ -993,6 +1018,22 @@ async function processRequest(req, res) {
         // Priority: project dir (project-scoped chat) -> defaultCwd -> home.
         // process.cwd() is never considered.
         const cwd = projectService.resolveCwdForChat(chat_id, currentSettings);
+
+        // REQUEST turn barrier: checkpoint the project dir before this
+        // request is processed, so any change (AI or user-made, made since
+        // the last checkpoint) is captured before this turn's tools run.
+        // Project-scoped chats only; fire-and-forget, never blocks the request.
+        if (chat_id && projectService.getProjectPathForChat(chat_id)) {
+            checkpointService
+                .maybeCreateCheckpoint(chat_id, cwd, {
+                    turnId: turn_id || null,
+                    kind: "request",
+                    message: `Request checkpoint: ${turn_id || Date.now()}`
+                })
+                .catch((err) => {
+                    log(`[CHECKPOINT] request checkpoint failed for chat ${chat_id}: ${err.message}`);
+                });
+        }
 
         // Merge SimpleTools definitions
         const simpleConfig = simpleTools.loadConfig();
