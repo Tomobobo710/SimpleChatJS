@@ -53,7 +53,7 @@ async function processImageFile(file) {
     }
 
     // Stage 2: progressive scale/quality ladder targeting maxBase64Kb.
-    const targetKB = Math.floor(maxBase64Kb * 0.75);
+    const targetKB = maxBase64Kb;
     const qualities = Array.from({ length: 7 }, (_, i) => +(0.7 - i * 0.1).toFixed(1));
     const scales = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
 

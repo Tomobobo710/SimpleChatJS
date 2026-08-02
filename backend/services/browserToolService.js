@@ -589,7 +589,7 @@ function capLongEdge(image, maxLongEdgePx) {
 // (see clickAt) — coordinates the model gives us are always relative to
 // THIS image, not the raw capture or any intermediate resize.
 function compressToByteTarget(image, maxBase64Kb) {
-    const targetKb = Math.floor((Number.isFinite(maxBase64Kb) && maxBase64Kb > 0 ? maxBase64Kb : 100) * 0.75);
+    const targetKb = Number.isFinite(maxBase64Kb) && maxBase64Kb > 0 ? maxBase64Kb : 100;
     const { width, height } = image.getSize();
     for (const scale of SCREENSHOT_SCALES) {
         const scaled = scale === 1.0 ? image : image.resize({ width: Math.round(width * scale), height: Math.round(height * scale) });
