@@ -1,9 +1,31 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
-const { dialog } = require('electron');
+
+// ── DPI scaling via zoom factor ──────────────────────────────────────
+// deviceScaleFactor is forced to 1 (electron-main.js) so window sizes
+// are real pixels. We compensate by setting the Chromium zoom factor to
+// the OS DPI scale — this scales EVERYTHING in the page, including
+// native decorations CSS can't touch (spellcheck underline, scrollbars,
+// selection highlight).
+let dpiScale = 1;
+let userZoom = 1.0; // user multiplier on top of DPI base (1.0 = default)
+
+function applyZoom() {
+    webFrame.setZoomFactor(dpiScale * userZoom);
+}
+
+(async () => {
+    try {
+        const dpiInfo = await ipcRenderer.invoke('get-windows-dpi');
+        dpiScale = dpiInfo.scale;
+    } catch (e) {
+        dpiScale = 1;
+    }
+    applyZoom();
+})();
 
 // Ctrl+mousewheel zoom. Chromium's native ctrl+wheel zoom is suppressed under
-// Electron, so we drive the zoom factor ourselves — mirroring the View menu's
-// zoomIn/zoomOut/resetZoom roles. wheel listeners are passive by default, so we
+// Electron, so we drive the zoom factor ourselves. The user zoom multiplier
+// adjusts on top of the DPI base. wheel listeners are passive by default, so we
 // must register non-passive to be allowed to preventDefault (stops the page from
 // scrolling while zooming). Clamped so the UI can't be zoomed into uselessness.
 const ZOOM_STEP = 0.1;
@@ -13,9 +35,24 @@ window.addEventListener('wheel', (e) => {
     if (!e.ctrlKey) return;
     e.preventDefault();
     const dir = e.deltaY < 0 ? 1 : -1;
-    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, webFrame.getZoomFactor() + dir * ZOOM_STEP));
-    webFrame.setZoomFactor(next);
+    userZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, userZoom + dir * ZOOM_STEP));
+    applyZoom();
 }, { passive: false });
+
+// View menu zoom — the built-in resetZoom/zoomIn/zoomOut roles reset to
+// 1.0 which would undo the DPI base, so we handle them ourselves via IPC.
+ipcRenderer.on('zoom-in', () => {
+    userZoom = Math.min(ZOOM_MAX, userZoom + ZOOM_STEP);
+    applyZoom();
+});
+ipcRenderer.on('zoom-out', () => {
+    userZoom = Math.max(ZOOM_MIN, userZoom - ZOOM_STEP);
+    applyZoom();
+});
+ipcRenderer.on('zoom-reset', () => {
+    userZoom = 1.0;
+    applyZoom();
+});
 
 // Expose context menu API to renderer
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -45,5 +82,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onEscapePressed: (callback) => {
         ipcRenderer.on('escape-pressed', () => callback());
+    },
+    getWindowsDPI: () => {
+        return ipcRenderer.invoke('get-windows-dpi');
     }
 });

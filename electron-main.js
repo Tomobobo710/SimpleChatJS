@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog, globalShortcut } = require("electron");
+app.commandLine.appendSwitch('force-device-scale-factor', '1');
 const path = require("path");
 const setFindBar = require("find-bar");
 
@@ -279,9 +280,9 @@ function createMenu() {
                 { role: "forceReload" },
                 { role: "toggleDevTools" },
                 { type: "separator" },
-                { role: "resetZoom" },
-                { role: "zoomIn" },
-                { role: "zoomOut" },
+                { label: "Reset Zoom", click: () => mainWindow.webContents.send("zoom-reset") },
+                { label: "Zoom In", click: () => mainWindow.webContents.send("zoom-in") },
+                { label: "Zoom Out", click: () => mainWindow.webContents.send("zoom-out") },
                 { type: "separator" },
                 { role: "togglefullscreen" }
             ]
@@ -332,6 +333,25 @@ app.whenReady().then(() => {
     // Handle home directory IPC
     ipcMain.handle("get-home-dir", () => {
         return app.getPath("home");
+    });
+
+    // Handle Windows DPI IPC (reads native resolution from OS via systeminformation)
+    ipcMain.handle("get-windows-dpi", () => {
+        try {
+            const si = require("systeminformation");
+            return new Promise((resolve) => {
+                si.graphics().then((data) => {
+                    const display = data.displays.find((d) => d.main);
+                    if (!display) return resolve({ dpi: 96, scale: 1 });
+                    const scale = display.resolutionX / display.currentResX;
+                    const dpi = Math.round(scale * 96);
+                    resolve({ dpi, scale });
+                }).catch(() => resolve({ dpi: 96, scale: 1 }));
+            });
+        } catch (e) {
+            console.error("[MAIN] Failed to get Windows DPI:", e.message);
+            return Promise.resolve({ dpi: 96, scale: 1 });
+        }
     });
 
     app.on("activate", () => {
