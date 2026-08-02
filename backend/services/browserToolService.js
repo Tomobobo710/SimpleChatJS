@@ -5,15 +5,17 @@
 // A browser tab is a job like any other in the shared registry — its kill
 // handler destroys the BrowserWindow instead of killing a child process.
 //
-// browser_screenshot's tool result still carries the image as a base64
-// string field (useful for automation/debugging and for the Web Tabs panel's
-// thumbnail), but the model actually SEES the screenshot via a separate
-// mechanism: chatStreamService.js pushes a synthetic role:'user' message
-// with a real {type:'image',...} content part right after the tool result,
-// reusing the exact same multimodal path a human's uploaded image goes
-// through (main.js's buildMessageContentFromInput) — no adapter-specific
-// tool-result plumbing needed, since every adapter already knows how to
-// convert that content shape correctly.
+// browser_screenshot's tool result carries ONLY metadata + the job_id — the
+// screenshot bytes themselves stay internal (see lastScreenshots) and never
+// ride the tool result, where every adapter would treat them as text tokens.
+// The model actually SEES the screenshot via a separate mechanism:
+// chatStreamService.js pushes a synthetic role:'user' message with a real
+// {type:'image',...} content part right after the tool result (bytes pulled
+// from getLastScreenshot), reusing the exact same multimodal path a human's
+// uploaded image goes through (main.js's buildMessageContentFromInput) — no
+// adapter-specific tool-result plumbing needed, since every adapter already
+// knows how to convert that content shape correctly. The Web Tabs panel's
+// thumbnail route (routes/jobs.js) is the one place base64 goes to a client.
 const fs = require('fs');
 const path = require('path');
 const { log } = require('../utils/logger');
@@ -159,6 +161,15 @@ const networkRequestIndex = new Map(); // jobId -> Map<cdpRequestId, entry> (for
 // jobId -> Map<elementKey, { tag, role, text, attrs, box }>
 const domSnapshots = new Map();
 
+// Last screenshot bytes per tab. The base64 stays behind the curtains here —
+// it never rides the tool result (where every adapter treats content as text:
+// a ~75KB blob would tokenize as tens of thousands of junk tokens for an image
+// the model can't decode as text). The tool result carries only metadata; the
+// chat layer pulls the bytes from this cache when it builds the model's
+// synthetic image message. Cleared when the tab closes.
+// jobId -> { base64, mimeType }
+const lastScreenshots = new Map();
+
 registry.registerKillHandler('browser_tab', (job) => {
     const win = liveWindows.get(job.id);
     if (win && !win.isDestroyed()) {
@@ -178,7 +189,7 @@ const BROWSER_READ_PAGE_TPL = 'Get the visible text content of a browser tab\'s 
 const BROWSER_CLOSE_TPL = 'Close a browser tab. Required: job_id.';
 const BROWSER_CLICK_TPL = 'Click at a coordinate in a browser tab. IMPORTANT: x/y are coordinates on the REAL PAGE (the width/height browser_screenshot reports), NOT pixel positions counted in the screenshot image file. The screenshot image may be compressed/shrunk for file size, but it always shows the FULL page — so estimate the click position as a fraction of the image (e.g. "about 1/3 across, 1/2 down") and apply that same fraction to the real width/height to get x/y, rather than counting literal pixels in the (possibly downscaled) image. Take a screenshot first if you don\'t already know where to click. Required: job_id, x, y.';
 const BROWSER_TYPE_TPL = 'Type text into whatever element is currently focused in a browser tab (click an input field first with browser_click, then type into it). Required: job_id, text.';
-const BROWSER_SCREENSHOT_TPL = 'Take a screenshot of a browser tab\'s current page. Returns image_base64 (JPEG data, may be compressed/shrunk for file size — always shows the FULL page regardless), width/height (the REAL page dimensions to use for browser_click coordinates — NOT the pixel size of the image file, which may be smaller), and the tab\'s current url/title. Required: job_id.';
+const BROWSER_SCREENSHOT_TPL = 'Take a screenshot of a browser tab\'s current page. The screenshot is delivered to you as an image message you can see (returns width/height, which are the REAL page dimensions to use for browser_click coordinates — NOT the pixel size of the image file, which may be compressed/shrunk — plus the tab\'s current url/title). Required: job_id.';
 const BROWSER_READ_CONSOLE_TPL = 'Get buffered console messages (console.log/warn/error, and page errors) from a browser tab, oldest first. Required: job_id.';
 const BROWSER_READ_NETWORK_TPL = 'List network requests made by a browser tab, oldest first — URL, method, status, mimeType, headers, and whether a response body is available to fetch. Use browser_get_response_body with a request\'s requestId to get its actual response content (not included here — call it separately to avoid flooding this list with large payloads). Required: job_id.';
 const BROWSER_GET_RESPONSE_BODY_TPL = 'Fetch the response body for one network request previously seen via browser_read_network. Returns { body, base64Encoded } — base64Encoded is true for binary responses (images, etc), false for text (JSON, HTML, etc — body is the raw text). Works reliably for XHR/fetch/API/asset requests. The TOP-LEVEL PAGE NAVIGATION request (the initial page load itself) usually has no body available here — use browser_read_page to get that page\'s rendered content instead. Required: job_id, request_id.';
@@ -189,7 +200,7 @@ const BROWSER_HOVER_TPL = 'Move the mouse to a coordinate in a browser tab WITHO
 const BROWSER_KEY_TPL = 'Press a single named key in a browser tab — Enter, Tab, Escape, Backspace, ArrowUp/Down/Left/Right, Home, End, PageUp/PageDown, or a printable character. For modifier combos (Ctrl+A, Cmd+C, etc), pass modifiers: e.g. modifiers:["control"], key:"a". Use this for keys/combos that aren\'t printable text (browser_type is for typing regular text into a focused field). Required: job_id, key.';
 const BROWSER_DRAG_TPL = 'Drag from one coordinate to another in a browser tab (mouse down, move, mouse up) — for drag-and-drop, sliders, resizable elements, or reordering. Same coordinate space as browser_click for both start and end points. Required: job_id, start_x, start_y, end_x, end_y.';
 const BROWSER_SCROLL_TPL = 'Scroll a browser tab\'s page so the given real-page Y coordinate is at the top of the viewport. Use this to bring content below the fold into view before screenshotting or clicking it. For scrolling a specific element into view precisely, browser_execute_js with element.scrollIntoView() is more exact if you know a CSS selector. Required: job_id, y.';
-const BROWSER_ZOOM_SCREENSHOT_TPL = 'Take a screenshot of just a SUB-REGION of a browser tab\'s page, at full native resolution (not shrunk by the max-resolution setting that applies to full-page browser_screenshot calls) — use this to read small text or fine detail that\'s illegible in a full-page screenshot. x/y/width/height define the region in real page coordinates (same space as browser_click). Returns image_base64, mime_type, and the actual width/height of the captured image. Required: job_id, x, y, width, height.';
+const BROWSER_ZOOM_SCREENSHOT_TPL = 'Take a screenshot of just a SUB-REGION of a browser tab\'s page, at full native resolution (not shrunk by the max-resolution setting that applies to full-page browser_screenshot calls) — use this to read small text or fine detail that\'s illegible in a full-page screenshot. The screenshot is delivered to you as an image message you can see (returns the actual width/height of the captured image). x/y/width/height define the region in real page coordinates (same space as browser_click). Required: job_id, x, y, width, height.';
 const BROWSER_DIFF_DOM_TPL = 'See what changed in a browser tab\'s visible elements (links, buttons, inputs, headings, and any element with its own text — list items, paragraphs, table cells, status/toast messages, etc) since the last time you called browser_diff_dom on this tab — a cheap, non-visual alternative to comparing screenshots or full browser_read_page dumps. Returns { added, removed, changed }, each a list of elements with a stable key, tag, text, disabled state, and bounding box. The FIRST call on a tab (or the first call after a full navigation) reports everything currently visible as "added", since there is no prior snapshot yet to compare against — call it once right after browser_open/browser_navigate to establish a baseline, then again after an action (click, type, etc) to see what it caused. Required: job_id.';
 const BROWSER_READ_ELEMENT_TPL = 'Read one specific element from a browser tab by CSS selector, without dumping the whole page — text content, a capped snippet of its inner HTML, all its attributes, visibility, and bounding box. result is null if no element matches the selector (not an error — useful for polling "has this error message appeared yet"). Cheaper and more precise than browser_read_page when you already know what you\'re looking for. Required: job_id, selector.';
 const BROWSER_QUERY_SELECTOR_ALL_TPL = 'Find ALL elements matching a CSS selector in a browser tab — for "how many, and roughly what are they" questions (e.g. "are there any .error messages, and how many"), unlike browser_read_element which only ever returns the FIRST match. Returns total_count (always exact) and matches, a brief summary (tag, short text, visibility, bounding box — no full HTML/attrs) for up to the first 50 matches; if total_count is greater than matches.length, results were truncated — narrow the selector to see the rest. Use browser_read_element on a more specific selector afterward to get full detail on any one match. Required: job_id, selector.';
@@ -645,6 +656,7 @@ async function openBrowserTab({ url, chatId, config, requestedWidth, requestedHe
         networkLogs.delete(jobId);
         networkRequestIndex.delete(jobId);
         domSnapshots.delete(jobId);
+        lastScreenshots.delete(jobId);
         const current = registry.getJob(jobId);
         if (!current) return;
         if (current.status === 'running') {
@@ -1541,6 +1553,15 @@ async function captureThumbnail(jobId) {
     return await captureScreenshot(jobId); // { base64, mimeType }
 }
 
+// Read the most recent screenshot bytes captured for a tab. This is the ONLY
+// channel the base64 travels on — the chat layer calls it to build the model's
+// synthetic image message after a browser_screenshot/browser_zoom_screenshot
+// tool call, instead of the bytes riding the tool result itself.
+function getLastScreenshot(jobId) {
+    const shot = lastScreenshots.get(jobId);
+    return shot ? { base64: shot.base64, mimeType: shot.mimeType } : null;
+}
+
 // ===== Tool execution =====
 
 async function executeBrowserTool(toolName, args, opts = {}) {
@@ -1588,11 +1609,13 @@ async function executeBrowserTool(toolName, args, opts = {}) {
             if (!args?.job_id) throw new Error('Missing required field: job_id');
             const shot = await captureScreenshot(args.job_id);
             const job = registry.getJob(args.job_id);
+            // Bytes stay internal (see lastScreenshots); the model gets only the
+            // reference + metadata. The synthetic image message the chat layer
+            // pushes reads the bytes back out of the cache via getLastScreenshot.
+            lastScreenshots.set(args.job_id, { base64: shot.base64, mimeType: shot.mimeType });
             return {
                 success: true,
                 job_id: args.job_id,
-                image_base64: shot.base64,
-                mime_type: shot.mimeType,
                 // The model shouldn't have to guess these from pixels — we
                 // already know them. width/height are the REAL dimensions of
                 // this exact image (post-compression) — browser_click's x/y
@@ -1658,7 +1681,8 @@ async function executeBrowserTool(toolName, args, opts = {}) {
                 throw new Error('Missing or invalid required fields: x, y, width, height');
             }
             const zoomShot = await captureZoomedScreenshot(args.job_id, args.x, args.y, args.width, args.height);
-            return { success: true, job_id: args.job_id, image_base64: zoomShot.base64, mime_type: zoomShot.mimeType, width: zoomShot.width, height: zoomShot.height };
+            lastScreenshots.set(args.job_id, { base64: zoomShot.base64, mimeType: zoomShot.mimeType });
+            return { success: true, job_id: args.job_id, width: zoomShot.width, height: zoomShot.height };
         }
         case 'browser_set_cache': {
             if (config.cache_control_user_locked) {
@@ -1711,5 +1735,6 @@ module.exports = {
     revealTab,
     hideTab,
     isTabVisible,
-    captureThumbnail
+    captureThumbnail,
+    getLastScreenshot
 };

@@ -57,7 +57,13 @@ ipcRenderer.on('zoom-reset', () => {
 // Expose context menu API to renderer
 contextBridge.exposeInMainWorld('electronAPI', {
     onShowContextMenu: (callback) => {
-        ipcRenderer.on('show-context-menu', (event, data) => callback(data));
+        ipcRenderer.on('show-context-menu', (event, data) => {
+            // params.x/y from the main process are in screen pixels, but
+            // the DOM positions elements in CSS pixels which get scaled by
+            // the zoom factor. Divide to convert screen px -> CSS px.
+            const zf = webFrame.getZoomFactor() || 1;
+            callback({ ...data, x: Math.round(data.x / zf), y: Math.round(data.y / zf) });
+        });
     },
     executeContextAction: (action, data) => {
         if (action === 'copy') {
