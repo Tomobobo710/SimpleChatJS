@@ -212,6 +212,31 @@ async function loadSettingsIntoModal() {
         document.getElementById('compactionAutoCollapseSec').value =
             Number.isFinite(settings.compactionAutoCollapseSec) ? settings.compactionAutoCollapseSec : 3;
 
+        // Image compression (Tokens tab) — mirrors the browser tool's
+        // screenshot compression UI: max_long_edge_px maps to a preset
+        // dropdown option if it matches, otherwise "Custom" with the raw
+        // value in the adjacent number field.
+        const savedImgLongEdge = Number.isFinite(settings.imageMaxLongEdgePx) ? settings.imageMaxLongEdgePx : 1568;
+        const imgResolutionSelect = document.getElementById('img-max-resolution');
+        const imgResolutionCustomInput = document.getElementById('img-max-resolution-custom');
+        const imgKnownValues = Array.from(imgResolutionSelect.options).map(o => o.value).filter(v => v !== 'custom');
+        if (imgKnownValues.includes(String(savedImgLongEdge))) {
+            imgResolutionSelect.value = String(savedImgLongEdge);
+            imgResolutionCustomInput.style.display = 'none';
+        } else {
+            imgResolutionSelect.value = 'custom';
+            imgResolutionCustomInput.value = savedImgLongEdge;
+            imgResolutionCustomInput.style.display = '';
+        }
+        document.getElementById('img-max-kb').value =
+            Number.isFinite(settings.imageMaxBase64Kb) ? settings.imageMaxBase64Kb : 100;
+        if (!imgResolutionSelect.dataset.changeWired) {
+            imgResolutionSelect.dataset.changeWired = '1';
+            imgResolutionSelect.addEventListener('change', () => {
+                imgResolutionCustomInput.style.display = imgResolutionSelect.value === 'custom' ? '' : 'none';
+            });
+        }
+
         // Hook up the Detect button (idempotent — safe to re-bind each load)
         const detectBtn = document.getElementById('detectShellBtn');
         if (detectBtn && !detectBtn.dataset.bound) {
@@ -301,6 +326,20 @@ async function handleSaveSettings() {
         compactionAutoCollapseSec: (() => {
             const v = parseInt(document.getElementById('compactionAutoCollapseSec').value, 10);
             return Number.isFinite(v) && v >= 0 ? v : 3;
+        })(),
+
+        // Image compression (Tokens tab) — 0 = "No cap" preserved as 0
+        // (processImageFile treats <=0 as "skip the long-edge cap").
+        imageMaxLongEdgePx: (() => {
+            const sel = document.getElementById('img-max-resolution').value;
+            const val = sel === 'custom'
+                ? parseInt(document.getElementById('img-max-resolution-custom').value, 10)
+                : parseInt(sel, 10);
+            return Number.isFinite(val) ? Math.max(0, val) : 1568;
+        })(),
+        imageMaxBase64Kb: (() => {
+            const val = parseInt(document.getElementById('img-max-kb').value, 10);
+            return Number.isFinite(val) ? Math.max(10, val) : 100;
         })()
     };
 

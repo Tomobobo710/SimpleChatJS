@@ -608,6 +608,22 @@
                         <input type="number" id="compactionAutoCollapseSec" min="0" step="1" placeholder="3" />
                         <p class="setting-description">After a compaction summary finishes streaming, its dropdown auto-collapses after this many seconds. Set to 0 to keep it open.</p>
                     </div>
+
+                    <div class="settings-section">
+                        <h3>Image Compression</h3>
+                        <p class="setting-description">Controls how uploaded and pasted images are compressed before being sent to the model. Two independent knobs, same as the browser tool's screenshot compression: max resolution caps pixel dimensions (which drives vision-model token cost), max file size bounds request/storage size via a JPEG quality/scale ladder.</p>
+                        <label for="img-max-resolution">Max resolution (long edge)</label>
+                        <select id="img-max-resolution">
+                            <option value="1568">1568px &mdash; Anthropic Claude (recommended sweet spot)</option>
+                            <option value="2000">2000px &mdash; OpenAI GPT-4V / GPT-4o (high-detail tier)</option>
+                            <option value="1024">1024px &mdash; smaller/local vision models, lower token cost</option>
+                            <option value="0">No cap &mdash; send the original resolution</option>
+                            <option value="custom">Custom&hellip;</option>
+                        </select>
+                        <input type="number" id="img-max-resolution-custom" min="128" step="1" value="1568" style="display:none;" placeholder="Custom max long edge, px">
+                        <label for="img-max-kb">Max file size (KB, base64)</label>
+                        <input type="number" id="img-max-kb" min="10" step="1" value="100">
+                    </div>
                 </div>
 
                 <div id="mcpTab" class="tab-content">

@@ -18,7 +18,9 @@ function loadSettings() {
         modelName: '',
         debugPanels: false,
         showSystemBlocks: true,
-        logLevel: 'INFO'
+        logLevel: 'INFO',
+        imageMaxLongEdgePx: 1568,
+        imageMaxBase64Kb: 100
     };
 }
 function saveSettings(settings) {
@@ -313,56 +315,19 @@ function showWarning(message) {
     logger.warn(message, null, false); // Don't spam server with warnings
     showNotification(message, 'warning');
 }
-// Get clean conversation history for debug panel
-// =====================================
-// MASTER IMAGE SIZE CONTROL
-// Change this one number to adjust all image limits!
-const MAX_BASE64_KB = 100;
-// =====================================
-// Image resizing utility to prevent API errors from oversized images
-function resizeImage(file, width, height, quality, targetKB) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            canvas.toBlob(
-                (blob) => {
-                    if (blob) {
-                        resolve(blob);
-                    } else {
-                        reject(new Error('Failed to generate WebP blob'));
-                    }
-                },
-                'image/webp', // Here’s the magic: using WebP
-                quality       // Compression quality from your loop
-            );
-        };
-        img.onerror = () => reject(new Error('Failed to load image for resizing'));
-        img.src = URL.createObjectURL(file);
-    });
-}
-// Helper function to convert blob to base64 with size validation
-function blobToBase64(blob, maxBase64KB = MAX_BASE64_KB) {
+// Helper function to convert blob to base64 (raw conversion only — size
+// validation is the caller's responsibility, since different call sites have
+// different targets, e.g. imageProcessing.js checks against its own targetKB).
+function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
             const result = reader.result;
             // Remove the data:image/...;base64, prefix
             const base64 = result.split(',')[1];
-            
-            // Check base64 size (each char = 1 byte)
-            const base64SizeKB = base64.length / 1024;
-            
-            if (base64SizeKB > maxBase64KB) {
-                reject(new Error(`Base64 too large: ${base64SizeKB.toFixed(1)}KB > ${maxBase64KB}KB`));
-            } else {
-                resolve(base64);
-            }
+            resolve(base64);
         };
+        reader.onerror = () => reject(new Error('Failed to read blob as base64'));
         reader.readAsDataURL(blob);
     });
 }

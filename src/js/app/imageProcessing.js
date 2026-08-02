@@ -2,7 +2,20 @@
 // Extracted from the superior edit modal implementation
 
 /**
- * Process an image file with advanced compression
+ * Process an image file with advanced compression.
+ *
+ * Two-stage compression, same concept as the browser tool's screenshot path
+ * (browserToolService.js):
+ *   Stage 1: cap the long edge to imageMaxLongEdgePx (from Settings > Tokens >
+ *            Image Compression). Pixel dimensions drive vision-model token
+ *            cost; this is applied before any byte-size compression. 0 = no cap.
+ *   Stage 2: progressive scale/quality ladder targeting imageMaxBase64Kb
+ *            (also from Settings). Bounds request/storage size via JPEG
+ *            quality and further downscaling.
+ *
+ * Both settings are read from the global settings cache (loadSettings) so
+ * they're always current without callers having to pass config.
+ *
  * @param {File} file - Image file to process
  * @returns {Promise<Object>} Processed image data
  */
@@ -16,20 +29,38 @@ async function processImageFile(file) {
         img.src = URL.createObjectURL(file);
     });
 
-    const originalWidth = img.width;
-    const originalHeight = img.height;
-    
-    // Progressive compression settings (from edit modal)
-    const MAX_BASE64_KB = 100;
-    const targetKB = Math.floor(MAX_BASE64_KB * 0.75);
+    let originalWidth = img.width;
+    let originalHeight = img.height;
+
+    // Read compression settings from the global settings cache. Defaults
+    // match getDefaultProfileSettings() in settingsService.js.
+    const settings = typeof loadSettings === 'function' ? loadSettings() : {};
+    const maxLongEdgePx = Number.isFinite(settings.imageMaxLongEdgePx) ? settings.imageMaxLongEdgePx : 1568;
+    const maxBase64Kb = Number.isFinite(settings.imageMaxBase64Kb) ? settings.imageMaxBase64Kb : 100;
+
+    // Stage 1: cap the long edge to maxLongEdgePx (0 = no cap, never upscales).
+    // Same spirit as browserToolService.js's capLongEdge — pixel dimensions
+    // drive vision-model token cost, so this is applied before byte-size
+    // compression and independent of any devicePixelRatio concerns.
+    if (maxLongEdgePx > 0) {
+        const longEdge = Math.max(originalWidth, originalHeight);
+        if (longEdge > maxLongEdgePx) {
+            const capScale = maxLongEdgePx / longEdge;
+            originalWidth = Math.round(originalWidth * capScale);
+            originalHeight = Math.round(originalHeight * capScale);
+            console.log(`[IMAGE-PROCESSING] Long-edge cap ${maxLongEdgePx}px → ${originalWidth}x${originalHeight}`);
+        }
+    }
+
+    // Stage 2: progressive scale/quality ladder targeting maxBase64Kb.
+    const targetKB = Math.floor(maxBase64Kb * 0.75);
     const qualities = Array.from({ length: 7 }, (_, i) => +(0.7 - i * 0.1).toFixed(1));
     const scales = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
-    
+
     let resizedBlob = null;
     let base64Data = null;
     let success = false;
 
-    // Progressive compression attempts (from edit modal)
     for (const scale of scales) {
         const scaledW = Math.round(originalWidth * scale);
         const scaledH = Math.round(originalHeight * scale);
@@ -48,7 +79,7 @@ async function processImageFile(file) {
                 const base64 = await blobToBase64(blob);
                 const base64KB = base64.length / 1024;
 
-                console.log(`[IMAGE-PROCESSING] ${scaledW}×${scaledH} @ ${q} quality = ${base64KB.toFixed(1)}KB`);
+                console.log(`[IMAGE-PROCESSING] ${scaledW}x${scaledH} @ ${q} quality = ${base64KB.toFixed(1)}KB`);
 
                 if (base64KB <= targetKB) {
                     resizedBlob = blob;
@@ -58,7 +89,7 @@ async function processImageFile(file) {
                     break;
                 }
             } catch (err) {
-                console.warn(`[IMAGE-PROCESSING] ${scaledW}×${scaledH} @ ${q} failed: ${err.message}`);
+                console.warn(`[IMAGE-PROCESSING] ${scaledW}x${scaledH} @ ${q} failed: ${err.message}`);
             }
         }
         if (success) break;
@@ -84,4 +115,3 @@ async function processImageFile(file) {
         mimeType: resizedBlob.type
     };
 }
-

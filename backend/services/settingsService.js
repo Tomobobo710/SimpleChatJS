@@ -102,7 +102,16 @@ function getDefaultProfileSettings() {
         injectErrorSystemMessage: false,
         // Default shell_run timeout, in seconds. The AI can override per-call via the
         // tool's timeout_sec argument, capped by this unless the user raises it here.
-        shellTimeoutSec: 360
+        shellTimeoutSec: 360,
+        // Uploaded/pasted image compression. Two independent knobs, same concept
+        // as the browser tool's screenshot compression:
+        //   - imageMaxLongEdgePx caps PIXEL DIMENSIONS (the long edge), which
+        //     drives vision-model token/patch cost. Applied before byte-size
+        //     compression. 0 = no cap.
+        //   - imageMaxBase64Kb caps BYTE SIZE (JPEG quality/scale ladder) —
+        //     bounds request/storage size, loosely related to token cost.
+        imageMaxLongEdgePx: 1568,
+        imageMaxBase64Kb: 100
     };
 }
 
