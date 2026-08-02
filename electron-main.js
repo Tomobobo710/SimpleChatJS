@@ -152,6 +152,20 @@ function createWindow() {
                 event.preventDefault();
             }
         });
+        // Scale DevTools to match the DPI zoom factor — DevTools is a separate
+        // webContents that webFrame.setZoomFactor (in the preload) can't reach.
+        mainWindow.webContents.on("devtools-opened", () => {
+            const dt = mainWindow.webContents.devToolsWebContents;
+            if (!dt) return;
+            try {
+                const si = require("systeminformation");
+                si.graphics().then((data) => {
+                    const display = data.displays.find((d) => d.main) || data.displays[0];
+                    const scale = display ? (display.resolutionX / display.currentResX) : 1;
+                    dt.setZoomFactor(Number.isFinite(scale) && scale > 0 ? scale : 1);
+                }).catch(() => {});
+            } catch (_) {}
+        });
         // Add find bar to this window
         setFindBar(mainWindow, { darkMode: true });
 
