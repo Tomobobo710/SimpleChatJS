@@ -235,7 +235,7 @@ async function loadBrowserToolConfig() {
         background_throttling_disabled: true,
         max_console_log_lines: 500,
         screenshot_max_long_edge_px: 1568,
-        screenshot_max_base64_kb: 100,
+        screenshot_max_base64_kb: 75,
         tab_width_px: 1280,
         tab_height_px: 720,
         tab_dimensions_user_locked: false

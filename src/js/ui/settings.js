@@ -159,7 +159,7 @@ async function loadSettingsIntoModal() {
             resolutionCustomInput.style.display = '';
         }
         document.getElementById('bt-screenshot-max-kb').value =
-            Number.isFinite(browserToolConfig.screenshot_max_base64_kb) ? browserToolConfig.screenshot_max_base64_kb : 100;
+            Number.isFinite(browserToolConfig.screenshot_max_base64_kb) ? browserToolConfig.screenshot_max_base64_kb : 75;
 
         document.getElementById('bt-tab-width').value =
             Number.isFinite(browserToolConfig.tab_width_px) ? browserToolConfig.tab_width_px : 1280;
@@ -229,7 +229,7 @@ async function loadSettingsIntoModal() {
             imgResolutionCustomInput.style.display = '';
         }
         document.getElementById('img-max-kb').value =
-            Number.isFinite(settings.imageMaxBase64Kb) ? settings.imageMaxBase64Kb : 100;
+            Number.isFinite(settings.imageMaxBase64Kb) ? settings.imageMaxBase64Kb : 75;
         if (!imgResolutionSelect.dataset.changeWired) {
             imgResolutionSelect.dataset.changeWired = '1';
             imgResolutionSelect.addEventListener('change', () => {
@@ -339,7 +339,7 @@ async function handleSaveSettings() {
         })(),
         imageMaxBase64Kb: (() => {
             const val = parseInt(document.getElementById('img-max-kb').value, 10);
-            return Number.isFinite(val) ? Math.max(10, val) : 100;
+            return Number.isFinite(val) ? Math.max(10, val) : 75;
         })()
     };
 
@@ -443,7 +443,7 @@ async function handleSaveSettings() {
             // 0 = "No cap" option — preserved as 0 (compressNativeImage treats
             // <=0 as "skip the long-edge stage entirely"), not clamped to a floor.
             screenshot_max_long_edge_px: Number.isFinite(parsedLongEdge) ? Math.max(0, parsedLongEdge) : 1568,
-            screenshot_max_base64_kb: Number.isFinite(parsedScreenshotKb) ? Math.max(10, parsedScreenshotKb) : 100,
+            screenshot_max_base64_kb: Number.isFinite(parsedScreenshotKb) ? Math.max(10, parsedScreenshotKb) : 75,
             tab_width_px: Number.isFinite(parsedTabWidth) ? Math.min(4000, Math.max(200, parsedTabWidth)) : 1280,
             tab_height_px: Number.isFinite(parsedTabHeight) ? Math.min(4000, Math.max(200, parsedTabHeight)) : 720,
             tab_dimensions_user_locked: document.getElementById('bt-tab-dimensions-user-locked').checked

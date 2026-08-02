@@ -36,7 +36,7 @@ async function processImageFile(file) {
     // match getDefaultProfileSettings() in settingsService.js.
     const settings = typeof loadSettings === 'function' ? loadSettings() : {};
     const maxLongEdgePx = Number.isFinite(settings.imageMaxLongEdgePx) ? settings.imageMaxLongEdgePx : 1568;
-    const maxBase64Kb = Number.isFinite(settings.imageMaxBase64Kb) ? settings.imageMaxBase64Kb : 100;
+    const maxBase64Kb = Number.isFinite(settings.imageMaxBase64Kb) ? settings.imageMaxBase64Kb : 75;
 
     // Stage 1: cap the long edge to maxLongEdgePx (0 = no cap, never upscales).
     // Same spirit as browserToolService.js's capLongEdge — pixel dimensions

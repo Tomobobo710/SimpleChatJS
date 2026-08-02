@@ -63,7 +63,7 @@ const DEFAULT_CONFIG = {
     //     cost, since a blocky low-quality JPEG at a given resolution costs
     //     the same vision-model tokens as a crisp one at that resolution.
     screenshot_max_long_edge_px: 1568,
-    screenshot_max_base64_kb: 100,
+    screenshot_max_base64_kb: 75,
     // The tab window's real page size (CSS pixels) — set via setContentSize
     // after creation so it's honored exactly regardless of the display's own
     // resolution (a plain constructor width/height can be silently shrunk by
@@ -589,7 +589,7 @@ function capLongEdge(image, maxLongEdgePx) {
 // (see clickAt) — coordinates the model gives us are always relative to
 // THIS image, not the raw capture or any intermediate resize.
 function compressToByteTarget(image, maxBase64Kb) {
-    const targetKb = Number.isFinite(maxBase64Kb) && maxBase64Kb > 0 ? maxBase64Kb : 100;
+    const targetKb = Number.isFinite(maxBase64Kb) && maxBase64Kb > 0 ? maxBase64Kb : 75;
     const { width, height } = image.getSize();
     for (const scale of SCREENSHOT_SCALES) {
         const scaled = scale === 1.0 ? image : image.resize({ width: Math.round(width * scale), height: Math.round(height * scale) });

@@ -111,7 +111,7 @@ function getDefaultProfileSettings() {
         //   - imageMaxBase64Kb caps BYTE SIZE (JPEG quality/scale ladder) —
         //     bounds request/storage size, loosely related to token cost.
         imageMaxLongEdgePx: 1568,
-        imageMaxBase64Kb: 100
+        imageMaxBase64Kb: 75
     };
 }
 

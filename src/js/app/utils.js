@@ -20,7 +20,7 @@ function loadSettings() {
         showSystemBlocks: true,
         logLevel: 'INFO',
         imageMaxLongEdgePx: 1568,
-        imageMaxBase64Kb: 100
+        imageMaxBase64Kb: 75
     };
 }
 function saveSettings(settings) {
