@@ -1253,85 +1253,113 @@ function toCssCoordinates(x, y) {
     return { x: Math.round(x), y: Math.round(y) };
 }
 
-// Click at a coordinate via synthetic mouse events — needs both mouseDown and
-// mouseUp to register as a real click on most page handlers (a single 'click'
-// input event type isn't part of Chromium's sendInputEvent API).
+// Click at a coordinate using CDP input dispatch (fires real DOM events on canvas listeners).
 async function clickAt(jobId, x, y) {
     const win = getLiveWindow(jobId);
     const point = toCssCoordinates(x, y);
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: point.x, y: point.y, button: 'left', clickCount: 1 });
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    const dbg = win.webContents.debugger;
+    try {
+        await dbg.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mousePressed',
+            x: point.x,
+            y: point.y,
+            button: 'left',
+            clickCount: 1
+        });
+        await new Promise(r => setTimeout(r, 50));
+        await dbg.sendCommand('Input.dispatchMouseEvent', {
+            type: 'mouseReleased',
+            x: point.x,
+            y: point.y,
+            button: 'left',
+            clickCount: 1
+        });
+    } catch (error) {
+        log(`[BROWSERTOOL] CDP click failed for ${jobId}: ${error.message}`);
+    }
     return { success: true, job_id: jobId, x, y };
 }
 
-// Type text into whatever's currently focused, via synthetic keyDown/char/keyUp
-// per character — mirrors how a real keyboard drives input events, so it
-// triggers the same JS listeners a user's typing would (unlike setting
-// .value directly via executeJavaScript, which page code may not observe).
+// Type text using CDP key events (each character as keydown+keyup).
 async function typeText(jobId, text) {
     const win = getLiveWindow(jobId);
-    for (const char of String(text)) {
-        win.webContents.sendInputEvent({ type: 'keyDown', keyCode: char });
-        win.webContents.sendInputEvent({ type: 'char', keyCode: char });
-        win.webContents.sendInputEvent({ type: 'keyUp', keyCode: char });
+    const dbg = win.webContents.debugger;
+    try {
+        for (const char of String(text)) {
+            await dbg.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', key: char, code: `Key${char.toUpperCase()}`, text: char });
+            await dbg.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', key: char, code: `Key${char.toUpperCase()}`, text: char });
+        }
+    } catch (error) {
+        log(`[BROWSERTOOL] CDP typeText failed for ${jobId}: ${error.message}`);
     }
     return { success: true, job_id: jobId, length: String(text).length };
 }
 
-// Double-click — same mouseDown/mouseUp pattern as clickAt but clickCount:2,
-// which is what tells the page's own click handlers/OS text selection this
-// is a double-click rather than two separate single clicks. Coordinates are
-// real page coordinates, same convention as clickAt (see toCssCoordinates).
+// Double-click at a coordinate using CDP input dispatch.
 async function doubleClickAt(jobId, x, y) {
     const win = getLiveWindow(jobId);
     const point = toCssCoordinates(x, y);
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: point.x, y: point.y, button: 'left', clickCount: 1 });
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: point.x, y: point.y, button: 'left', clickCount: 1 });
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: point.x, y: point.y, button: 'left', clickCount: 2 });
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: point.x, y: point.y, button: 'left', clickCount: 2 });
+    const dbg = win.webContents.debugger;
+    try {
+        await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left' });
+        await new Promise(r => setTimeout(r, 20));
+        await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left' });
+        await new Promise(r => setTimeout(r, 20));
+        await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left' });
+        await new Promise(r => setTimeout(r, 20));
+        await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left' });
+    } catch (error) {
+        log(`[BROWSERTOOL] CDP doubleClick failed for ${jobId}: ${error.message}`);
+    }
     return { success: true, job_id: jobId, x, y };
 }
 
-// Move the mouse to a coordinate WITHOUT clicking — triggers hover-only page
-// behavior (CSS :hover, JS mouseenter/mouseover listeners, tooltips, hover
-// menus) that click/type alone can never reach.
+// Move the mouse to a coordinate using CDP input dispatch.
 async function hoverAt(jobId, x, y) {
     const win = getLiveWindow(jobId);
     const point = toCssCoordinates(x, y);
-    win.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y });
+    const dbg = win.webContents.debugger;
+    try {
+        await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y, button: 'none' });
+    } catch (error) {
+        log(`[BROWSERTOOL] CDP hover failed for ${jobId}: ${error.message}`);
+    }
     return { success: true, job_id: jobId, x, y };
 }
 
-// Press-and-release a single named key (Enter, Tab, Escape, ArrowDown, etc —
-// Chromium's own key-name strings, same vocabulary sendInputEvent already
-// accepts for keyCode) or a modifier combo (e.g. modifiers:['control'] with
-// key:'a' for Ctrl+A). Distinct from typeText, which sends printable
-// characters one at a time — this is for keys with no printable character
-// (navigation, submission) or modifier combinations typeText can't express.
+// Press-and-release a single named key using CDP input dispatch.
 async function pressKey(jobId, key, modifiers) {
     const win = getLiveWindow(jobId);
-    const opts = { type: 'keyDown', keyCode: key };
-    if (Array.isArray(modifiers) && modifiers.length > 0) opts.modifiers = modifiers;
-    win.webContents.sendInputEvent(opts);
-    win.webContents.sendInputEvent({ ...opts, type: 'keyUp' });
+    const dbg = win.webContents.debugger;
+    try {
+        const modList = Array.isArray(modifiers) && modifiers.length > 0 ? modifiers : [];
+        const modFlags = modList.reduce((acc, m) => acc + (m === 'control' ? 1 : m === 'alt' ? 2 : m === 'shift' ? 4 : 0), 0);
+        await dbg.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', key: key, code: key, modifiers: modFlags });
+        await dbg.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', key: key, code: key, modifiers: modFlags });
+    } catch (error) {
+        log(`[BROWSERTOOL] CDP pressKey failed for ${jobId}: ${error.message}`);
+    }
     return { success: true, job_id: jobId, key, modifiers: modifiers || [] };
 }
 
-// Drag from one real-page coordinate to another — mouseDown at the start,
-// a few intermediate mouseMove events (some drag targets/sliders only
-// activate on movement, not a single jump), then mouseUp at the end.
+// Drag from one real-page coordinate to another using CDP input dispatch.
 async function dragMouse(jobId, startX, startY, endX, endY) {
     const win = getLiveWindow(jobId);
     const start = toCssCoordinates(startX, startY);
     const end = toCssCoordinates(endX, endY);
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: start.x, y: start.y, button: 'left', clickCount: 1 });
-    const steps = 8;
-    for (let i = 1; i <= steps; i++) {
-        const x = Math.round(start.x + (end.x - start.x) * (i / steps));
-        const y = Math.round(start.y + (end.y - start.y) * (i / steps));
-        win.webContents.sendInputEvent({ type: 'mouseMove', x, y, button: 'left' });
+    const dbg = win.webContents.debugger;
+    try {
+        await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: start.x, y: start.y, button: 'left', clickCount: 1 });
+        const steps = 8;
+        for (let i = 1; i <= steps; i++) {
+            const x = Math.round(start.x + (end.x - start.x) * (i / steps));
+            const y = Math.round(start.y + (end.y - start.y) * (i / steps));
+            await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x, y: y, button: 'left' });
+        }
+        await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: end.x, y: end.y, button: 'left', clickCount: 1 });
+    } catch (error) {
+        log(`[BROWSERTOOL] CDP drag failed for ${jobId}: ${error.message}`);
     }
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: end.x, y: end.y, button: 'left', clickCount: 1 });
     return { success: true, job_id: jobId, start_x: startX, start_y: startY, end_x: endX, end_y: endY };
 }
 
