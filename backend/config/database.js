@@ -59,6 +59,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS projects (
                 active_edit_version INTEGER DEFAULT 0,
                 turn_type TEXT DEFAULT NULL,
                 debug_data TEXT DEFAULT NULL,
+                debug_summary TEXT DEFAULT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (id)
             )`);
 

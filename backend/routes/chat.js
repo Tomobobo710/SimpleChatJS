@@ -218,7 +218,7 @@ router.get("/chat/:id/history", (req, res) => {
 
         // Build query with optional error filtering
         let query = `
-            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history, turn_type, debug_data
+            SELECT id, original_message_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, timestamp, original_content, file_metadata, error_state, active_edit_version, edit_history, turn_type, debug_summary
             FROM messages
             WHERE chat_id = ?
         `;
@@ -240,23 +240,9 @@ router.get("/chat/:id/history", (req, res) => {
                 includeErrorState: true,
                 includeDebugData: false,
             });
-            if (row.debug_data) {
-                const dbg = safeJsonParse(row.debug_data, "debug_data");
-                if (dbg && typeof dbg === "object") {
-                    const summary = {};
-                    const resp = dbg.response;
-                    if (resp) {
-                        summary.response = {};
-                        if (resp.usage) summary.response.usage = resp.usage;
-                        if (resp.timings) summary.response.timings = resp.timings;
-                        if (resp.status) summary.response.status = resp.status;
-                        if (resp.toolCalls) summary.response.toolCalls = resp.toolCalls;
-                    }
-                    if (dbg.error) summary.error = dbg.error;
-                    if (dbg.compaction) summary.compaction = dbg.compaction;
-                    if (dbg.currentTurnNumber) summary.currentTurnNumber = dbg.currentTurnNumber;
-                    if (Object.keys(summary).length) msg.debug = summary;
-                }
+            if (row.debug_summary) {
+                const summary = safeJsonParse(row.debug_summary, "debug_summary");
+                if (summary && Object.keys(summary).length) msg.debug = summary;
             }
             return msg;
         });

@@ -2,7 +2,7 @@
 // Centralizes all message-related database operations.
 
 const { log } = require('../utils/logger');
-const { parseDbRowToMessage, parseContent } = require('../utils/messageConversions');
+const { parseDbRowToMessage, parseContent, buildDebugSummary } = require('../utils/messageConversions');
 
 // Save message to chat
 async function saveMessage(chatId, messageData, turnInfo = null, errorState = null) {
@@ -11,6 +11,8 @@ async function saveMessage(chatId, messageData, turnInfo = null, errorState = nu
 
     try {
         const serialized = serializeMessageForDb(messageData);
+        const debugSummary = buildDebugSummary(messageData.debug_data ?? messageData.debugData);
+        const debugSummaryJson = debugSummary ? JSON.stringify(debugSummary) : null;
         const role = messageData.role;
         const toolCallId = messageData.tool_call_id || null;
         const toolName = messageData.tool_name || null;
@@ -24,8 +26,8 @@ async function saveMessage(chatId, messageData, turnInfo = null, errorState = nu
         // Insert message with turn info
         const insertStmt = db.prepare(`
             INSERT INTO messages
-            (chat_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state, turn_type, debug_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (chat_id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, original_content, file_metadata, error_state, turn_type, debug_data, debug_summary)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = insertStmt.run(
@@ -42,7 +44,8 @@ async function saveMessage(chatId, messageData, turnInfo = null, errorState = nu
             serialized.fileMetadata,
             errorState,
             turnType,
-            serialized.debugData
+            serialized.debugData,
+            debugSummaryJson
         );
 
         // Update chat's updated_at timestamp
@@ -187,11 +190,13 @@ function setMessageDebugByTurn(chatId, turnId, turnType, debugData) {
     try {
         if (!turnId) return null;
         const json = debugData ? JSON.stringify(debugData) : null;
+        const summary = buildDebugSummary(json);
+        const summaryJson = summary ? JSON.stringify(summary) : null;
         const stmt = db.prepare(`
-            UPDATE messages SET debug_data = ?
+            UPDATE messages SET debug_data = ?, debug_summary = ?
             WHERE chat_id = ? AND turn_id = ? AND (? IS NULL OR turn_type = ?)
         `);
-        const result = stmt.run(json, chatId, turnId, turnType || null, turnType || null);
+        const result = stmt.run(json, summaryJson, chatId, turnId, turnType || null, turnType || null);
         log(`[MSG-DEBUG] Set debug on ${result.changes} message(s) for turn_id=${turnId}`);
         return result;
     } catch (err) {
@@ -208,11 +213,13 @@ function setLatestMessageDebug(chatId, turnId, debugData) {
     try {
         if (!turnId) return null;
         const json = debugData ? JSON.stringify(debugData) : null;
+        const summary = buildDebugSummary(json);
+        const summaryJson = summary ? JSON.stringify(summary) : null;
         const stmt = db.prepare(`
-            UPDATE messages SET debug_data = ?
+            UPDATE messages SET debug_data = ?, debug_summary = ?
             WHERE id = (SELECT MAX(id) FROM messages WHERE chat_id = ? AND turn_id = ?)
         `);
-        return stmt.run(json, chatId, turnId);
+        return stmt.run(json, summaryJson, chatId, turnId);
     } catch (err) {
         log("[MSG-DEBUG] Error setting latest message debug:", err);
         return null;

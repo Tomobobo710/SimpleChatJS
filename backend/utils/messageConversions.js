@@ -27,6 +27,29 @@ function parseContent(content) {
 }
 
 // Parse a DB row into a plain JS object representing a message.
+function buildDebugSummary(debugData) {
+    if (!debugData) return null;
+    if (typeof debugData === "string") {
+        try { debugData = JSON.parse(debugData); } catch (_) { return null; }
+    }
+    if (typeof debugData !== "object") return null;
+
+    const summary = {};
+    const resp = debugData.response;
+    if (resp) {
+        const r = {};
+        if (resp.usage) r.usage = resp.usage;
+        if (resp.timings) r.timings = resp.timings;
+        if (resp.status) r.status = resp.status;
+        if (Object.keys(r).length) summary.response = r;
+    }
+    if (debugData.error) summary.error = debugData.error;
+    if (debugData.compaction) summary.compaction = debugData.compaction;
+    if (debugData.currentTurnNumber) summary.currentTurnNumber = debugData.currentTurnNumber;
+    return Object.keys(summary).length ? summary : null;
+}
+
+// Parse a DB row into a plain JS object representing a message.
 // Options control which optional fields to include:
 //   includeFileFields — add original_content, file_metadata (default: false)
 //   includeErrorState — add error_state (default: false)
@@ -136,4 +159,5 @@ module.exports = {
     parseContent,
     parseDbRowToMessage,
     serializeMessageForDb,
+    buildDebugSummary,
 };
