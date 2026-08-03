@@ -542,6 +542,21 @@ async function getChatHistory(chatId = null) {
     }
 }
 
+// Fetch the FULL debug payload for a single turn (on demand, when its debug panel
+// is opened). History responses only carry a lightweight `debug` summary.
+async function getTurnDebug(chatId, turnId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/${chatId}/turn/${turnId}/debug`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        logger.error("Error getting turn debug data:", error, true);
+        throw error;
+    }
+}
+
 // Save (or clear) a chat's unsent-message draft
 async function saveChatDraft(chatId, draft) {
     try {

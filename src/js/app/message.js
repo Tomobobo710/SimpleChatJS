@@ -16,6 +16,7 @@ class Message {
         this.thinking = data.thinking ?? null;
         this.reasoning = data.reasoning ?? null;
         this.errorState = data.error_state ?? null;
+        this.debug = data.debug ?? null;
         const rawDebug = data.debug_data ?? null;
         if (rawDebug && typeof rawDebug === 'string') {
             try { this.debugData = JSON.parse(rawDebug); }

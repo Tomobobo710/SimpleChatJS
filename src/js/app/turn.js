@@ -13,7 +13,7 @@ function defaultErrorBlockContent(errorState) {
 }
 
 function resolveErrorBlockContent(errorMsg) {
-    const fromDebug = errorMsg?.debugData?.error?.message;
+    const fromDebug = errorMsg?.debugData?.error?.message || errorMsg?.debug?.error?.message;
     if (fromDebug && typeof fromDebug === "string" && fromDebug.trim()) {
         return fromDebug;
     }
@@ -81,6 +81,7 @@ class Turn {
                     turnId: responseRto.turnId,
                     parentTurnId: responseRto.parentTurnId,
                     debugData: responseRto.debugData,
+                    debugComplete: responseRto.debugComplete,
                     responseDebugData: this.responseDebugData,
                     editCount: responseRto.editCount,
                     activeEditVersion: responseRto.activeEditVersion,
@@ -104,7 +105,8 @@ class Turn {
                     })],
                     turnId: this.turnId,
                     parentTurnId: this.parentTurnId,
-                    debugData: errorMsg.debugData,
+                    debugData: errorMsg.debugData || errorMsg.debug,
+                    debugComplete: !!errorMsg.debugData,
                     responseDebugData: this.responseDebugData,
                     editCount: errorMsg.editCount,
                     activeEditVersion: errorMsg.activeEditVersion,
@@ -148,7 +150,8 @@ class Turn {
             blocks,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
-            debugData: primary?.debugData || null,
+            debugData: primary?.debugData || primary?.debug || null,
+            debugComplete: !!primary?.debugData,
             turnMessages: this.messages.map(m => ({ id: m.id, role: m.role, content: m.content, editCount: m.editCount })),
             editCount: primary?.editCount || 0,
             activeEditVersion: primary?.activeEditVersion || 0,
@@ -174,6 +177,7 @@ class Turn {
                 turnId: this.turnId,
                 parentTurnId: this.parentTurnId,
                 debugData: primaryMessage.debugData,
+                debugComplete: !!primaryMessage.debugData,
                 editCount: primaryMessage.editCount,
                 activeEditVersion: primaryMessage.activeEditVersion,
             });
@@ -266,7 +270,7 @@ class Turn {
 
         // Collect debug data from all messages in this turn
         const turnDebugDataArray = this.messages
-            .map(m => m.debugData)
+            .map(m => m.debugData || m.debug)
             .filter(d => d && (d.response || d.error));
 
         return new RenderableTurnObject({
@@ -275,7 +279,8 @@ class Turn {
             blocks: blocks,
             turnId: this.turnId,
             parentTurnId: this.parentTurnId,
-            debugData: primary?.debugData || null,
+            debugData: primary?.debugData || primary?.debug || null,
+            debugComplete: this.messages.some(m => m.debugData),
             responseDebugData: turnDebugDataArray.length > 0 ? turnDebugDataArray : null,
             turnMessages: this.messages.map(m => ({ id: m.id, role: m.role, content: m.content, tool_calls: m.toolCalls, tool_call_id: m.toolCallId, tool_name: m.toolName, editCount: m.editCount })),
             editCount: primary.editCount,

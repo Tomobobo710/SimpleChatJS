@@ -193,9 +193,22 @@ function createWindow() {
         console.error("Server failed to start, cannot load window:", err);
     });
 
-    // Handle window closed
-    mainWindow.on("closed", () => {
+    // Handle window closed - clean up all jobs and browser tabs so the
+    // process can actually exit. Without this, hidden browser tab windows
+    // keep window-all-closed from ever firing, and spawned child processes
+    // keep the Node event loop alive - the user has to Ctrl+C to quit.
+    mainWindow.on("closed", async () => {
         mainWindow = null;
+        const { killAllJobs } = require("./backend/services/jobRegistryService");
+        const browserToolService = require("./backend/services/browserToolService");
+        // Destroy browser tab windows first (synchronous, immediate), then
+        // kill remaining jobs (shell child processes). Await killAllJobs so
+        // every kill signal is actually sent before app.quit() - the kill
+        // handlers are synchronous under the hood (child.kill / win.destroy)
+        // so this resolves near-instantly with no hang risk.
+        browserToolService.destroyAllTabs();
+        await killAllJobs();
+        app.quit();
     });
 
     // Handle navigation - keep user in the app

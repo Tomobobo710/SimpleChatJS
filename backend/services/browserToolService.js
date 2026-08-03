@@ -1554,7 +1554,18 @@ async function closeBrowserTab(jobId) {
     return { success: true, job_id: jobId };
 }
 
-// ===== User-facing (non-AI-tool) actions for the Web Tabs panel =====
+// Destroy all live browser tab windows - used during app shutdown so
+// hidden tab windows don't keep the Electron process alive after the
+// main window closes (window-all-closed never fires while they exist).
+function destroyAllTabs() {
+    for (const win of liveWindows.values()) {
+        if (win && !win.isDestroyed()) {
+            win._simplechatAllowClose = true;
+            try { win.destroy(); } catch (_) {}
+        }
+    }
+    liveWindows.clear();
+}
 // Reveal/hide and screenshot-for-thumbnail are plain functions the panel's
 // HTTP routes call directly — not AI tools, since "pop this out so I can look
 // at it" is a user action, not something the model should decide (mirrors the
@@ -1782,5 +1793,6 @@ module.exports = {
     hideTab,
     isTabVisible,
     captureThumbnail,
-    getLastScreenshot
+    getLastScreenshot,
+    destroyAllTabs
 };

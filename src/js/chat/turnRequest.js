@@ -429,7 +429,7 @@ class TurnRequest {
             const rto = RenderableTurnObject.fromStreamingProcessor({
                 processor, turnId: savedResponseTurn?.turn_id || null,
                 parentTurnId: savedResponseTurn?.parent_turn_id || null, responseDebugData,
-                turnMessages: processor.getToolMessages(), dropdownStates
+                turnMessages: processor.getToolMessages(), dropdownStates, debugComplete: true
             });
 
             if (currentChatId === activeChatId) chatRenderer.renderTurn(rto, true);
@@ -485,6 +485,7 @@ class TurnRequest {
             identity: 'response', content: partialContent, blocks,
             turnId: savedResponseTurn?.turn_id || null, parentTurnId: savedResponseTurn?.parent_turn_id || null,
             responseDebugData: responseDebugData || null,
+            debugComplete: !!(responseDebugData && responseDebugData.length),
         });
         chatRenderer.renderTurn(rto, true);
 
@@ -604,7 +605,7 @@ class TurnRequest {
         } else {
             lastRequestMessage.appendChild(debugToggle);
         }
-        lastRequestMessage.appendChild(createDebugPanel(lastRequestMessage, messageId, requestDebugData, 0));
+        lastRequestMessage.appendChild(createDebugPanel(lastRequestMessage, messageId, requestDebugData, true));
     }
 
     // Persist + render a request turn WITHOUT firing an API call. Used to queue

@@ -226,6 +226,20 @@ function handleJobEventsStream(req, res) {
     }
 }
 
+// Kill all running jobs across all types and chats - used during app
+// shutdown so child processes (shell jobs) don't keep the process alive.
+// Best-effort: logs but never throws on individual failures.
+async function killAllJobs() {
+    const running = listJobs({ status: 'running' });
+    for (const job of running) {
+        try {
+            await killJob(job.id, 'user');
+        } catch (e) {
+            log(`[JOBS] Failed to kill job ${job.id} during shutdown: ${e.message}`);
+        }
+    }
+}
+
 module.exports = {
     registerKillHandler,
     createJob,
@@ -237,6 +251,7 @@ module.exports = {
     addJobEvent,
     finishJob,
     killJob,
+    killAllJobs,
     removeJob,
     handleJobEventsStream
 };

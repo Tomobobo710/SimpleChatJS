@@ -232,15 +232,34 @@ router.get("/chat/:id/history", (req, res) => {
         const messagesStmt = db.prepare(query);
         const chatMessages = messagesStmt.all(chatId);
 
-        const { parseDbRowToMessage } = require("../utils/messageConversions");
+        const { parseDbRowToMessage, safeJsonParse } = require("../utils/messageConversions");
 
-        const messages = chatMessages.map((row) =>
-            parseDbRowToMessage(row, {
+        const messages = chatMessages.map((row) => {
+            const msg = parseDbRowToMessage(row, {
                 includeFileFields: true,
                 includeErrorState: true,
-                includeDebugData: true,
-            })
-        );
+                includeDebugData: false,
+            });
+            if (row.debug_data) {
+                const dbg = safeJsonParse(row.debug_data, "debug_data");
+                if (dbg && typeof dbg === "object") {
+                    const summary = {};
+                    const resp = dbg.response;
+                    if (resp) {
+                        summary.response = {};
+                        if (resp.usage) summary.response.usage = resp.usage;
+                        if (resp.timings) summary.response.timings = resp.timings;
+                        if (resp.status) summary.response.status = resp.status;
+                        if (resp.toolCalls) summary.response.toolCalls = resp.toolCalls;
+                    }
+                    if (dbg.error) summary.error = dbg.error;
+                    if (dbg.compaction) summary.compaction = dbg.compaction;
+                    if (dbg.currentTurnNumber) summary.currentTurnNumber = dbg.currentTurnNumber;
+                    if (Object.keys(summary).length) msg.debug = summary;
+                }
+            }
+            return msg;
+        });
 
         const draft = loadDrafts()[chatId] || "";
 
@@ -248,6 +267,63 @@ router.get("/chat/:id/history", (req, res) => {
         res.json({ messages, draft });
     } catch (err) {
         log("[HISTORY] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Full per-turn debug data (debug_data with SSE rawBody, request bodies, tool
+// results), fetched on demand when a debug panel is opened. History responses ship
+// only a lightweight `debug` summary to keep the reload payload small.
+router.get("/chat/:id/turn/:turnId/debug", (req, res) => {
+    try {
+        const chatId = req.params.id;
+        const turnId = req.params.turnId;
+        const { parseDbRowToMessage, safeJsonParse } = require("../utils/messageConversions");
+
+        const rows = db.prepare(
+            `SELECT id, role, content, turn_id, parent_turn_id, tool_calls, tool_call_id, tool_name, reasoning, edit_count, edited_at, original_content, file_metadata, error_state, active_edit_version, edit_history, turn_type, debug_data
+             FROM messages
+             WHERE chat_id = ? AND turn_id = ?
+             ORDER BY timestamp ASC`
+        ).all(chatId, turnId);
+
+        if (!rows.length) {
+            return res.status(404).json({ error: "No messages found for this turn" });
+        }
+
+        const messages = rows.map((row) =>
+            parseDbRowToMessage(row, {
+                includeFileFields: true,
+                includeErrorState: true,
+                includeDebugData: true,
+            })
+        );
+
+        const responseDebugData = messages
+            .map((m) => m.debug_data)
+            .filter((d) => d && (d.response || d.error));
+
+        const primary = messages.find(
+            (m) => m.debug_data && (m.debug_data.request || m.debug_data.response || m.debug_data.error || m.debug_data.sequence)
+        ) || messages[0] || null;
+
+        const turnMessages = messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            tool_calls: m.tool_calls,
+            tool_call_id: m.tool_call_id,
+            tool_name: m.tool_name,
+            editCount: m.edit_count,
+        }));
+
+        res.json({
+            debugData: primary?.debug_data || null,
+            responseDebugData: responseDebugData.length ? responseDebugData : null,
+            turnMessages,
+        });
+    } catch (err) {
+        log("[HISTORY-DEBUG] Error:", err);
         res.status(500).json({ error: err.message });
     }
 });

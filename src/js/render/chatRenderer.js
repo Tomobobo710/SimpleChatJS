@@ -1133,6 +1133,7 @@ class ChatRenderer {
                 debugData,
                 responseDebugData,
                 turnMessages,
+                debugComplete,
                 dropdownStates = {},
                 originalContent,
                 turnId,
@@ -1249,8 +1250,10 @@ class ChatRenderer {
             // Debug panel: ON for normal turns (when they have debug data) AND for
             // compaction turns (the request panel shows covered/kept id lists + the real
             // expanded prompt; assembled by the sub-renderer and passed via debugData).
-            if (debugData || responseDebugData) {
-                this.addDebugPanel(turnDiv, domId, { ...debugData, responseDebugData, turnMessages });
+            // For reloaded turns debugComplete is false and the panel lazy-fetches its
+            // full payload from /chat/:id/turn/:turnId/debug on first open.
+            if (debugData || responseDebugData || identity === "request" || identity === "response") {
+                this.addDebugPanel(turnDiv, domId, { ...debugData, responseDebugData, turnMessages }, debugComplete);
             }
 
             // Edit badge: edit_count is incremented only by in-place edits
@@ -1444,7 +1447,7 @@ class ChatRenderer {
     // summary matters).
     _renderCompactionRequestTurn(turn, shouldScroll = false, branchMap = null) {
         const msg = turn.messages?.[0] || {};
-        const meta = (msg.debugData && msg.debugData.compaction) || {};
+        const meta = (msg.debugData && msg.debugData.compaction) || (msg.debug && msg.debug.compaction) || {};
         const shell = typeof msg.content === "string" ? msg.content : "";
         const rto = new RenderableTurnObject({
             identity: "compaction_request",
@@ -1470,6 +1473,7 @@ class ChatRenderer {
                 model: meta.model,
                 expandedPrompt: meta.expandedPrompt,
             } },
+            debugComplete: true,
         });
         return this.renderTurn(rto, shouldScroll, branchMap);
     }
@@ -1482,7 +1486,7 @@ class ChatRenderer {
         const msgs = Array.isArray(turn.messages) ? turn.messages : [];
         // The summary message is the compaction_response row; the rest are compaction_kept.
         const summaryMsg = msgs.find((m) => m.turnType === "compaction_response") || msgs[0] || {};
-        const meta = (summaryMsg.debugData && summaryMsg.debugData.compaction) || {};
+        const meta = (summaryMsg.debugData && summaryMsg.debugData.compaction) || (summaryMsg.debug && summaryMsg.debug.compaction) || {};
         const summary = typeof summaryMsg.content === "string" ? summaryMsg.content : "";
         const keptTurns = msgs
             .filter((m) => m.turnType === "compaction_kept")
@@ -1505,6 +1509,7 @@ class ChatRenderer {
                 keptTurnIds: meta.keptTurnIds,
                 model: meta.model,
             } },
+            debugComplete: true,
         });
         return this.renderTurn(rto, shouldScroll, branchMap);
     }
@@ -2081,7 +2086,7 @@ class ChatRenderer {
     }
 
     // Add debug panel to message
-    addDebugPanel(turnDiv, messageId, debugData) {
+    addDebugPanel(turnDiv, messageId, debugData, debugComplete) {
         const settings = loadSettings();
         turnDiv.classList.add("has-debug");
 
@@ -2124,7 +2129,7 @@ class ChatRenderer {
         // Add message ID
         debugData.messageId = messageId || "unknown";
 
-        const debugPanel = createDebugPanel(turnDiv, messageId, debugData);
+        const debugPanel = createDebugPanel(turnDiv, messageId, debugData, debugComplete);
         turnDiv.appendChild(debugPanel);
     }
 
@@ -3854,7 +3859,7 @@ function initCodeCopyHover(scrollContainer) {
     }
 }
 
-function createDebugPanel(turnDiv, messageId, debugData) {
+function createDebugPanel(turnDiv, messageId, debugData, debugComplete) {
     const debugPanel = document.createElement("div");
     debugPanel.className = "debug-panel-container";
     debugPanel.dataset.messageId = messageId;
@@ -3866,11 +3871,10 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     }
     debugData.turnId = turnDiv.closest(".turn")?.dataset.turnId || "unknown";
     debugData.messageId = messageId || "unknown";
+    debugPanel.dataset.turnId = debugData.turnId;
 
-    // Use the new sequential debug panel. Width/box-sizing (so long unbroken content
-    // can't blow out the turn) is handled by CSS now — see .debug-panel-container and
-    // the .debug-dropdown* rules in debug.css.
     debugPanel._debugData = debugData;
+    debugPanel._debugComplete = !!debugComplete;
 
     // The debug dropdowns are static-HTML <details>; the native summary-click toggle
     // snaps (no transition), so intercept it (delegated, since the markup is injected
@@ -3888,7 +3892,7 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     return debugPanel;
 }
 
-function toggleDebugPanel(debugPanel, debugToggle) {
+async function toggleDebugPanel(debugPanel, debugToggle) {
     if (debugPanel.style.display !== "none") {
         debugPanel.style.display = "none";
         if (debugToggle) {
@@ -3898,6 +3902,21 @@ function toggleDebugPanel(debugPanel, debugToggle) {
         return;
     }
     if (!debugPanel._contentBuilt) {
+        if (!debugPanel._debugComplete && !debugPanel._loadStarted && debugPanel.dataset.turnId) {
+            debugPanel._loadStarted = true;
+            debugPanel.innerHTML = '<div class="debug-panel"><p class="debug-note">Loading debug data…</p></div>';
+            try {
+                const chatId = (typeof currentChatId !== "undefined") ? currentChatId : null;
+                const fetched = chatId ? await getTurnDebug(chatId, debugPanel.dataset.turnId) : null;
+                if (fetched && (fetched.debugData || fetched.responseDebugData)) {
+                    debugPanel._debugData = { ...(fetched.debugData || {}), responseDebugData: fetched.responseDebugData, turnMessages: fetched.turnMessages };
+                } else {
+                    debugPanel._debugData = null;
+                }
+            } catch (e) {
+                debugPanel._debugData = null;
+            }
+        }
         debugPanel.innerHTML = createDebugPanelContent(debugPanel._debugData);
         debugPanel._contentBuilt = true;
     }

@@ -3,7 +3,7 @@
 // The UI renders directly from this object.
 
 class RenderableTurnObject {
-    constructor({ identity = 'request', content = '', blocks = null, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, editCount = 0, activeEditVersion = 0, dropdownStates = {} } = {}) {
+    constructor({ identity = 'request', content = '', blocks = null, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, editCount = 0, activeEditVersion = 0, dropdownStates = {}, debugComplete = false } = {}) {
         this.identity = identity;
         this.content = content;
         this.blocks = blocks;
@@ -15,9 +15,10 @@ class RenderableTurnObject {
         this.editCount = editCount;
         this.activeEditVersion = activeEditVersion;
         this.dropdownStates = dropdownStates;
+        this.debugComplete = debugComplete;
     }
 
-    static fromStreamingProcessor({ processor, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, dropdownStates = {} }) {
+    static fromStreamingProcessor({ processor, turnId = null, parentTurnId = null, debugData = null, responseDebugData = null, turnMessages = null, dropdownStates = {}, debugComplete = false }) {
         return new RenderableTurnObject({
             identity: 'response',
             content: processor.getRawContent() || '',
@@ -28,6 +29,7 @@ class RenderableTurnObject {
             responseDebugData,
             turnMessages,
             dropdownStates,
+            debugComplete,
         });
     }
 }
