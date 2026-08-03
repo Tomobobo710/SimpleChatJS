@@ -34,7 +34,8 @@
 
     /* Tool / semantic accents (kept in sync with the reserved hues in
        chatRenderer.js mcpBarHue — see that comment before changing). */
-    --accent-blue:   #4a9eff;  /* thinking */
+    --accent-blue:   #4a9eff;  /* browser tools */
+    --accent-pink:   #f472b6;  /* thinking */
     --accent-green:  #40c057;  /* read_file, success */
     --accent-orange: #e8833a;  /* write_file */
     --accent-yellow: #e3b341;  /* edit_file */

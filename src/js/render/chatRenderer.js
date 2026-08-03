@@ -1033,7 +1033,7 @@ function mcpBarHue(name) {
     // Reserved hues: red(0)/orange(25)/yellow(43)/green(134)/blue(213)/purple(258).
     // Nudge the hash away from any of them so MCP colors stay distinct from the
     // built-in tool accents.
-    const reserved = [0, 25, 43, 134, 213, 258];
+    const reserved = [0, 25, 43, 134, 213, 258, 330]; // + pink for thinking accent
     let guard = 0;
     while (reserved.some(r => hueCircularDist(hue, r) < 22) && guard < 36) {
         hue = (hue + 11) % 360;

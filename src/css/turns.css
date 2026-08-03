@@ -164,13 +164,19 @@
 }
 
 .thinking-dropdown .dropdown-toggle {
-    background: rgba(74, 158, 255, 0.1);
-    border-left: 3px solid var(--accent-blue);
+    background: rgba(244, 114, 182, 0.1);
+    border-left: 3px solid var(--accent-pink);
 }
 
 .tool-dropdown .dropdown-toggle {
     background: rgba(64, 192, 87, 0.1);
     border-left: 3px solid var(--accent-green);
+}
+
+/* Browser tools get the thinking-blue accent (distinct from read/write/edit). */
+.streaming-dropdown[data-tool^="browser_"] .dropdown-toggle {
+    background: rgba(74, 158, 255, 0.1);
+    border-left-color: var(--accent-blue);
 }
 
 /* Per-tool left-accent color (+ matching faint header tint). shell_run renders as
