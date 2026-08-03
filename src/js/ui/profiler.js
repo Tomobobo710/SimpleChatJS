@@ -24,17 +24,6 @@
         ? function () { return performance.now(); }
         : function () { return Date.now(); };
 
-    // Console diagnostics for this overlay. Every lifecycle step logs here so we can
-    // tell, from the DevTools console, whether the script loaded / init ran / F9 fired
-    // / the panel is on-screen — no guessing.
-    function dbg() {
-        if (window.console && window.console.log) {
-            try {
-                console.log.apply(console, ['[Profiler]'].concat(Array.prototype.slice.call(arguments)));
-            } catch (e) { /* console may be unavailable */ }
-        }
-    }
-
     // ---------- state ----------
     var phases = {};          // name -> { count, sum, min, max }   (session, always)
     var counters = {};        // name -> number                      (session, always)
@@ -215,11 +204,9 @@
         overlay.style.display = 'none';
         var host = document.body || document.documentElement;
         if (!host) {
-            dbg('ERROR: no document.body/documentElement yet to attach the overlay to');
             return overlay;
         }
         host.appendChild(overlay);
-        dbg('overlay element created:', OVERLAY_ID);
         return overlay;
     }
 
@@ -356,16 +343,7 @@
                 overlay.style.bottom = '';
                 rect = overlay.getBoundingClientRect();
             }
-            dbg('SHOW rect={x:' + Math.round(rect.left) + ',y:' + Math.round(rect.top)
-                + ',w:' + Math.round(rect.width) + ',h:' + Math.round(rect.height)
-                + '} viewport=' + Math.round(vw) + 'x' + Math.round(vh)
-                + ' dpr=' + window.devicePixelRatio
-                + ' display=' + overlay.style.display
-                + ' visibility=' + getComputedStyle(overlay).visibility
-                + ' onScreen=' + (rect.left >= 0 && rect.top >= 0 && rect.right <= vw && rect.bottom <= vh));
-        } catch (err) {
-            dbg('SHOW (rect check failed):', err && err.message);
-        }
+        } catch (err) { /* clamp is best-effort; ignore if getComputedStyle etc. fails */ }
         if (typeof requestAnimationFrame === 'function' && !rafId) {
             lastFrameTs = null;
             rafId = requestAnimationFrame(tick);
@@ -378,30 +356,24 @@
         if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
         if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
         if (overlay) overlay.style.display = 'none';
-        dbg('HID');
     }
 function toggle() { overlayShown ? hide() : show(); }
 
     // ---------- init ----------
     function init() {
         buildOverlay();
-        // Bind the toggle several redundant ways so nothing can swallow it: F9 on both
-        // window and document (capture phase — fires even if a handler stopped propagation
-        // on window), and Ctrl+Shift+P as a fallback for machines where F9 needs an Fn
-        // key or Windows/Media grabs it. Each binding is idempotent (our first one wins).
+        // Bind the toggle redundantly so nothing can swallow it: F9 on both
+        // window and document (capture phase — fires even if a handler stopped
+        // propagation on window).
         var toggleHandler = function (e) {
             var key = (e.key || '').toLowerCase();
-            var isF9 = key === 'f9';
-            var isFallback = e.ctrlKey && e.shiftKey && (key === 'p' || key === 'P');
-            if (!isF9 && !isFallback) return;
+            if (key !== 'f9') return;
             e.preventDefault();
             e.stopPropagation();
-            dbg('toggle key received: key=' + (e.key || '') + ' ctrl=' + e.ctrlKey + ' shift=' + e.shiftKey);
             toggle();
         };
         window.addEventListener('keydown', toggleHandler);
         document.addEventListener('keydown', toggleHandler, true);
-        dbg('initialized; bindings installed (F9 / Ctrl+Shift+P)');
 
         // One delegated close handler; the button itself is recreated each refresh.
         overlay.addEventListener('click', function (e) {
@@ -454,9 +426,7 @@ function toggle() { overlayShown ? hide() : show(); }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
-        dbg('script loaded (readyState=loading) — waiting for DOMContentLoaded');
     } else {
-        dbg('script loaded (readyState=' + document.readyState + ') — initializing now');
         init();
     }
 })();

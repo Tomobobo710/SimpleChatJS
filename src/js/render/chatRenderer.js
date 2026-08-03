@@ -505,6 +505,17 @@ function editDiffIsCollapsed(metadata) {
     if (!editDiffIsDone(metadata)) return !opts.autoExpand;
     return !!metadata.editAutoCollapsed;
 }
+// Initial-build collapse state — mirrors editDiffIsCollapsed but resolves the done case
+// up front (before the body is built) using armEditCollapse's grace logic, so a done edit
+// whose collapse already fired (reload) starts collapsed without rendering its diff first.
+function editDiffBuildsCollapsed(metadata) {
+    if (metadata.editUserToggled) return !!metadata.editCollapsed;
+    const opts = getToolDisplaySettings('edit_file');
+    if (!editDiffIsDone(metadata)) return !opts.autoExpand;
+    if (!opts.autoCollapse) return false;
+    const doneAt = metadata.editDoneAt || 0;
+    return doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) <= 0 : true;
+}
 function armEditCollapse(el, metadata) {
     if (metadata.editUserToggled || metadata.editAutoCollapsed) return;
     if (!editDiffIsDone(metadata)) return;
@@ -588,7 +599,7 @@ function buildEditDiffElement(metadata) {
     el.classList.toggle('raw-mode', !!metadata.editShowRaw);
     // Open/closed driven by per-tool display settings (Auto Expand/Collapse), with the
     // user's explicit toggle persisted in metadata so it survives the finalize rebuild.
-    if (editDiffIsCollapsed(metadata)) el.classList.add('collapsed');
+    if (editDiffBuildsCollapsed(metadata)) el.classList.add('collapsed');
 
     // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without fighting
     // an upward scroll, and persists the offset in metadata.editScrollTop so the
@@ -841,6 +852,19 @@ function fileViewIsCollapsed(metadata, toolName) {
     if (!fileViewIsDone(metadata)) return !opts.autoExpand;
     return !!metadata.fileAutoCollapsed;
 }
+// Initial-BUILD collapse state. armFileCollapse derives the same decision AFTER the body is
+// built — but a done tool whose auto-collapse grace already elapsed (reload: fileDoneAt
+// absent → 0; or doneAt in the past) gets collapsed a moment later, so rendering its full
+// highlighted body first is wasted work. Mirror armFileCollapse's timing exactly: the live
+// grace period is untouched (a done-at-finalize rebuild stays open until its timer fires).
+function fileViewBuildsCollapsed(metadata, toolName) {
+    if (metadata.fileUserToggled) return !!metadata.fileCollapsed;
+    const opts = getToolDisplaySettings(toolName);
+    if (!fileViewIsDone(metadata)) return !opts.autoExpand;
+    if (!opts.autoCollapse) return false;
+    const doneAt = metadata.fileDoneAt || 0;
+    return doneAt ? (opts.autoCollapseSec * 1000) - (Date.now() - doneAt) <= 0 : true;
+}
 function armFileCollapse(el, metadata, toolName) {
     if (metadata.fileUserToggled || metadata.fileAutoCollapsed) return;
     if (!fileViewIsDone(metadata)) return;
@@ -894,16 +918,29 @@ function buildFileViewElement(metadata, toolName) {
         <div class="file-view-clip"><div class="file-view-body"></div></div>
     `;
     const body = el.querySelector('.file-view-body');
-    body.innerHTML = fileViewBodyHtml(metadata, toolName);
     el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
-    if (fileViewIsCollapsed(metadata, toolName)) el.classList.add('collapsed');
+    // Lazy body: on reload a done read_file/write_file view is collapsed by default, so
+    // rendering the full per-line highlighted body (SimpleSyntax over the whole file — a
+    // ~90ms hit for a 100KB file) for a block the viewer may never expand is wasted work.
+    // Build it only on first open / raw-toggle. Live + streaming paths populate the body
+    // directly instead.
+    const collapsed = fileViewBuildsCollapsed(metadata, toolName);
+    el._fileBodyBuilt = false;
+    const buildBody = () => {
+        if (el._fileBodyBuilt) return;
+        el._fileBodyBuilt = true;
+        body.innerHTML = fileViewBodyHtml(metadata, toolName);
+    };
+    el._buildFileBody = buildBody;
+    if (!collapsed) buildBody();
+    if (collapsed) el.classList.add('collapsed');
 
     // Sticky-bottom follow that survives the per-chunk innerHTML rebuilds without fighting
     // an upward scroll, persisting the offset in metadata.fileScrollTop for the
     // finalize/reload rebuild (see attachFollowBody).
     const follow = attachFollowBody(body, metadata, 'fileScrollTop');
     el._fileFollow = follow;
-    if (!fileViewIsCollapsed(metadata, toolName) && metadata.fileScrollTop != null) {
+    if (!collapsed && metadata.fileScrollTop != null) {
         requestAnimationFrame(() => requestAnimationFrame(() => follow.restore(metadata.fileScrollTop)));
     }
 
@@ -914,6 +951,7 @@ function buildFileViewElement(metadata, toolName) {
         metadata.fileShowRaw = !metadata.fileShowRaw;
         rawBtn.classList.toggle('active', metadata.fileShowRaw);
         el.classList.toggle('raw-mode', metadata.fileShowRaw);
+        el._fileBodyBuilt = true;
         body.innerHTML = fileViewBodyHtml(metadata, toolName);
     });
 
@@ -921,6 +959,7 @@ function buildFileViewElement(metadata, toolName) {
         const collapsed = !el.classList.contains('collapsed');
         metadata.fileUserToggled = true;
         metadata.fileCollapsed = collapsed;
+        if (!collapsed) buildBody();      // populate before expanding open
         setFileViewCollapsed(el, collapsed, true);
         if (!collapsed) follow.restore(body.scrollHeight); // open → jump to latest, re-pin
     });
@@ -952,6 +991,7 @@ function updateFileViewElement(el, metadata, toolName) {
             // every frame re-introduces the quadratic. Throttle it to ~8×/sec — the reader
             // can't perceive the difference, and it keeps the scroll cost small. The final
             // position is corrected by the full rebuild on completion.
+            el._fileBodyBuilt = true;
             el.classList.toggle('raw-mode', false);
             if (el._fileFollow && wasPinned) {
                 const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -965,6 +1005,7 @@ function updateFileViewElement(el, metadata, toolName) {
             // so a later stream re-inits cleanly, and keep the scroll-safe rebuild wrapper.
             body._fvRows = null;
             const rebuild = () => {
+                el._fileBodyBuilt = true;
                 body.innerHTML = fileViewBodyHtml(metadata, toolName);
                 el.classList.toggle('raw-mode', !!metadata.fileShowRaw);
             };
@@ -1572,8 +1613,9 @@ class ChatRenderer {
             // Per-block-type rendering cost. This is the single funnel every block goes
             // through (both full history renders and live streaming), so it captures
             // "how much does rendering each block type cost" at a glance.
+            const blockRenderMs = P.tend(blockRenderStart);
             P.count('render.blocks', 1);
-            P.timing('render:' + (blockData && blockData.type ? blockData.type : 'unknown'), P.tend(blockRenderStart));
+            P.timing('render:' + (blockData && blockData.type ? blockData.type : 'unknown'), blockRenderMs);
         }
     }
 
@@ -1659,6 +1701,13 @@ class ChatRenderer {
 
     // Render tool block as dropdown
     renderToolBlock(content, metadata, isOpen = false) {
+        const P = window.Profiler;
+        const sub = (name, fn) => {
+            const s = P.tstart();
+            const el = fn();
+            P.timing('tool.' + name, P.tend(s));
+            return el;
+        };
         const dropdownId = `tool-${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
         // Extract tool name from metadata or content
@@ -1672,17 +1721,17 @@ class ChatRenderer {
 
         // shell_run renders as a live terminal console, not a dropdown.
         if (toolName === 'shell_run') {
-            return buildShellConsoleElement(metadata || {});
+            return sub('console', () => buildShellConsoleElement(metadata || {}));
         }
 
         // edit_file renders as a unified diff, not a dropdown.
         if (toolName === 'edit_file') {
-            return buildEditDiffElement(metadata || {});
+            return sub('diff', () => buildEditDiffElement(metadata || {}));
         }
 
         // read_file / write_file render as a file view (gutter + highlight), not a dropdown.
         if (toolName === 'read_file' || toolName === 'write_file') {
-            return buildFileViewElement(metadata || {}, toolName);
+            return sub('fileview', () => buildFileViewElement(metadata || {}, toolName));
         }
 
         // MCP tools arrive namespaced as mcp__<server>__<tool>. Show the clean
@@ -1694,7 +1743,9 @@ class ChatRenderer {
             : null;
 
         // Format the content with Arguments and Result sections
+        const fmtStart = P.tstart();
         const formattedContent = formatToolContent(content, toolName, metadata?.toolArgs);
+        P.timing('tool.format', P.tend(fmtStart));
 
         // Auto-expand while the tool is executing (per display settings). Only the
         // executing state opens — a done tool on reload stays at its saved state, so
@@ -1702,6 +1753,7 @@ class ChatRenderer {
         let open = isOpen;
         if (metadata?.status === 'executing' && getToolDisplaySettings(toolName).autoExpand) open = true;
 
+        const ddStart = P.tstart();
         const dropdown = new StreamingDropdown(dropdownId, title, "tool", !open, badge);
         // Tag with the tool so CSS can color the left accent bar per tool
         // (read=green, write=orange, edit=yellow, shell=grey). MCP tools get a color
@@ -1713,6 +1765,7 @@ class ChatRenderer {
             dropdown.element.style.setProperty('--mcp-tint', `hsla(${hue}, 65%, 62%, 0.12)`);
         }
         dropdown.setContent(formattedContent);
+        P.timing('tool.dropdown', P.tend(ddStart));
         return dropdown.element;
     }
 
