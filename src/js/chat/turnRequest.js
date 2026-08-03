@@ -594,7 +594,7 @@ class TurnRequest {
         if (!settings.debugPanels) debugToggle.style.display = 'none';
         debugToggle.addEventListener('click', () => {
             const dp = lastRequestMessage.querySelector('.debug-panel-container');
-            if (dp) { const h = dp.style.display === 'none'; dp.style.display = h ? 'block' : 'none'; debugToggle.innerHTML = h ? '−' : '+'; debugToggle.classList.toggle('active', h); }
+            if (dp) toggleDebugPanel(dp, debugToggle);
         });
         // Place the toggle rightmost in the message-actions bar (next to branch nav),
         // matching addDebugPanel. Fall back to the turn if the bar isn't present yet.

@@ -549,7 +549,11 @@ async function loadChatHistory(chatId, { skipBranchSelectionsReload = false } = 
     isLoadingHistory = true;
 
     try {
+        const P = window.Profiler;
+        P.beginBuild();
+        const histFetchStart = P.tstart();
         const history = await getChatHistory(chatId);
+        P.timing('hist.fetch', P.tend(histFetchStart));
 
         if (!history || !history.messages || !Array.isArray(history.messages)) {
             console.error("[LOAD-HISTORY] Invalid history data received:", history);
@@ -611,26 +615,50 @@ async function loadChatHistory(chatId, { skipBranchSelectionsReload = false } = 
 
         logger.info("[UNIFIED-RENDERING] Loading chat history through Turn.renderable()");
 
+        const P2 = window.Profiler;
+        const histProcessStart = P2.tstart();
         const allTurns = groupMessagesByTurn(history.messages);
         const childrenByParent = groupTurnsByParentAndSelectSiblings(allTurns, chatId);
         const renderedTurns = buildRenderedTurns(allTurns, chatId, childrenByParent);
         const branchMap = buildBranchMap(allTurns, chatId, childrenByParent);
+        P2.timing('hist.process', P2.tend(histProcessStart));
 
         // A compaction is a request/response PAIR of turns (walked inline at the tip);
         // each renders as its own dropdown turn. The response turn is self-contained —
         // its messages are the summary + copied kept-tail messages (they share its
         // turn_id, so groupMessagesByTurn folds them into this one turn) — so it needs no
         // lookup above the boundary.
+        const histRenderStart = P2.tstart();
         renderedTurns.forEach((turn) => {
+            P2.count('render.turns', 1);
+            const turnDomStart = P2.tstart();
             if (turn.identity === "compaction_request" || turn.identity === "compaction_response") {
                 chatRenderer.renderCompactionTurn(turn, false, branchMap);
+                P2.timing('render.turn.dom', P2.tend(turnDomStart));
                 return;
             }
-            chatRenderer.renderTurn(turn.renderable(), false, branchMap);
+            // Split the RTO parse (StreamingMessageProcessor work — the "build the user's
+            // request object" step) from the DOM construction it feeds, so we can tell
+            // which one blows up as the chat grows.
+            const turnParseStart = P2.tstart();
+            const rto = turn.renderable();
+            P2.timing('turn.parse', P2.tend(turnParseStart));
+            chatRenderer.renderTurn(rto, false, branchMap);
+            P2.timing('render.turn.dom', P2.tend(turnDomStart));
         });
+        P2.timing('hist.render', P2.tend(histRenderStart));
 
         window.updateChatMessageCount();
         scrollToBottom(scrollContainer);
+
+        let nodeCount = 0;
+        try { nodeCount = document.querySelectorAll('#messages .request-turn, #messages .response-turn, #messages *').length; } catch (e) { nodeCount = 0; }
+        P2.endBuild({
+            chatId,
+            messages: history.messages.length,
+            turns: renderedTurns.length,
+            nodes: nodeCount
+        });
     } catch (error) {
         logger.error("Error loading chat history:", error, true);
         showError(`Failed to load chat history: ${error.message}`);

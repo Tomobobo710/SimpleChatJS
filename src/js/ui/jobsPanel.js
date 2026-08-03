@@ -16,6 +16,10 @@ const JobsPanel = {
         const closeBtn = document.getElementById('processesPanelCloseBtn');
         if (toggleBtn) toggleBtn.addEventListener('click', () => this.toggle());
         if (closeBtn) closeBtn.addEventListener('click', () => this.close());
+        // Always poll so the header badge stays current even when the panel
+        // is closed - refresh() gates the DOM rebuild on _isOpen, so the
+        // only work done while closed is the fetch + badge update.
+        this._startPolling();
     },
 
     toggle() {
@@ -32,7 +36,6 @@ const JobsPanel = {
         if (btn) btn.classList.add('active');
         this._isOpen = true;
         this.refresh();
-        this._startPolling();
         if (typeof syncPanelSplitLayout === 'function') syncPanelSplitLayout();
     },
 
@@ -44,7 +47,6 @@ const JobsPanel = {
         panel.setAttribute('aria-hidden', 'true');
         if (btn) btn.classList.remove('active');
         this._isOpen = false;
-        this._stopPolling();
         if (typeof syncPanelSplitLayout === 'function') syncPanelSplitLayout();
     },
 
@@ -67,13 +69,17 @@ const JobsPanel = {
             if (!res.ok) return;
             const data = await res.json();
             const jobs = data.jobs || [];
-            // Skip the DOM rebuild when nothing changed since the last poll —
-            // see the identical comment in webTabsPanel.js for why this matters.
+            // Always update the badge (even when closed) so the header
+            // button reflects running jobs without needing the panel open.
+            this._updateBadge(jobs);
+            // Skip the DOM rebuild when the panel is closed or when nothing
+            // changed since the last poll - without this, every 2s tick nukes
+            // the row list (losing hover state, in-progress clicks, etc.).
+            if (!this._isOpen) return;
             const signature = JSON.stringify(jobs.map(j => [j.id, j.status, j.startedBy, j.killedBy, j.meta?.exit_code]));
             if (signature === this._lastSignature) return;
             this._lastSignature = signature;
             this._render(jobs, data.other_running_count || 0);
-            this._updateBadge(jobs);
         } catch (e) {
             logger.warn('Failed to refresh jobs panel:', e);
         }

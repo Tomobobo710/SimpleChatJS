@@ -1522,43 +1522,53 @@ class ChatRenderer {
     // so chat blocks can apply response-only formatting (blank-line collapse). The live
     // renderer always streams a response, so it passes "response".
     renderBlock(blockData, isOpen = false, identity = null) {
-        const { type, content, metadata = {} } = blockData;
+        const P = window.Profiler;
+        const blockRenderStart = P.tstart();
+        try {
+            const { type, content, metadata = {} } = blockData;
 
-        switch (type) {
-            case "thinking":
-                return this.renderThinkingBlock(content, { ...metadata, isComplete: blockData.isComplete, thinkingDoneAt: blockData.thinkingDoneAt }, isOpen);
-            case "tool":
-                return this.renderToolBlock(content, metadata, isOpen);
-            case "codeblock":
-                return this.renderCodeBlock(content, metadata);
-            case "phase_marker":
-                return this.renderPhaseMarkerBlock(content, metadata);
-            case "error":
-                return this.renderErrorBlock(content, metadata);
-            case "system":
-                return this.renderSystemBlock(content);
+            switch (type) {
+                case "thinking":
+                    return this.renderThinkingBlock(content, { ...metadata, isComplete: blockData.isComplete, thinkingDoneAt: blockData.thinkingDoneAt }, isOpen);
+                case "tool":
+                    return this.renderToolBlock(content, metadata, isOpen);
+                case "codeblock":
+                    return this.renderCodeBlock(content, metadata);
+                case "phase_marker":
+                    return this.renderPhaseMarkerBlock(content, metadata);
+                case "error":
+                    return this.renderErrorBlock(content, metadata);
+                case "system":
+                    return this.renderSystemBlock(content);
 
-            case "image": {
-                const imageDiv = document.createElement("div");
-                imageDiv.className = "content-part image-part";
-                const img = document.createElement("img");
-                img.src = `data:${metadata.mimeType};base64,${metadata.imageData}`;
-                img.className = "message-image";
-                img.loading = "lazy";
-                img.onclick = () => this.openImageModal(img.src);
-                imageDiv.appendChild(img);
-                return imageDiv;
+                case "image": {
+                    const imageDiv = document.createElement("div");
+                    imageDiv.className = "content-part image-part";
+                    const img = document.createElement("img");
+                    img.src = `data:${metadata.mimeType};base64,${metadata.imageData}`;
+                    img.className = "message-image";
+                    img.loading = "lazy";
+                    img.onclick = () => this.openImageModal(img.src);
+                    imageDiv.appendChild(img);
+                    return imageDiv;
+                }
+
+                case "compaction_request":
+                    return this.renderCompactionRequestBlock(metadata);
+
+                case "compaction_response":
+                    return this.renderCompactionResponseBlock(metadata);
+
+                case "chat":
+                default:
+                    return this.renderChatBlock(content, identity);
             }
-
-            case "compaction_request":
-                return this.renderCompactionRequestBlock(metadata);
-
-            case "compaction_response":
-                return this.renderCompactionResponseBlock(metadata);
-
-            case "chat":
-            default:
-                return this.renderChatBlock(content, identity);
+        } finally {
+            // Per-block-type rendering cost. This is the single funnel every block goes
+            // through (both full history renders and live streaming), so it captures
+            // "how much does rendering each block type cost" at a glance.
+            P.count('render.blocks', 1);
+            P.timing('render:' + (blockData && blockData.type ? blockData.type : 'unknown'), P.tend(blockRenderStart));
         }
     }
 
@@ -2088,12 +2098,7 @@ class ChatRenderer {
         // Add click handler to toggle debug panel
         debugToggle.addEventListener("click", () => {
             const debugPanel = turnDiv.querySelector(".debug-panel-container");
-            if (debugPanel) {
-                const isHidden = debugPanel.style.display === "none";
-                debugPanel.style.display = isHidden ? "block" : "none";
-                debugToggle.innerHTML = isHidden ? "−" : "+";
-                debugToggle.classList.toggle("active", isHidden);
-            }
+            if (debugPanel) toggleDebugPanel(debugPanel, debugToggle);
         });
 
         // Place the toggle rightmost in the message-actions bar's right cluster (next
@@ -3865,7 +3870,7 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     // Use the new sequential debug panel. Width/box-sizing (so long unbroken content
     // can't blow out the turn) is handled by CSS now — see .debug-panel-container and
     // the .debug-dropdown* rules in debug.css.
-    debugPanel.innerHTML = createDebugPanelContent(debugData);
+    debugPanel._debugData = debugData;
 
     // The debug dropdowns are static-HTML <details>; the native summary-click toggle
     // snaps (no transition), so intercept it (delegated, since the markup is injected
@@ -3881,6 +3886,26 @@ function createDebugPanel(turnDiv, messageId, debugData) {
     });
 
     return debugPanel;
+}
+
+function toggleDebugPanel(debugPanel, debugToggle) {
+    if (debugPanel.style.display !== "none") {
+        debugPanel.style.display = "none";
+        if (debugToggle) {
+            debugToggle.innerHTML = "+";
+            debugToggle.classList.remove("active");
+        }
+        return;
+    }
+    if (!debugPanel._contentBuilt) {
+        debugPanel.innerHTML = createDebugPanelContent(debugPanel._debugData);
+        debugPanel._contentBuilt = true;
+    }
+    debugPanel.style.display = "block";
+    if (debugToggle) {
+        debugToggle.innerHTML = "−";
+        debugToggle.classList.add("active");
+    }
 }
 
 // Animate a debug dropdown open/closed by tweening its .debug-dropdown-clip pixel

@@ -21,6 +21,10 @@ const WebTabsPanel = {
         const closeBtn = document.getElementById('webTabsPanelCloseBtn');
         if (toggleBtn) toggleBtn.addEventListener('click', () => this.toggle());
         if (closeBtn) closeBtn.addEventListener('click', () => this.close());
+        // Always poll so the header badge stays current even when the panel
+        // is closed - refresh() gates the DOM rebuild and thumbnail fetches
+        // on _isOpen, so the only work done while closed is the fetch + badge.
+        this._startPolling();
     },
 
     toggle() {
@@ -37,7 +41,6 @@ const WebTabsPanel = {
         if (btn) btn.classList.add('active');
         this._isOpen = true;
         this.refresh();
-        this._startPolling();
         if (typeof syncPanelSplitLayout === 'function') syncPanelSplitLayout();
     },
 
@@ -49,7 +52,6 @@ const WebTabsPanel = {
         panel.setAttribute('aria-hidden', 'true');
         if (btn) btn.classList.remove('active');
         this._isOpen = false;
-        this._stopPolling();
         if (typeof syncPanelSplitLayout === 'function') syncPanelSplitLayout();
     },
 
@@ -72,6 +74,22 @@ const WebTabsPanel = {
             if (!res.ok) return;
             const data = await res.json();
             const jobs = data.jobs || [];
+            // Always update the badge (even when closed) so the header
+            // button reflects running tabs without needing the panel open.
+            this._updateBadge(jobs);
+            // Thumbnails and DOM rebuild only matter when the panel is
+            // actually open - skip them while closed to avoid wasted work.
+            if (!this._isOpen) return;
+            // Always refresh thumbnails for running tabs on every poll -
+            // decoupled from the DOM rebuild below so a visually-changing
+            // page still gets a fresh preview even when no job metadata
+            // (title/url/status/visible) changed. _refreshThumbnails swaps
+            // the <img src> in place after a successful fetch, so the old
+            // thumbnail stays visible until the new one is ready - no flash.
+            const runningIds = jobs.filter(j => j.status === 'running').map(j => j.id);
+            if (runningIds.length > 0) {
+                this._refreshThumbnails(runningIds);
+            }
             // Skip the DOM rebuild when nothing actually changed since the last
             // poll — without this, every 2s tick nukes the row list (losing
             // hover state, in-progress clicks, etc.) even when idle. Signature
@@ -80,7 +98,6 @@ const WebTabsPanel = {
             if (signature === this._lastSignature) return;
             this._lastSignature = signature;
             this._render(jobs, data.other_running_count || 0);
-            this._updateBadge(jobs);
         } catch (e) {
             logger.warn('Failed to refresh web tabs panel:', e);
         }
@@ -128,8 +145,6 @@ const WebTabsPanel = {
             const revealBtn = row.querySelector('.reveal-btn');
             if (revealBtn) revealBtn.addEventListener('click', () => this._toggleReveal(job.id, revealBtn));
         });
-
-        this._refreshThumbnails(sorted.filter(j => j.status === 'running').map(j => j.id));
     },
 
     _renderRow(job) {

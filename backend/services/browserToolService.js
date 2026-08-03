@@ -697,6 +697,24 @@ async function openBrowserTab({ url, chatId, config, requestedWidth, requestedHe
         // browser tab surviving a failed page load works in practice.
     }
 
+    // A window created with show:false that was NEVER shown has its GPU
+    // compositor suspended - backgroundThrottling:false only prevents
+    // throttling of windows that were shown THEN hidden, not never-shown
+    // ones, so rAF fires at ~1fps until the window is shown once. Reveal
+    // (show) then hide is confirmed to fix it, but must not be synchronous -
+    // the compositor needs at least one vsync tick between show and hide to
+    // actually spin up. Show at opacity 0 (invisible, no flash), wait 100ms
+    // for the compositor to start, then hide and restore opacity. From the
+    // user's perspective nothing happened, but the compositor is now running
+    // and backgroundThrottling:false keeps rAF at full rate while hidden.
+    win.setOpacity(0);
+    win.show();
+    setTimeout(() => {
+        if (win.isDestroyed()) return;
+        win.hide();
+        win.setOpacity(1);
+    }, 100);
+
     log(`[BROWSERTOOL] Opened browser tab ${jobId}: ${url}`);
     return jobId;
 }

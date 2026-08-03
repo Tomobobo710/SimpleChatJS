@@ -2,6 +2,8 @@
 
 // Update live rendering during streaming
 function updateLiveRendering(processor, liveRenderer, tempContainer) {
+    const P = window.Profiler;
+    const liveStart = P.tstart();
     const currentBlocks = processor.getBlocks();
     logger.debug(`[LIVE-RENDER] Called with ${currentBlocks.length} blocks: ${currentBlocks.map(b => b.type).join(', ')}`);
     
@@ -131,4 +133,6 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
         });
     }
     
+    // Per-call cost of the live streaming renderer (called once per SSE chunk).
+    P.timing('live.frameRender', P.tend(liveStart));
 }
