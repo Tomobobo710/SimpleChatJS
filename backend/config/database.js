@@ -18,6 +18,15 @@ const dbPath = path.join(userdataDir, "chats.db");
 // This ensures db is never undefined when imported
 let db = new Database(dbPath);
 
+// Read-performance pragmas. The default better-sqlite3 page cache is only
+// 2000 pages (~8MB), which makes the first history read of a huge chat
+// (large messages table in a 600MB+ file) hit disk hard after a cold start.
+// WAL (persisted) + mmap + a 128MB page cache cut that cold first-load
+// dramatically while leaving stored data untouched.
+db.pragma("journal_mode = WAL");
+db.pragma("mmap_size = 2147483648");
+db.pragma("cache_size = -131072");
+
 // Initialize database schema
 function initializeDatabase() {
     return new Promise((resolve, reject) => {
