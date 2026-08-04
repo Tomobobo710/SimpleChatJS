@@ -25,6 +25,18 @@ const ChatCheckpoints = {
 
         if (!chatId) return;
 
+        // Checkpoints must be enabled in the config before any UI work
+        // happens. The backend maybeCreateCheckpoint no-ops when disabled,
+        // so without this gate the frontend would still render buttons,
+        // show "creating..." states, and poll for rows that never arrive.
+        let config = null;
+        try {
+            config = await loadCheckpointConfig();
+        } catch (e) {
+            config = null;
+        }
+        if (!config || config.enabled !== true) return;
+
         let projectPath = null;
         try {
             projectPath = await getChatProjectPath(chatId);
