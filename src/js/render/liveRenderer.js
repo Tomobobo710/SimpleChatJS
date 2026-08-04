@@ -110,8 +110,45 @@ function updateLiveRendering(processor, liveRenderer, tempContainer) {
                         renderStreamingCode(codeElement, currentBlock.content, currentBlock.metadata.language, currentBlock.metadata.isStreaming);
                     }
                 } else {
-                    // Regular chat block — live is always a response, so collapse blank lines.
+                    // Regular chat block - live is always a response, so collapse blank lines.
+                    // Preserve table cell hover across innerHTML replacement: the full rebuild
+                    // destroys the hovered cell's DOM node, losing :hover and causing flicker
+                    // every token. Record the hovered cell's grid position, re-apply a
+                    // .cell-hover class on the rebuilt cell so the highlight survives without
+                    // a paint gap. A mousemove listener (added once) clears .cell-hover so
+                    // :hover takes over naturally once the user moves the mouse.
+                    var hoveredCell = blockElement.querySelector('.md-table td:hover, .md-table th:hover');
+                    var hoverPos = null;
+                    if (hoveredCell) {
+                        var tr = hoveredCell.closest('tr');
+                        var tbl = hoveredCell.closest('table');
+                        if (tr && tbl) {
+                            var allTables = blockElement.querySelectorAll('.md-table');
+                            hoverPos = {
+                                t: Array.prototype.indexOf.call(allTables, tbl),
+                                r: Array.prototype.indexOf.call(tbl.querySelectorAll('tr'), tr),
+                                c: Array.prototype.indexOf.call(tr.children, hoveredCell)
+                            };
+                        }
+                    }
                     blockElement.innerHTML = formatMessage(escapeHtml(collapseResponseBlankLines(currentBlock.content)));
+                    if (hoverPos) {
+                        var allTables = blockElement.querySelectorAll('.md-table');
+                        var tbl = allTables[hoverPos.t];
+                        if (tbl) {
+                            var rows = tbl.querySelectorAll('tr');
+                            if (rows[hoverPos.r] && rows[hoverPos.r].children[hoverPos.c]) {
+                                rows[hoverPos.r].children[hoverPos.c].classList.add('cell-hover');
+                            }
+                        }
+                    }
+                    if (!blockElement._cellHoverCleanup) {
+                        blockElement._cellHoverCleanup = true;
+                        blockElement.addEventListener('mousemove', function() {
+                            var cells = blockElement.querySelectorAll('.cell-hover');
+                            for (var i = 0; i < cells.length; i++) cells[i].classList.remove('cell-hover');
+                        });
+                    }
                 }
                 
                 // Update our tracked version

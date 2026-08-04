@@ -830,7 +830,9 @@
     background: var(--bg-mid);
 }
 .md-table :is(td, th):hover,
-.md-table tbody tr:nth-child(even) td:hover {
+.md-table :is(td, th).cell-hover,
+.md-table tbody tr:nth-child(even) td:hover,
+.md-table tbody tr:nth-child(even) td.cell-hover {
     background: var(--bg-raised);
 }
 
