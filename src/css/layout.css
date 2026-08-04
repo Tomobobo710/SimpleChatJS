@@ -850,6 +850,13 @@ h4.md-heading { font-size: 16px; font-weight: 600; }
 h5.md-heading { font-size: 15px; font-weight: 600; }
 h6.md-heading { font-size: 14px; font-weight: 600; color: var(--text-dim); }
 
+/* Markdown horizontal rules (rendered by formatMessage). */
+.md-hr {
+    border: none;
+    border-top: 1px solid var(--border-strong);
+    margin: 20px 0;
+}
+
 .image-part {
     /* Image content styling */
     display: flex;

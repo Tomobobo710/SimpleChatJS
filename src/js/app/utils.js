@@ -131,6 +131,13 @@ function formatMessage(text) {
             }
             return html + '</table>';
         })
+        // Horizontal rules: 3+ hyphens on their own line. The lookbehind also
+        // matches after </h[1-6]> and </table> because those replacements consume
+        // the trailing newline, leaving --- directly after the close tag. The
+        // trailing newline is consumed so it doesn't become a <br> after the hr.
+        .replace(/(?<=^|\n|(?<=<\/h[1-6]>)|(?<=<\/table>))(-{3,})\s*(\n|$)/g, function() {
+            return '<hr class="md-hr">';
+        })
         // Replace newlines with <br>
         .replace(/\n/g, '<br>')
         // Preserve multiple spaces (convert to non-breaking spaces)
