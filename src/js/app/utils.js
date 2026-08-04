@@ -81,23 +81,37 @@ function formatMessage(text) {
         })
         // Handle inline code - preserve spaces
         .replace(/`(.*?)`/g, '<code>$1</code>')
-        // Markdown tables — header row | separator | body rows. Runs before
-        // \n→<br> so we can see line structure. Text is already HTML-escaped
-        // (pipes aren't HTML-special so they're still literal |). Anchors on a
-        // line boundary: start, a newline, or right after a heading close tag
-        // (the heading replacement consumes its trailing newline, so a table
-        // directly under a heading has no \n to anchor on).
-        .replace(/((?:^|\n|(?<=<\/h[1-6]>))\|[^\n]+\|\n\|[ \t\-:|]+\|(?:\n\|[^\n]+\|)*\n?)/g, function(match) {
-            var lines = match.replace(/^\n/, '').replace(/\n$/, '').split('\n');
-            if (lines.length < 2) return match;
-            // Alignment from separator cells: :---, :---:, ---:
-            var aligns = lines[1].replace(/^\s*\||\|\s*$/g, '').split('|').map(function(seg) {
-                seg = seg.trim();
-                if (seg[0] === ':' && seg.slice(-1) === ':') return 'center';
-                if (seg[0] === ':') return 'left';
-                if (seg.slice(-1) === ':') return 'right';
-                return '';
-            });
+        // STREAMING JITTER FIX: The old regex required a COMPLETE header row
+        // (ending |) AND a complete separator row before it would match. During
+        // streaming, the partial table (header row only, or header + incomplete
+        // separator) was rendered as plain text with <br>, then the moment the
+        // separator completed, the entire block re-rendered as a <table> element
+        // with borders/padding/cell-layout, causing a visible Y-axis height jump.
+        // The new regex matches ANY run of consecutive lines starting with |,
+        // including partial rows (no trailing |), missing separator, or a single
+        // header line, so the content is rendered as a <table> from the very
+        // first pipe. No text-to-table transition means no height jump.
+        .replace(/((?:^|\n|(?<=<\/h[1-6]>))\|[^\n]*(?:\n\|[^\n]*)*\n?)/g, function(match) {
+            var lines = match.replace(/^\n/, '').replace(/\n$/, '').split('\n').filter(function(l) { return l !== ''; });
+            if (!lines.length) return match;
+            // Detect the separator row (line 2): starts with |, contains only
+            // |:- and whitespace, has at least one -. May be incomplete (no
+            // trailing |) during streaming.
+            var aligns = [];
+            var bodyStart = 1;
+            if (lines.length > 1) {
+                var sep = lines[1];
+                if (/^\|[ \t\-:|]*$/.test(sep) && /-/.test(sep)) {
+                    aligns = sep.replace(/^\s*\||\|\s*$/g, '').split('|').map(function(seg) {
+                        seg = seg.trim();
+                        if (seg[0] === ':' && seg.slice(-1) === ':') return 'center';
+                        if (seg[0] === ':') return 'left';
+                        if (seg.slice(-1) === ':') return 'right';
+                        return '';
+                    });
+                    bodyStart = 2;
+                }
+            }
             function parseCells(row) {
                 return row.replace(/^\s*\||\|\s*$/g, '').split('|');
             }
@@ -108,7 +122,7 @@ function formatMessage(text) {
                 }).join('') + '</tr>';
             }
             var headerCells = parseCells(lines[0]);
-            var bodyLines = lines.slice(2);
+            var bodyLines = lines.slice(bodyStart);
             var html = '<table class="md-table"><thead>' + buildRow(headerCells, 'th') + '</thead>';
             if (bodyLines.length) {
                 html += '<tbody>' + bodyLines.map(function(line) {
