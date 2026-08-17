@@ -565,6 +565,12 @@
                         </div>
                         <p class="setting-description">When locked, the AI isn't even offered a tool to change cache behavior — the option above is enforced for every tab it opens, with no way for it to ask otherwise.</p>
 
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="bt-screenshot-enabled" checked>
+                            <label for="bt-screenshot-enabled">Enable screenshots (browser_screenshot, browser_zoom_screenshot)</label>
+                        </div>
+                        <p class="setting-description">When off, the AI can't see pages at all — both screenshot tools are removed from its tool list. It's left to interaction and DOM reads (browser_read_page, browser_diff_dom, etc).</p>
+
                         <h4>Screenshot Compression</h4>
                         <p class="setting-description">Two independent knobs. Max resolution controls vision-model token cost directly (a bigger image costs more tokens regardless of file size) — pick the option matching your model, or set Custom. Max file size only bounds request/storage size; it has little effect on token cost by itself.</p>
                         <label for="bt-screenshot-max-resolution">Max resolution (long edge)</label>

@@ -252,6 +252,7 @@ async function loadSettingsIntoModal() {
             Number.isFinite(browserToolConfig.max_console_log_lines) ? browserToolConfig.max_console_log_lines : 500;
         document.getElementById('bt-default-cache-enabled').checked = browserToolConfig.default_cache_enabled !== false;
         document.getElementById('bt-cache-control-user-locked').checked = browserToolConfig.cache_control_user_locked === true;
+        document.getElementById('bt-screenshot-enabled').checked = browserToolConfig.screenshot_enabled !== false;
 
         // Screenshot compression: max_long_edge_px maps to one of the preset
         // dropdown options if it matches exactly, otherwise "Custom" with the
@@ -566,6 +567,7 @@ async function handleSaveSettings() {
             allow_js_execution: document.getElementById('bt-allow-js-execution').checked,
             allow_hard_refresh: document.getElementById('bt-allow-hard-refresh').checked,
             background_throttling_disabled: document.getElementById('bt-background-throttling-disabled').checked,
+            screenshot_enabled: document.getElementById('bt-screenshot-enabled').checked,
             max_console_log_lines: Number.isFinite(parsedMaxConsoleLines) ? Math.max(50, parsedMaxConsoleLines) : 500,
             // 0 = "No cap" option — preserved as 0 (compressNativeImage treats
             // <=0 as "skip the long-edge stage entirely"), not clamped to a floor.

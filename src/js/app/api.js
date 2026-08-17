@@ -234,6 +234,7 @@ async function loadBrowserToolConfig() {
         allow_js_execution: true,
         allow_hard_refresh: true,
         background_throttling_disabled: true,
+        screenshot_enabled: true,
         max_console_log_lines: 500,
         screenshot_max_long_edge_px: 1568,
         screenshot_max_base64_kb: 75,

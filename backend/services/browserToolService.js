@@ -49,6 +49,8 @@ const DEFAULT_CONFIG = {
     // anyone who wants the tighter posture instead.
     allow_js_execution: true,
     allow_hard_refresh: true,
+    // When false, both screenshot tools are omitted from the AI's tool list.
+    screenshot_enabled: true,
     // backgroundThrottling:false on every tab by default — a hidden/unfocused
     // tab keeps running rAF/timers at full rate instead of being Chromium's
     // usual power-saving throttle. Deliberately not what Claude Code's own
@@ -302,18 +304,6 @@ function getToolDefinitions(config) {
             }
         },
         {
-            name: 'browser_screenshot',
-            description: BROWSER_SCREENSHOT_TPL,
-            input_schema: {
-                type: 'object',
-                properties: {
-                    job_id: { type: 'string', description: 'The job id returned by browser_open' }
-                },
-                required: ['job_id'],
-                additionalProperties: false
-            }
-        },
-        {
             name: 'browser_read_console',
             description: BROWSER_READ_CONSOLE_TPL,
             input_schema: {
@@ -421,7 +411,11 @@ function getToolDefinitions(config) {
                 additionalProperties: false
             }
         },
-        {
+
+    ];
+
+    if (config.screenshot_enabled !== false) {
+        defs.push({
             name: 'browser_zoom_screenshot',
             description: BROWSER_ZOOM_SCREENSHOT_TPL,
             input_schema: {
@@ -436,8 +430,20 @@ function getToolDefinitions(config) {
                 required: ['job_id', 'x', 'y', 'width', 'height'],
                 additionalProperties: false
             }
-        }
-    ];
+        });
+        defs.push({
+            name: 'browser_screenshot',
+            description: BROWSER_SCREENSHOT_TPL,
+            input_schema: {
+                type: 'object',
+                properties: {
+                    job_id: { type: 'string', description: 'The job id returned by browser_open' }
+                },
+                required: ['job_id'],
+                additionalProperties: false
+            }
+        });
+    }
 
     // Cache-control tool is entirely OMITTED (not just non-functional) when
     // the user has locked the decision — the AI is never even shown this as
@@ -1663,6 +1669,9 @@ async function executeBrowserTool(toolName, args, opts = {}) {
             return await typeText(args.job_id, args.text);
         }
         case 'browser_screenshot': {
+            if (config.screenshot_enabled === false) {
+                throw new Error('Screenshots are disabled in Settings > Tools.');
+            }
             if (!args?.job_id) throw new Error('Missing required field: job_id');
             const shot = await captureScreenshot(args.job_id);
             const job = registry.getJob(args.job_id);
@@ -1733,6 +1742,9 @@ async function executeBrowserTool(toolName, args, opts = {}) {
             return await scrollToY(args.job_id, args.y);
         }
         case 'browser_zoom_screenshot': {
+            if (config.screenshot_enabled === false) {
+                throw new Error('Screenshots are disabled in Settings > Tools.');
+            }
             if (!args?.job_id) throw new Error('Missing required field: job_id');
             if (!Number.isFinite(args?.x) || !Number.isFinite(args?.y) || !Number.isFinite(args?.width) || !Number.isFinite(args?.height)) {
                 throw new Error('Missing or invalid required fields: x, y, width, height');
