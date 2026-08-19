@@ -3,6 +3,10 @@ userdata/
 dist/
 dist-electron/
 
+# Electron sandbox flags written by scripts/fix-electron-sandbox.js
+.electron-no-sandbox
+.electron-sandbox-ready
+
 # Ignore all .txt and .md except specific ones
 *.txt
 *.md

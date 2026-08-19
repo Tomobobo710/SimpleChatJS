@@ -1,11 +1,23 @@
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog, globalShortcut } = require("electron");
 app.commandLine.appendSwitch('force-device-scale-factor', '1');
 const path = require("path");
+const os = require("os");
 const setFindBar = require("find-bar");
 
 // Set Chromium user-data-dir BEFORE app initialization
+// Portable mode: data lives next to the executable. Works for Windows, macOS,
+// and unpacked Linux. AppImages mount themselves read-only, so on a packaged
+// Linux build we fall back to the user's data directory instead.
 const isPackaged = app.isPackaged;
-const appPath = isPackaged ? path.dirname(process.execPath) : __dirname;
+const isAppImage = isPackaged && process.platform === "linux" && !!process.env.APPIMAGE;
+let appPath;
+if (isAppImage) {
+    appPath = path.join(os.homedir(), ".local", "share", "SimpleChatJS");
+} else if (isPackaged) {
+    appPath = path.dirname(process.execPath);
+} else {
+    appPath = __dirname;
+}
 const userdataPath = path.join(appPath, "userdata");
 const electronDataPath = path.join(userdataPath, "electron");
 

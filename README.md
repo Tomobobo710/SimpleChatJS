@@ -29,6 +29,7 @@ An Electron desktop AI chat application with MCP (Model Context Protocol) suppor
 
 - Node.js
 - An AI API (Ollama, OpenAI, or any OpenAI-compatible endpoint)
+- **Linux:** FUSE (required to run the AppImage)
 
 ### Installation
 
@@ -40,8 +41,12 @@ npm run dev
 ### Build
 
 ```bash
+npm install
+npx electron-builder install-app-deps
 npm run build
 ```
+
+Output goes to `dist-electron/`.
 
 ## Architecture
 
