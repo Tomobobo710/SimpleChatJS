@@ -68,7 +68,7 @@ router.post('/models', async (req, res) => {
         
         const options = buildModelsRequestOptions({ apiUrl, apiKey });
         
-        const httpModule = options.path.startsWith('https:') 
+        const httpModule = req.body.apiUrl.startsWith('https:') 
             ? https 
             : http;
         const apiReq = httpModule.request(options, (apiRes) => {
@@ -119,7 +119,7 @@ router.post('/test-connection', async (req, res) => {
         
         const options = buildTestConnectionRequestOptions({ apiUrl, apiKey, modelName });
         
-        const httpModule = options.path.startsWith('https:') 
+        const httpModule = req.body.apiUrl.startsWith('https:') 
             ? https 
             : http;
         const apiReq = httpModule.request(options, (apiRes) => {
